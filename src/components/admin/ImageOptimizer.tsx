@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { compressImage, THUMB, BANNER } from '../../utils/imageCompression';
 import { markThumbed } from '../../utils/thumb';
+import { admCount, IMAGES } from './ui';
 
 /**
  * ImageOptimizer — «ضغط الصور القديمة بضغطة واحدة» (v13.34)
@@ -137,7 +138,7 @@ const ImageOptimizer: React.FC = () => {
 
             setProg({ done, total, saved, skipped, failed, current: '' });
             setReport(
-                `✅ اكتمل: ${done - skipped - failed} صورة ضُغطت وأُنتجت مصغّراتها` +
+                `✅ اكتمل: ضُغطت ${admCount(done - skipped - failed, IMAGES)} وأُنتجت مصغّراتها` +
                 ` • ${skipped} كانت مضغوطة أصلاً` +
                 (failed ? ` • ⚠️ ${failed} فشلت` : '') +
                 ` • وفّرت ${(saved / 1048576).toFixed(1)} ميجابايت من كل تحميل صفحة لاحق` +

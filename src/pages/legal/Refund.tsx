@@ -17,6 +17,7 @@ import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
 import { RefundWindowHours } from '../../components/RefundWindowHours';
 import { REFUND_PAYMENT_CLAUSE } from '../../data/legalTexts';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
 
 const Refund: React.FC = () => {
     const { language, platformSettings } = useApp();
@@ -518,6 +519,10 @@ const Refund: React.FC = () => {
                         </>
                     )}
                 </Paragraph>
+                {/* 🪤 وفي سياسةِ الاسترداد بالذات: هذه الوثيقةُ وحدَها تقول
+                    «تاكي لا تحتفظ بالمال» — فمن يقولها يجب أن يكون معلومَ
+                    الهويّة، وإلّا كان إعفاءً من مسؤوليّةٍ بلا مسؤولٍ معلوم. */}
+                <OperatorIdentityBlock />
             </Section>
         </LegalLayout>
     );

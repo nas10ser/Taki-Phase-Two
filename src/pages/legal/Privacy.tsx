@@ -14,9 +14,19 @@ import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import { PRIVACY_PAYMENT_CLAUSE } from '../../data/legalTexts';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
+import { useOperatorIdentity } from '../../data/operatorIdentity';
 
 const Privacy: React.FC = () => {
     const { language } = useApp();
+    /**
+     * 🔴 v15.81 — إشعارُ الخصوصيّة **لم يكن يسمّي جهةَ التحكّم** في أيّ موضع،
+     *    وتسميتُها ووسيلةُ التواصل معها مطلوبةٌ في نظام حماية البيانات
+     *    الشخصيّة ولوائحه التنفيذية (ولا يُنسخ رقمُ مادّةٍ من الذاكرة).
+     * 🪤 ولا تُصاغ جهةُ تحكّمٍ مجهولةٌ بلافتةٍ فارغة: السطرُ كلُّه يختفي حتى
+     *    تكتمل القيم، ويبقى النصُّ القائم صحيحاً كما هو.
+     */
+    const operator = useOperatorIdentity();
     const isRTL = language === 'ar';
 
     return (
@@ -72,6 +82,22 @@ const Privacy: React.FC = () => {
                     'It complements the Terms of Service and the Refund Policy and is read together with them as a single integrated document.',
                     'The platform may contain links to third-party sites or services. We do not control third-party policies and bear no responsibility for them — please review the privacy policy of each site you visit.',
                 ]} />
+                {operator.complete && (
+                    <Paragraph>
+                        {isRTL ? (
+                            <>
+                                <strong>جهةُ التحكّم في البيانات</strong> هي {operator.legalName}،
+                                وبياناتُها النظاميّة كاملةً في قسم «التواصل» آخرَ هذه السياسة.
+                            </>
+                        ) : (
+                            <>
+                                The <strong>data controller</strong> is {operator.legalName}; its
+                                full statutory details appear in the «Contact» section at the end
+                                of this policy.
+                            </>
+                        )}
+                    </Paragraph>
+                )}
             </Section>
 
             <Section n={2} title={isRTL ? 'البيانات التي نَجمعها' : 'The data we collect'}>
@@ -509,6 +535,8 @@ const Privacy: React.FC = () => {
                         </>
                     )}
                 </Paragraph>
+                {/* جهةُ التحكّم باسمها النظاميّ وسجلّها وعنوانها — أو لا شيء. */}
+                <OperatorIdentityBlock />
             </Section>
         </LegalLayout>
     );

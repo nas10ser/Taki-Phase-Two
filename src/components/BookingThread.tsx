@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { arMessages } from '../utils/arPlural';
 import type { BookingMessage } from '../repositories/bookingRepository';
 import { chatAttachments } from '../services/chatAttachments';
+import { blockService } from '../services/blockService';
 import { clickable } from '../utils/clickable';
 
 /**
@@ -75,7 +76,11 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
         fetchBookingMessages,
         markBookingMessagesRead,
         customAlert,
+        customConfirm,
         platformSettings,
+        user,
+        blockedMerchants,
+        toggleBlockMerchant,
     } = useApp();
     const isRTL = language === 'ar';
     /** 0 = بلا حدّ. */
@@ -85,11 +90,38 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
     const messages: BookingMessage[] = booking?.messages || [];
     const haveMessagesFetched = booking?.messages !== undefined;
 
+    /**
+     * v15.80 — الطرفُ الآخر في هذه المحادثة. وهو **المكان الوحيد** في الموقع
+     * الذي يستطيع فيه تاجرٌ أن يحظر مشترياً: العمودُ القديم
+     * `users.blocked_merchants` مفتاحُه *متجرٌ* فلا شكلَ فيه للاتجاه المعاكس.
+     */
+    const otherId: string = String(
+        (myRole === 'buyer' ? (booking?.deal?.storeId || booking?.deal?.store_id) : booking?.userId) || ''
+    );
+
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
     const [pending, setPending] = useState<{ file: File; preview: string } | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [iBlocked, setIBlocked] = useState(false);
+    const [blockBusy, setBlockBusy] = useState(false);
+    /** سببُ آخرِ رفضٍ من القاعدة: '' | 'closed' (P0032) | 'cap' (P0033). */
+    const [sendBlock, setSendBlock] = useState<'' | 'closed' | 'cap'>('');
     const fileRef = useRef<HTMLInputElement | null>(null);
+
+    // حالةُ الحظر من الخدمة لا من `blockedMerchants`: تلك مرآةٌ للمتاجر وحدها،
+    // ولا تعرف «تاجرٌ حظر مشترياً». 🪤 ولا تُظهر الخدمةُ من حظرك — بتصميمِ
+    // سياسةِ القراءة — فهذه الحالةُ تعني «أنا حظرتُه» فقط.
+    useEffect(() => {
+        let alive = true;
+        const apply = (rows: { blockedId: string }[]) => {
+            if (alive) setIBlocked(!!otherId && rows.some(r => r.blockedId === otherId));
+        };
+        apply(blockService.peek() || []);
+        const off = blockService.subscribe(apply);
+        blockService.list().then(apply).catch(() => { /* قائمةٌ فارغة لا شاشةٌ مكسورة */ });
+        return () => { alive = false; off(); };
+    }, [otherId]);
 
     // معاينة الصورة عنوان blob يحجز ذاكرة حتى يُحرَّر. إغلاق البطاقة قبل
     // الإرسال كان يتركه معلّقاً — ومع بطاقات كثيرة يتراكم بلا حدّ.
@@ -181,11 +213,60 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
             }
             await sendBookingMessage(barcode, text, path);
             setDraft('');
+            setSendBlock('');
             if (pending) { URL.revokeObjectURL(pending.preview); setPending(null); }
-        } catch {
-            // alert already shown by context
+        } catch (e: any) {
+            // النصُّ نفسُه عرضه السياق. وما يُقرأ هنا هو **الوسم** (`hint`):
+            // `P0001` وحدها تعبر PostgREST، فالتفرقةُ بين «محظور» و«انتهى
+            // العدد» و«انتهى الطلب» تسافر في `hint` لا في الرمز.
+            const h = String(e?.hint || '');
+            if (h === 'P0032') setSendBlock('closed');
+            else if (h === 'P0033') setSendBlock('cap');
         } finally {
             setSending(false);
+        }
+    };
+
+    /**
+     * حظرُ الطرف الآخر / إلغاؤه. القاعدةُ هي الحَكَم: الواجهةُ **لا تُكرّر**
+     * قاعدةَ «كم رسالةً تمرّ على طلبٍ جارٍ» — ذلك إعدادٌ حيٌّ في القاعدة،
+     * ونسخُه هنا يصنع رقمين ينحرفان.
+     * 🪤 ولا يُخبَر الطرفُ الآخر: لا إشعارٌ ولا وسمٌ ولا تغيُّرُ شكلٍ عنده.
+     */
+    const toggleBlockOther = async () => {
+        if (!user?.id || !otherId) {
+            customAlert(isRTL ? 'سجّل الدخول أولاً.' : 'Sign in first.');
+            return;
+        }
+        setBlockBusy(true);
+        try {
+            if (iBlocked) {
+                const r = await blockService.unblock(user.id, otherId);
+                if (!r.ok) {
+                    customAlert('⚠️ ' + (isRTL ? 'تعذّر إلغاء الحظر — أعد المحاولة.' : 'Could not unblock — try again.'));
+                    return;
+                }
+                setSendBlock('');
+            } else {
+                const ok = await customConfirm(isRTL
+                    ? 'حظر هذا الطرف؟ لن تتبادلا رسائل، ولن يستطيع الردّ العلني على تقييمك.\n\nولا يُلغى طلبٌ قائم: على طلبٍ جارٍ مدفوعٍ أو توصيلٍ تمرّ رسائلُ تنسيقٍ محدودة حتى يُغلق الطلب.\n\nولا يُخبَر بذلك، ويمكنك إلغاء الحظر في أي وقت. وتستطيع الإبلاغ عنه للإدارة سواءٌ حظرتَه أو لا.'
+                    : 'Block this person? Neither of you can message the other, and they cannot publicly reply to your rating.\n\nAn existing order is not cancelled: on an open paid or delivery order a limited number of coordination messages still get through until the order closes.\n\nThey are not told, and you can unblock anytime. You can still report them to support either way.');
+                if (!ok) return;
+                const r = await blockService.block(user.id, otherId);
+                if (!r.ok) {
+                    customAlert('⚠️ ' + (isRTL ? 'تعذّر الحظر — أعد المحاولة.' : 'Could not block — try again.'));
+                    return;
+                }
+            }
+            // ومرآةُ الخلاصة للمشتري وحده: العمودُ مفتاحُه متجر، والمشغّلُ في
+            // القاعدة يتجاهل حظرَ مشترٍ. ويُوازَن بالحالة لا بالتبديل الأعمى
+            // كي لا يُضيف تبديلٌ ثانٍ ما أزاله الأوّل.
+            const want = !iBlocked;
+            if (myRole === 'buyer' && blockedMerchants.includes(otherId) !== want) {
+                await toggleBlockMerchant(otherId);
+            }
+        } finally {
+            setBlockBusy(false);
         }
     };
 
@@ -209,10 +290,35 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
             border: '1px solid var(--border-color)',
             padding: 14,
         }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ fontWeight: 900, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                     💬 {isRTL ? 'محادثة الطلب' : 'Order Chat'}
                 </div>
+                {/* v15.80 — زرُّ الحظر **في المحادثة**: الأسئلةُ الشائعة والشروط
+                    تقولان للمتضرّر «احظر المستخدم من أدوات الحظر في الشات»
+                    منذ زمن، ولم يكن في الشات زرٌّ واحد. وهو الاتجاهُ الوحيد
+                    الذي يحظر به تاجرٌ مشترياً. ونصُّه ظاهرٌ لا أيقونةٌ صامتة. */}
+                {otherId && (
+                    <button
+                        onClick={toggleBlockOther}
+                        disabled={blockBusy}
+                        aria-label={iBlocked
+                            ? (isRTL ? 'إلغاء حظر الطرف الآخر' : 'Unblock the other party')
+                            : (isRTL ? 'حظر الطرف الآخر' : 'Block the other party')}
+                        style={{
+                            background: iBlocked ? 'rgba(239,68,68,0.16)' : 'var(--body-bg)',
+                            border: '1.5px solid ' + (iBlocked ? 'rgba(239,68,68,0.45)' : 'var(--border-color)'),
+                            color: iBlocked ? '#ef4444' : 'var(--text-secondary, var(--gray-400))',
+                            borderRadius: 10, padding: '6px 10px', fontSize: '0.72rem', fontWeight: 900,
+                            cursor: blockBusy ? 'wait' : 'pointer', opacity: blockBusy ? 0.6 : 1,
+                            whiteSpace: 'nowrap', fontFamily: 'inherit',
+                        }}
+                    >
+                        {iBlocked
+                            ? (isRTL ? '🚫 إلغاء الحظر' : '🚫 Unblock')
+                            : (isRTL ? '🚫 حظر' : '🚫 Block')}
+                    </button>
+                )}
                 <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-secondary, var(--gray-400))' }}>
                     {cap > 0
                         ? (isRTL ? `أنت: ${mineCount}/${cap} — الطرف الآخر: ${theirCount}/${cap}`
@@ -275,6 +381,39 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                     })}
                 </div>
             )}
+
+            {/* v15.80 — وضعُ الحظر يُعلَن للحاجب وحده.
+                🪤 وحين لا يكون الحظرُ حظرَك، النصُّ **محايدٌ عن عمد**: لا يُقال
+                   «حُظرت» ولا يُسمّى الطرفُ الآخر، وإلّا صار الحظرُ دعوةً
+                   للانتقام. ونفسُ الحياد في البوتين (`chatView.js`).
+                🪤 ولا يُعطَّل الصندوقُ حين تحظر: القاعدةُ تُمرّر رسائلَ تنسيقٍ
+                   محدودة على طلبٍ جارٍ مدفوعٍ أو توصيل — وتعطيلُه هنا يقطع
+                   تنسيقَ طلبك أنت، ويُنشئ قاعدةً ثانية تنحرف عن الحيّة. */}
+            {iBlocked ? (
+                <div style={{
+                    background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239,68,68,0.35)',
+                    color: '#ef4444', padding: 10, borderRadius: 10, marginBottom: 10,
+                    fontSize: '0.75rem', fontWeight: 800, lineHeight: 1.5,
+                }}>
+                    {isRTL
+                        ? '🚫 أنت حظرت هذا الطرف — الرسائل مغلقة بينكما. وعلى طلبٍ جارٍ مدفوعٍ أو توصيلٍ تمرّ رسائلُ تنسيقٍ محدودة حتى يُغلق الطلب. اضغط «إلغاء الحظر» لإعادة المحادثة.'
+                        : '🚫 You blocked this person — messages are closed. On an open paid or delivery order a limited number of coordination messages still get through until the order closes. Tap “Unblock” to reopen the chat.'}
+                </div>
+            ) : sendBlock ? (
+                <div style={{
+                    background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245,158,11,0.35)',
+                    color: '#b45309', padding: 10, borderRadius: 10, marginBottom: 10,
+                    fontSize: '0.75rem', fontWeight: 800, lineHeight: 1.5,
+                }}>
+                    {sendBlock === 'cap'
+                        ? (isRTL
+                            ? '⚠️ تعذّر إرسال المزيد من الرسائل على هذا الطلب. للاستيضاح، تواصل مع الطرف الآخر مباشرة.'
+                            : '⚠️ No more messages can be sent on this order. For anything else, contact the other party directly.')
+                        : (isRTL
+                            ? '⚠️ المحادثة غير متاحة في هذا الطلب. للاستيضاح، تواصل مع الطرف الآخر مباشرة أو راسل الدعم.'
+                            : '⚠️ Messaging is not available on this order. Contact the other party directly, or message support.')}
+                </div>
+            ) : null}
 
             {reachedMyCap ? (
                 <div style={{

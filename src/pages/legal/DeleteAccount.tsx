@@ -23,6 +23,7 @@ import { Link } from 'react-router-dom';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
 
 const DeleteAccount: React.FC = () => {
     const { language, user, deleteAccount } = useApp();
@@ -144,6 +145,11 @@ const DeleteAccount: React.FC = () => {
                         ? <>إن تعذّر عليك الدخول إلى حسابك، فتواصل معنا من <Link to="/contact" className="underline font-bold">صفحة التواصل</Link> وسنتحقّق من هويّتك ثم ننفّذ الطلب.</>
                         : <>If you cannot sign in, contact us from the <Link to="/contact" className="underline font-bold">contact page</Link>; we will verify your identity and then carry out the request.</>}
                 </Paragraph>
+                {/* 🪤 وهذه الصفحةُ بالذات يُشير إليها قوقل بلاي ويفتحها
+                    **زائرٌ بلا تطبيقٍ ولا حساب** — فجهةُ التحكّم التي يطلب
+                    منها الحذفَ يجب أن تكون معلومةَ الهويّة هنا، لا في صفحةٍ
+                    أخرى يحتاج دخولاً للوصول إليها. */}
+                <OperatorIdentityBlock />
             </Section>
         </LegalLayout>
     );

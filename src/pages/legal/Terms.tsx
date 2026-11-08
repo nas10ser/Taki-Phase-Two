@@ -17,10 +17,24 @@ import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
 import { RefundWindowHours } from '../../components/RefundWindowHours';
 import { CLIENT_PAYMENT_TERMS, MERCHANT_GATEWAY_AGREEMENT } from '../../data/legalTexts';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
+import { useOperatorIdentity } from '../../data/operatorIdentity';
 
 const Terms: React.FC = () => {
     const { language, platformSettings } = useApp();
+    const operator = useOperatorIdentity();
     const isRTL = language === 'ar';
+    /**
+     * 🔴 v15.81 — «الطرفُ الأوّل» كان مُعرَّفاً بـ«صاحبِ المنصّة» بلا اسم.
+     *    وذاك **تعريفٌ** لا سهوٌ: كلُّ صفحةٍ بعده كانت تُحيل إلى مجهولٍ
+     *    متّسقٍ، فلم يَلفت تسعةَ عشرَ تحديثاً قانونياً. فيُسمّى الآن باسمه
+     *    النظاميّ من مصدره الوحيد.
+     * 🪤 ويبقى النصُّ القديمُ احتياطاً حتى تُدخل القيمُ: جملةٌ تنتهي بـ«يملكه
+     *    ويُديره» بلا اسمٍ بعدها أسوأُ من صياغةٍ مجهولةٍ متّسقة.
+     */
+    const firstParty = operator.complete
+        ? operator.legalName
+        : (isRTL ? 'صاحب المنصّة' : 'the platform owner');
 
     return (
         <LegalLayout
@@ -76,7 +90,7 @@ const Terms: React.FC = () => {
 
             <Section n={1} title={isRTL ? 'التعريفات' : 'Definitions'}>
                 <Bullets items={isRTL ? [
-                    <><strong>المنصّة / TAKI / «نحن»</strong>: تطبيق وموقع ويب يَملكه ويُديره صاحب المنصّة، يُتيح حجز عروض وتخفيضات يُقدّمها التجار في المملكة العربية السعودية. يُشار إليه أيضاً بـ«الموقع» أو «الطرف الأوّل».</>,
+                    <><strong>المنصّة / TAKI / «نحن»</strong>: تطبيق وموقع ويب يَملكه ويُديره {firstParty}، يُتيح حجز عروض وتخفيضات يُقدّمها التجار في المملكة العربية السعودية. يُشار إليه أيضاً بـ«الموقع» أو «الطرف الأوّل».</>,
                     <><strong>المستخدم / «أنت» / «الطرف الثاني»</strong>: كلّ شخص طبيعيّ أو اعتباريّ يَصل إلى المنصّة، سواء سَجّل فيها أم لا، وسواء كان مشترياً أو تاجراً.</>,
                     <><strong>المشتري</strong>: المستخدم الذي يَتصفّح ويَحجز العروض.</>,
                     <><strong>التاجر / موفّر الخدمة</strong>: الشخص الحاصل على ما يَلزم من تَراخيص نظامية، يَستخدم المنصّة لنشر عروضه.</>,
@@ -87,7 +101,7 @@ const Terms: React.FC = () => {
                     <><strong>الإدارة</strong>: مالك المنصّة ومن يَنوب عنه من الموظّفين والمشرفين والمستشارين.</>,
                     <><strong>الوثائق القانونية</strong>: هذه الشروط، وسياسة الخصوصية، وسياسة الاسترداد، وأيّ سياسة لاحقة تُنشَر على المنصّة — تُقرَأ كوثيقة واحدة متكاملة.</>,
                 ] : [
-                    <><strong>The Platform / TAKI / «we»</strong>: the mobile application and website owned and operated by the platform owner, enabling the booking of offers and discounts provided by merchants in the Kingdom of Saudi Arabia. Also referred to as «the Site» or the «First Party».</>,
+                    <><strong>The Platform / TAKI / «we»</strong>: the mobile application and website owned and operated by {firstParty}, enabling the booking of offers and discounts provided by merchants in the Kingdom of Saudi Arabia. Also referred to as «the Site» or the «First Party».</>,
                     <><strong>The User / «you» / the «Second Party»</strong>: every natural or juristic person who accesses the platform, whether registered or not, and whether buyer or merchant.</>,
                     <><strong>Buyer</strong>: a user who browses and books offers.</>,
                     <><strong>Merchant / Service Provider</strong>: a person holding the required regulatory licences, who uses the platform to publish their offers.</>,
@@ -994,6 +1008,9 @@ const Terms: React.FC = () => {
                         </>
                     )}
                 </Paragraph>
+                {/* 🪤 ولا يُصيَّر شيءٌ قبل اكتمال القيم — وهذا هو الغرض: قسمُ
+                    «التواصل» كان يُحيل إلى زرٍّ وصفحةٍ ولا يسمّي خصماً. */}
+                <OperatorIdentityBlock />
             </Section>
 
             <div className="mt-8 p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl text-center">

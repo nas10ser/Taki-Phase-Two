@@ -25,16 +25,21 @@ const FORMS = {
 /**
  * العدد مصوغاً بالعربية. `genitive` لما بعد حرف الجرّ («خلال ساعتين»).
  * الكسور تُعامَل معاملة ما فوق العشرة («٠٫٥ ساعة») — ومهلةُ الحجز تقبل كسوراً فوق أرضيّتها.
+ *
+ * 🪤 و`fmt` موجودٌ هنا **لأنه موجودٌ في التوأم** (v15.81)، لا لأن البوتين
+ *    يحتاجانه: `scripts/check-ar-plural.js` يقارن النسختين عدداً عدداً
+ *    **ونصَّ خوارزميّتهما حرفاً بحرف**، فأيُّ مُعاملٍ يُضاف في إحداهما وحدها
+ *    يُفشل البناء. وهذا هو المقصود: توأمان لا يتحرّك أحدهما وحده.
  */
-function arCount(n, forms, genitive = false) {
+function arCount(n, forms, genitive = false, fmt = String) {
     const f = typeof forms === 'string' ? FORMS[forms] : forms;
     if (!f) throw new Error(`arCount: صيغةٌ غير معروفة «${forms}»`);
-    if (!Number.isFinite(n)) return `${n} ${f.many}`;
-    if (!Number.isInteger(n)) return `${n} ${f.many}`;
+    if (!Number.isFinite(n)) return `${fmt(n)} ${f.many}`;
+    if (!Number.isInteger(n)) return `${fmt(n)} ${f.many}`;
     if (n === 1) return f.one;
     if (n === 2) return genitive ? (f.twoGen || f.two) : f.two;
-    if (n >= 3 && n <= 10) return `${n} ${f.few}`;
-    return `${n} ${f.many}`;
+    if (n >= 3 && n <= 10) return `${fmt(n)} ${f.few}`;
+    return `${fmt(n)} ${f.many}`;
 }
 
 /** الإنجليزية تُخطئ أيضاً: «1 messages». */

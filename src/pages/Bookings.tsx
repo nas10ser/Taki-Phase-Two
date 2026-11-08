@@ -169,7 +169,7 @@ const OrderStages: React.FC<{ booking: any; isRTL: boolean; snap?: DlvSnap | nul
 };
 
 const Bookings: React.FC = () => {
-    const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings } = useApp();
+    const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings, isAuthReady } = useApp();
     const history = useHistory();
     const location = useLocation();
     const isRTL = language === 'ar';
@@ -395,6 +395,47 @@ const Bookings: React.FC = () => {
         navigator.clipboard.writeText(code);
         customAlert(isRTL ? '✅ تم نسخ الرمز!' : '✅ Code copied!');
     };
+
+    /* v15.81 — الزائرُ بلا حساب كان يُقال له «لا توجد حجوزات حالياً».
+       و«حجوزاتي» في شريط التنقّل **بلا شرط** (BottomNav.tsx)، أي أنّا ندعوه
+       إليها ثمّ نُخبره بخبرٍ عن حسابٍ لا يملكه — وهو أوّلُ ما يراه أغلبُ
+       الزوّار يومَ الافتتاح. وكلُّ شاشةٍ شقيقة تعرض دعوةَ الدخول
+       (Notifications · MyComplaints · Profile · Contests).
+       🪤 والشرطُ `isAuthReady && !user?.id` لا `!user` وحده: التحقّق يحتاج
+          لحظةً عند التحديث، فمشترٍ له ١٢٠ طلباً كان سيرى «سجّل الدخول»
+          تلمع ثم تختفي. (نفسُ ترتيب MyComplaints.tsx.)
+       🪤 وموضعُها **بعد كلّ الخطّافات**: عودةٌ مبكّرةٌ قبلها تُسقط الشجرةَ
+          عند أوّل تبديل (قاعدةُ `react-hooks/rules-of-hooks`). */
+    if (isAuthReady && !user?.id) {
+        return (
+            <div style={{ minHeight: '100vh', background: 'var(--bg-color)', direction: isRTL ? 'rtl' : 'ltr' }}>
+                <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '3.5rem', marginBottom: 16 }} aria-hidden="true">🎟️</div>
+                    <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '1.05rem' }}>
+                        {isRTL ? 'سجّل الدخول لتتابع حجوزاتك' : 'Sign in to follow your bookings'}
+                    </div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: 8, lineHeight: 1.8 }}>
+                        {isRTL
+                            ? 'الحجزُ مجّاني، ويبقى رمزُ طلبك ومحادثتُك مع المتجر في حسابك.'
+                            : 'Booking is free, and your order code and chat with the store stay in your account.'}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => history.push('/register')}
+                        style={{ marginTop: 20, padding: '13px 30px', borderRadius: 14, border: 'none', background: 'var(--primary)', color: '#fff', fontWeight: 900, cursor: 'pointer' }}
+                    >{isRTL ? 'تسجيل الدخول' : 'Sign in'}</button>
+                    <div>
+                        <button
+                            type="button"
+                            onClick={() => history.push('/')}
+                            style={{ marginTop: 12, padding: '11px 26px', borderRadius: 14, border: '1.5px solid var(--border-color)', background: 'transparent', color: 'var(--text-primary)', fontWeight: 800, cursor: 'pointer' }}
+                        >{isRTL ? 'تصفّح العروض' : 'Browse deals'}</button>
+                    </div>
+                </div>
+                <BottomNav />
+            </div>
+        );
+    }
 
     return (
         <>

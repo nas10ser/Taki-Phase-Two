@@ -39,6 +39,7 @@ import {
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     AdmTable,
     admNum, toneFg, toneBg,
+    admCount, MINUTES, HOURS, DAYS, WARNINGS, CANCELLATIONS, OPEN_F, SHOWN_M, WORDS, STORES, ROWS,
 } from '../../components/admin/ui';
 import type { Tone, AdmColumn } from '../../components/admin/ui';
 
@@ -202,7 +203,7 @@ const AdminModeration: React.FC = () => {
         setSavingDelay(false);
         if (error) { await customAlert('❌ ' + error.message); return; }
         await customAlert(warnDelay > 0
-            ? `✅ من الآن: أي إنذار ترسله يُسجّل فوراً عندك، ويصل للمخالف بعد ${warnDelay} دقيقة — يوحي بأن فريقاً بشرياً راجع المخالفة.`
+            ? `✅ من الآن: أي إنذار ترسله يُسجّل فوراً عندك، ويصل للمخالف بعد ${admCount(warnDelay, MINUTES)} — يوحي بأن فريقاً بشرياً راجع المخالفة.`
             : '✅ الإنذارات ستصل فوراً (بدون تأخير).');
     };
 
@@ -218,7 +219,7 @@ const AdminModeration: React.FC = () => {
             });
             if (error) { await customAlert('❌ ' + error.message); return; }
             await customAlert(caSettings.enabled
-                ? `✅ فلترة الإلغاء مفعّلة: ${caSettings.cancel_threshold} إلغاءات خلال ${caSettings.window_days} يوماً = إنذار، وبعد ${caSettings.warnings_before_action} إنذارات ${caSettings.action === 'suspend' ? 'يوقف الحساب' : `يعلَّق الحجز ${caSettings.ban_days} أيام`}. الماسح يعمل كل ساعة.`
+                ? `✅ فلترة الإلغاء مفعّلة: ${admCount(caSettings.cancel_threshold, CANCELLATIONS)} خلال ${admCount(caSettings.window_days, DAYS, true)} = إنذار، وبعد ${admCount(caSettings.warnings_before_action, WARNINGS)} ${caSettings.action === 'suspend' ? 'يوقف الحساب' : `يعلَّق الحجز ${admCount(caSettings.ban_days, DAYS, true)}`}. الماسح يعمل كل ساعة.`
                 : '✅ حُفظت الإعدادات والفلترة متوقفة.');
         } finally {
             setSavingCa(false);
@@ -341,7 +342,7 @@ const AdminModeration: React.FC = () => {
             header: 'الحالة',
             cell: (s) => (
                 <AdmPill tone={s.open > 0 ? 'bad' : 'ok'}>
-                    {s.open > 0 ? `${admNum(s.open)} مفتوحة` : 'كلها روجعت'}
+                    {s.open > 0 ? admCount(s.open, OPEN_F) : 'كلها روجعت'}
                 </AdmPill>
             ),
         },
@@ -353,7 +354,7 @@ const AdminModeration: React.FC = () => {
     ], [storeFilter]);
 
     const delayBadge = warnDelay > 0
-        ? (warnDelay < 60 ? `${warnDelay} دقيقة` : `${warnDelay / 60} ساعة`)
+        ? (warnDelay < 60 ? admCount(warnDelay, MINUTES) : admCount(warnDelay / 60, HOURS))
         : 'فوري';
 
     return (
@@ -387,13 +388,13 @@ const AdminModeration: React.FC = () => {
                             value={admNum(overview?.stores.length ?? 0)}
                             tone={(overview?.stores.length ?? 0) > 0 ? 'warn' : 'ok'}
                             icon="🏬"
-                            scope="أعلى 200 متجر"
+                            scope={`أعلى ${admCount(200, STORES)}`}
                         />
                         <AdmStat
                             label="المعروض في السجلّ"
                             value={admNum(flags.length)}
                             icon="📋"
-                            scope="بالمرشِّحات الحالية — حتى 300 صفّ"
+                            scope={`بالمرشِّحات الحالية — حتى ${admCount(300, ROWS)}`}
                         />
                         <AdmStat
                             label="كلمات قاموس الفلترة"
@@ -430,7 +431,7 @@ const AdminModeration: React.FC = () => {
                         icon="📋"
                         title="سجلّ المخالفات"
                         desc="كل ما رصده النظام مع نصّه والكلمات التي طابقها، ومعه إجراءٌ في مكانه: فتح المحتوى، أو إخفاء العرض، أو حذف التقييم."
-                        badge={{ text: `${admNum(flags.length)} معروض`, tone: 'neutral' }}
+                        badge={{ text: admCount(flags.length, SHOWN_M), tone: 'neutral' }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 13 }}>
                             <span style={metaText}>الحالة:</span>
@@ -568,7 +569,7 @@ const AdminModeration: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                             {[0, 10, 30, 60, 180].map(m => (
                                 <Chip key={m} active={warnDelay === m} onClick={() => setWarnDelay(m)}>
-                                    {m === 0 ? 'فوري' : m < 60 ? `${m} دقيقة` : `${m / 60} ساعة`}
+                                    {m === 0 ? 'فوري' : m < 60 ? admCount(m, MINUTES) : admCount(m / 60, HOURS)}
                                 </Chip>
                             ))}
                             <input
@@ -722,7 +723,7 @@ const AdminModeration: React.FC = () => {
                         desc="الكلمات التي يبحث عنها النظام في المحادثات والتقييمات وأسماء العروض وأوصافها. أضف أو احذف بنفسك — يسري فوراً على الموقع والبوتين."
                         collapsible
                         defaultOpen={false}
-                        badge={{ text: `${admNum(terms.length)} كلمة`, tone: 'neutral' }}
+                        badge={{ text: admCount(terms.length, WORDS), tone: 'neutral' }}
                     >
                         <div style={{ display: 'grid', gap: 12 }}>
                             <div

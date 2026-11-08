@@ -11,6 +11,8 @@ import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
 import HoldHours from '../../components/HoldHours';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
+import { useOperatorIdentity } from '../../data/operatorIdentity';
 
 interface QA {
     q: string;
@@ -586,7 +588,31 @@ const merchantFAQ_EN: QA[] = [
 
 const FAQ: React.FC = () => {
     const { language } = useApp();
+    const operator = useOperatorIdentity();
     const isRTL = language === 'ar';
+
+    /**
+     * 🔴 v15.81 — «من يُشغّل تاكي؟» سؤالٌ لم يكن له جوابٌ في الصفحة كلّها،
+     *    مع أن نفسَ الصفحة **تُطالب التاجر** بسجلٍّ تجاريٍّ ساري (المجموعةُ
+     *    الثالثة: «ما الالتزامات النظامية عليّ كتاجر؟»).
+     * 🪤 ويُضاف السؤالُ **فقط** عند اكتمال الهويّة: سؤالٌ بجوابٍ فارغ أسوأُ
+     *    من غيابه — وهو عينُ فخّ اللافتة المعلّقة في بطاقةٍ أخرى.
+     */
+    const operatorQA = {
+        q: isRTL ? 'من يُشغّل منصّة تاكي؟' : 'Who operates the TAKI platform?',
+        a: (
+            <>
+                <p>
+                    {isRTL
+                        ? <>تُشغّل المنصّةَ {operator.legalName}، وهذه بياناتُها النظاميّة المنشورة:</>
+                        : <>The platform is operated by {operator.legalName}. Its published statutory details are:</>}
+                </p>
+                <OperatorIdentityBlock />
+            </>
+        ),
+    };
+    const howItWorks = (isRTL ? howItWorksAR : howItWorksEN)
+        .concat(operator.complete ? [operatorQA] : []);
 
     return (
         <LegalLayout
@@ -616,7 +642,7 @@ const FAQ: React.FC = () => {
             <Group
                 title={isRTL ? 'كيف تتم الخدمة' : 'How the service works'}
                 emoji="🔄"
-                items={isRTL ? howItWorksAR : howItWorksEN}
+                items={howItWorks}
             />
             <Group
                 title={isRTL ? 'للمشتري' : 'For buyers'}

@@ -13,6 +13,10 @@
  * **منسوخةً من نصّ الدالة لا من الذاكرة**.
  *
  * 🪤 وأي رمزٍ جديد يُضاف في القاعدة يُضاف هنا — ولا يُكتب في البوتين.
+ *
+ * v15.80 — ومفرداتُ القاعدة اليوم ستّة لا أربعة: أُضيف إليها
+ * `blocked` و`blocked_cap` (الحظر واستثناءُ الطلب الجاري). ويُخرَّطان إلى
+ * النصّ العامّ عمداً — انظر `errorKey`.
  */
 
 const { countMessages } = require('../../shared/arPlural');
@@ -35,6 +39,15 @@ function errorKey(err, cap, lang, keys) {
         case 'limit_reached': return [keys.cap, [countMessages(Number(cap) || 0, lang)]];
         case 'chat_closed':   return [keys.finished, []];
         case 'bad_body':      return [keys.badBody, []];
+        // v15.80 — الحظر. 🔴 ويُخرَّط إلى النصّ العامّ «تعذّر الإرسال»
+        // **عن عمد لا عن نقص**: المحجوبُ لا يُعلَم أنه محجوب، وإلّا صار
+        // الحظرُ دعوةً للانتقام. فنصٌّ خاصٌّ هنا كان سيكون إفصاحاً.
+        // 🪤 ومع ذلك تُذكر الحالتان صريحتين لا تُترَكان لـ`default`: الرمزان
+        //    **تُعيدهما القاعدةُ فعلاً** (`bot_send_booking_message`)، فوجودُهما
+        //    هنا يُثبت أنّ المفردات مجرودةٌ من نصّ الدالّة — وغيابُهما كان
+        //    سيُقرأ لاحقاً كرمزٍ غير معروف فيُضاف له نصٌّ يُفصح.
+        case 'blocked':       return [keys.failed, []];
+        case 'blocked_cap':   return [keys.failed, []];
         default:              return [keys.failed, []];
     }
 }

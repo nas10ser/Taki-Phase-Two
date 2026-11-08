@@ -41,6 +41,8 @@ import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill,
     AdmEmpty, AdmSkeleton, AdmButton, AdmTable,
     admNum, admMoney,
+    admCount, DAYS, PAYMENTS, SUBSCRIPTIONS, NEW_SUBSCRIPTIONS, CANCELLATIONS,
+    UNIQUE_USERS, COMPLETED, CANCELLED, MERCHANTS,
 } from './ui';
 import type { AdmColumn, Tone } from './ui';
 
@@ -75,7 +77,7 @@ const daysAgo = (iso: string) => {
     const d = Math.floor(ms / 86400000);
     if (d < 1) return 'اليوم';
     if (d === 1) return 'أمس';
-    return `قبل ${fmtNum(d)} يوماً`;
+    return `قبل ${admCount(d, DAYS, true)}`;
 };
 
 /** سطرُ إحالة — «هذا موجودٌ هناك، ولا يُكرَّر هنا». */
@@ -230,7 +232,7 @@ const SubscriptionsSection = memo<{
                                 <AdmStat
                                     label="هذا الشهر"
                                     value={fmtMoney(mrrCurrent?.paid_amount ?? 0)}
-                                    scope={`${fmtNum(mrrCurrent?.paid_count ?? 0)} دفعة`}
+                                    scope={admCount(mrrCurrent?.paid_count ?? 0, PAYMENTS)}
                                     tone="ok"
                                     delta={mrrMoM === null ? undefined : {
                                         text: `${mrrMoM >= 0 ? '▲' : '▼'} ${fmtNum(Math.abs(mrrMoM))}٪ عن الشهر السابق`,
@@ -251,7 +253,7 @@ const SubscriptionsSection = memo<{
                             {mrr.map((d) => (
                                 <div
                                     key={d.month_key}
-                                    title={`${d.month_label}: ${fmtMoney(d.paid_amount)} · ${fmtNum(d.paid_count)} دفعة`}
+                                    title={`${d.month_label}: ${fmtMoney(d.paid_amount)} · ${admCount(d.paid_count, PAYMENTS)}`}
                                     style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, height: '100%', justifyContent: 'flex-end' }}
                                 >
                                     <div
@@ -295,7 +297,7 @@ const SubscriptionsSection = memo<{
                         {growth.map((d) => (
                             <div
                                 key={d.month_key}
-                                title={`${d.month_label}: +${fmtNum(d.new_subs)} جديد · −${fmtNum(d.churned_subs)} إلغاء`}
+                                title={`${d.month_label}: +${admCount(d.new_subs, NEW_SUBSCRIPTIONS)} · −${admCount(d.churned_subs, CANCELLATIONS)}`}
                                 style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, height: '100%', justifyContent: 'flex-end' }}
                             >
                                 <div style={{ width: '100%', display: 'flex', gap: 2, alignItems: 'flex-end', height: '100%' }}>
@@ -312,7 +314,7 @@ const SubscriptionsSection = memo<{
             )}
 
             {/* ── توزيع الحالات ─────────────────────────────────────────── */}
-            <Block title="حالات الاشتراكات الآن" hint={lcTotal > 0 ? `${fmtNum(lcTotal)} اشتراكاً` : undefined}>
+            <Block title="حالات الاشتراكات الآن" hint={lcTotal > 0 ? admCount(lcTotal, SUBSCRIPTIONS) : undefined}>
                 {lcTotal === 0 ? (
                     <AdmEmpty icon="🍩" title="لا اشتراكات بعد" hint="يظهر التوزيع عند أوّل اشتراكٍ يُسجَّل على المنصّة." />
                 ) : (
@@ -344,7 +346,7 @@ const LifecycleDonut = memo<{ data: Array<{ status: string; cnt: number }>; tota
     };
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-            <svg viewBox="0 0 100 100" style={{ width: 124, height: 124, flexShrink: 0 }} role="img" aria-label={`توزيع ${total} اشتراكاً على الحالات`}>
+            <svg viewBox="0 0 100 100" style={{ width: 124, height: 124, flexShrink: 0 }} role="img" aria-label={`توزيع ${admCount(total, SUBSCRIPTIONS, true)} على الحالات`}>
                 {arcs.map((a) => (
                     <path key={a.status} d={arcPath(a.start, a.end)} fill="none" stroke={a.meta.color} strokeWidth="12" />
                 ))}
@@ -402,14 +404,14 @@ const FunnelSection = memo<{ data: FunnelData | null; period: Period }>(({ data,
                         <FunnelStage
                             label="👀 شاهدوا العرض"
                             primary={fmtNum(data.total_views)}
-                            sub={`${fmtNum(data.unique_viewers)} مستخدماً فريداً`}
+                            sub={admCount(data.unique_viewers, UNIQUE_USERS)}
                             pct={100}
                             tone="info"
                         />
                         <FunnelStage
                             label="🎟️ حجزوا فعلاً"
                             primary={fmtNum(data.total_bookings)}
-                            sub={`${fmtNum(data.unique_bookers)} مستخدماً فريداً`}
+                            sub={admCount(data.unique_bookers, UNIQUE_USERS)}
                             pct={bookPct}
                             tone="ok"
                         />
@@ -514,7 +516,7 @@ const DailySection = memo<{ data: DailyPoint[]; period: Period }>(({ data, perio
         >
             <AdmStatGrid cols={3}>
                 <AdmStat icon="◼" label="أحداث" value={fmtNum(totalEvents)} scope={periodScope(period)} tone="info" title="كل حدثٍ سجّلته المنصّة: فتح تطبيق، فتح عرض، حجز، تقييم…" />
-                <AdmStat icon="◼" label="حجوزات" value={fmtNum(totalBookings)} scope={`${fmtNum(totalCompleted)} مكتملاً · ${fmtNum(totalCancelled)} ملغى`} tone="ok" title="كل حجزٍ أُنشئ في الفترة، بحالته أياً كانت." />
+                <AdmStat icon="◼" label="حجوزات" value={fmtNum(totalBookings)} scope={`${admCount(totalCompleted, COMPLETED)} · ${admCount(totalCancelled, CANCELLED)}`} tone="ok" title="كل حجزٍ أُنشئ في الفترة، بحالته أياً كانت." />
                 <AdmStat icon="◼" label="مستخدمون جدد" value={fmtNum(totalNewUsers)} scope={periodScope(period)} tone="warn" title="حسابات سُجّلت في الفترة — مشترين وتجّاراً." />
             </AdmStatGrid>
 
@@ -679,7 +681,7 @@ const SubscriptionTimelineSection = memo<{ data: SubTimelineRow[]; onOpenSeller:
             desc="كل تاجرٍ مشترك ومتى ينتهي اشتراكه. المبالغ هنا اشتراكاتٌ لتاكي، لا مبيعات متجره."
             collapsible
             defaultOpen={false}
-            badge={{ text: `${fmtNum(data.length)} تاجراً`, tone: 'neutral' }}
+            badge={{ text: admCount(data.length, MERCHANTS), tone: 'neutral' }}
             action={
                 <ExportButton
                     rows={data}
@@ -770,8 +772,8 @@ const TimelineRow = memo<{ row: SubTimelineRow; onOpen: () => void }>(({ row, on
                     {dr === null
                         ? 'بلا تاريخ انتهاء'
                         : dr < 0
-                            ? `منتهٍ منذ ${fmtNum(Math.abs(dr))} يوماً`
-                            : `${fmtNum(dr)} يوماً متبقياً`}
+                            ? `منتهٍ منذ ${admCount(Math.abs(dr), DAYS, true)}`
+                            : `يتبقّى ${admCount(dr, DAYS)}`}
                 </span>
             </span>
         </RowButton>
@@ -805,7 +807,7 @@ const ChurnedSection = memo<{ data: ChurnedRow[]; onOpenSeller: (id: string) => 
             desc="تجّار اشتركوا في تاكي ثم تركوا خلال آخر ٩٠ يوماً."
             collapsible
             defaultOpen={false}
-            badge={data.length ? { text: `${fmtNum(data.length)} تاجراً`, tone: 'warn' } : { text: 'لا فقد', tone: 'ok' }}
+            badge={data.length ? { text: admCount(data.length, MERCHANTS), tone: 'warn' } : { text: 'لا فقد', tone: 'ok' }}
             action={
                 <ExportButton
                     rows={data}
@@ -823,7 +825,7 @@ const ChurnedSection = memo<{ data: ChurnedRow[]; onOpenSeller: (id: string) => 
                     <AdmStat
                         label="اشتراكاتٌ فُقدت شهرياً"
                         value={fmtMoney(totalLost)}
-                        scope={`${fmtNum(data.length)} تاجراً · آخر ٩٠ يوماً`}
+                        scope={`${admCount(data.length, MERCHANTS)} · آخر ٩٠ يوماً`}
                         tone="bad"
                         title="مجموع ما كان هؤلاء التجّار يدفعونه لتاكي شهرياً قبل تركهم. مالُ اشتراكاتٍ لا مبيعات."
                     />

@@ -36,6 +36,7 @@ import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid,
     AdmEmpty, AdmSkeleton, AdmButton,
     admNum, admMoney,
+    admCount, COMPLETED, CANCELLED, UNIQUE_USERS, BOOKINGS, VIEWS, NEW_BUYERS, NEW_MERCHANTS,
 } from './ui';
 
 type LookupMode = 'day' | 'month' | 'year';
@@ -153,7 +154,7 @@ const MoneySection = memo<{ kpis: InvestorKpis | null; period: Period }>(({ kpis
                     icon="🎟️"
                     label="حجوزات"
                     value={fmtNum(kpis.total_bookings)}
-                    scope={`${fmtNum(kpis.completed_bookings)} مكتملاً · ${fmtNum(kpis.cancelled_bookings)} ملغى`}
+                    scope={`${admCount(kpis.completed_bookings, COMPLETED)} · ${admCount(kpis.cancelled_bookings, CANCELLED)}`}
                     delta={growthDelta(kpis.mom_bookings_growth_pct)}
                     title="كل حجزٍ أُنشئ في الفترة، بحالته أياً كانت."
                 />
@@ -254,7 +255,7 @@ const PeopleSection = memo<{ kpis: InvestorKpis | null; period: Period }>(({ kpi
                     icon="👀"
                     label="مشاهدات عروض"
                     value={fmtNum(kpis.total_views)}
-                    scope={`${fmtNum(kpis.unique_viewers)} مستخدماً فريداً`}
+                    scope={admCount(kpis.unique_viewers, UNIQUE_USERS)}
                     title="عدد مرّات فتح صفحة عرض. فتحُ التطبيق وحده لا يُحسب هنا."
                 />
             </AdmStatGrid>
@@ -314,7 +315,7 @@ const GmvMonthlySection = memo<{ data: GmvMonth[] }>(({ data }) => {
                             return (
                                 <div
                                     key={d.month_key}
-                                    title={`${d.month_label}: مبيعات ${fmtMoney(gmv)} · مكتمل ${fmtMoney(done)} · متوسط الطلب ${fmtMoney(d.avg_order_value)} · ${fmtNum(d.bookings_count)} حجزاً`}
+                                    title={`${d.month_label}: مبيعات ${fmtMoney(gmv)} · مكتمل ${fmtMoney(done)} · متوسط الطلب ${fmtMoney(d.avg_order_value)} · ${admCount(d.bookings_count, BOOKINGS)}`}
                                     style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 5, height: '100%' }}
                                 >
                                     <div
@@ -507,14 +508,14 @@ const DateLookupSection: React.FC = () => {
                 <LookupResult
                     caption={`أرقام يوم ${new Date(day.target_date).toLocaleDateString('ar-SA-u-ca-gregory')}`}
                     views={day.views_count}
-                    viewsScope={`${fmtNum(day.unique_viewers)} مستخدماً فريداً`}
+                    viewsScope={admCount(day.unique_viewers, UNIQUE_USERS)}
                     bookings={day.bookings_count}
-                    bookingsScope={`${fmtNum(day.completed_bookings)} مكتملاً`}
+                    bookingsScope={admCount(day.completed_bookings, COMPLETED)}
                     gmv={day.gmv}
                     savings={day.savings_delivered}
                     people={day.active_users}
                     peopleLabel="مستخدمون نشطون"
-                    peopleScope={`+${fmtNum(day.new_buyers)} مشترياً جديداً`}
+                    peopleScope={`+${admCount(day.new_buyers, NEW_BUYERS)}`}
                 />
             )}
 
@@ -524,12 +525,12 @@ const DateLookupSection: React.FC = () => {
                         caption={`أرقام شهر ${mo.label}`}
                         views={mo.views_count}
                         bookings={mo.bookings_count}
-                        bookingsScope={`${fmtNum(mo.completed_bookings)} مكتملاً`}
+                        bookingsScope={admCount(mo.completed_bookings, COMPLETED)}
                         gmv={mo.gmv}
                         savings={mo.savings_delivered}
                         people={mo.active_users}
                         peopleLabel="مستخدمون نشطون"
-                        peopleScope={`+${fmtNum(mo.new_buyers)} مشترياً جديداً`}
+                        peopleScope={`+${admCount(mo.new_buyers, NEW_BUYERS)}`}
                     />
                     {Array.isArray(mo.daily_breakdown) && mo.daily_breakdown.length > 0 && (
                         <DailyMiniChart points={mo.daily_breakdown} />
@@ -543,12 +544,12 @@ const DateLookupSection: React.FC = () => {
                         caption={`أرقام سنة ${yr.label}`}
                         views={yr.views_count}
                         bookings={yr.bookings_count}
-                        bookingsScope={`${fmtNum(yr.completed_bookings)} مكتملاً`}
+                        bookingsScope={admCount(yr.completed_bookings, COMPLETED)}
                         gmv={yr.gmv}
                         savings={yr.savings_delivered}
                         people={yr.new_buyers}
                         peopleLabel="مشترون جدد"
-                        peopleScope={`+${fmtNum(yr.new_sellers)} تاجراً جديداً`}
+                        peopleScope={`+${admCount(yr.new_sellers, NEW_MERCHANTS)}`}
                     />
                     {Array.isArray(yr.monthly_breakdown) && yr.monthly_breakdown.length > 0 && (
                         <MonthlyMiniChart points={yr.monthly_breakdown} />
@@ -599,7 +600,7 @@ const DailyMiniChart = memo<{ points: Array<{ day: string; views: number; books:
                 {points.map((p) => (
                     <div
                         key={p.day}
-                        title={`${p.day}: ${fmtNum(p.views)} مشاهدة · ${fmtNum(p.books)} حجزاً`}
+                        title={`${p.day}: ${admCount(p.views, VIEWS)} · ${admCount(p.books, BOOKINGS)}`}
                         style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 2, height: '100%' }}
                     >
                         <div style={{ height: `${((Number(p.views) || 0) / max) * 100}%`, minHeight: p.views > 0 ? 1 : 0, background: 'var(--adm-info-fg)', borderRadius: '3px 3px 0 0' }} />
@@ -623,7 +624,7 @@ const MonthlyMiniChart = memo<{ points: Array<{ month: string; month_key: string
                 {points.map((p) => (
                     <div
                         key={p.month_key}
-                        title={`${p.month}: ${fmtMoney(p.gmv)} مبيعات · ${fmtNum(p.books)} حجزاً`}
+                        title={`${p.month}: ${fmtMoney(p.gmv)} مبيعات · ${admCount(p.books, BOOKINGS)}`}
                         style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: 4, height: '100%' }}
                     >
                         <div style={{ width: '100%', height: `${((Number(p.gmv) || 0) / maxGmv) * 100}%`, minHeight: p.gmv > 0 ? 2 : 0, background: 'var(--adm-accent)', borderRadius: '5px 5px 0 0' }} />

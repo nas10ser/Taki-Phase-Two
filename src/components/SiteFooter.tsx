@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import OperatorIdentityBlock from './OperatorIdentityBlock';
 
 /**
  * SiteFooter — تذييلُ الموقع (v15.74)
@@ -76,6 +77,13 @@ const SiteFooter: React.FC = () => {
                         style={{ color: 'var(--primary)', fontWeight: 800 }}>{info}</a>
                 </p>
             )}
+
+            {/* 🔴 v15.81 — هويّةُ المُشغِّل. كان التذييلُ يحمل شعاراً تجارياً
+                وحده، والمنصّةُ تُلزم تجّارها بسجلٍّ تجاريٍّ موثَّقٍ ولا تُفصح
+                عن سجلّها — فالزائرُ بلا حسابٍ **لا خصمَ معلومَ الهويّة له**.
+                🪤 ويُصيَّر `null` ما لم تكتمل القيمُ الثلاث، فلا تظهر لافتةٌ
+                   فارغة: التذييلُ اليومَ يطابق سابقَه بايتاً ببايت. */}
+            <OperatorIdentityBlock variant="line" />
 
             <p style={{ textAlign: 'center', marginTop: 12, fontSize: '0.72rem',
                         color: 'var(--text-secondary)', opacity: 0.8 }}>

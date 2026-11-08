@@ -107,7 +107,7 @@ export const BotAnalytics: React.FC = () => {
                     {/* Channel attribution */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <SplitBar title="🎟️ الحجوزات حسب القناة (الكل)" data={data.bookings_total} />
-                        <SplitBar title="🎟️ الحجوزات (آخر ٣٠ يوم)" data={data.bookings_30d} />
+                        <SplitBar title="🎟️ الحجوزات (آخر ٣٠ يوماً)" data={data.bookings_30d} />
                         <SplitBar title="🏷️ العروض المُضافة حسب القناة" data={data.deals_total} />
                     </div>
 

@@ -141,7 +141,15 @@ Deno.serve(async (req: Request) => {
 
     let res: Response;
     try {
-        res = await rpc(SUPA, SRV, 'taki_stock_webhook', { p_key: key, p_body: body, p_event_id: null });
+        // 🔴 v15.80 — وقتُ الرصد يُمرَّر من **الرسالة** لا من ساعتنا. كانت
+        //    `taki_stock_webhook` تثبّت `now()` داخلها، فحارسُ `STALE_OBSERVATION`
+        //    لا يستطيع إمساكَ جسمٍ مُعادٍ إطلاقاً: كلُّ إعادةٍ تبدو «أحدثَ رصد».
+        //    🪤 ويُقصّ عند `now()` في القاعدة (بلا فسحةٍ أماميّة عمداً — ساعةٌ
+        //       مزحزحةٌ للأمام تُجمّد كلَّ كتابةٍ بعدها بقدر الزحزحة).
+        const tsRaw = String((body as Record<string, unknown>)?.created_at ?? '');
+        const ts = Date.parse(tsRaw);
+        const observedAt = Number.isFinite(ts) ? new Date(ts).toISOString() : null;
+        res = await rpc(SUPA, SRV, 'taki_stock_webhook', { p_key: key, p_body: body, p_event_id: null, p_observed_at: observedAt });
     } catch (e) {
         return json(502, { error: 'UPSTREAM', detail: String((e as Error)?.message || e).slice(0, 180) });
     }

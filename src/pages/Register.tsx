@@ -4,7 +4,7 @@ import { LEGAL_VERSION } from '../data/legalVersion';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { validationService } from '../services/validationService';
-import { authService } from '../services/authService';
+import { authService, MIN_AGE } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
@@ -70,19 +70,15 @@ const Register: React.FC = () => {
         try {
             const ok = await loginViaTelegram();
             // v14.19 — هذا المسار كان يُنشئ حساباً **بلا أي أثر موافقة**: لا
-            // إصدار ولا وقت ولا إقرار سنّ. ثلاثة من ستّة حسابات حيّة بلا سجلّ
-            // موافقة، وهذا أحد سببيه. النصّ فوق الزرّ يذكر الشروط، فالإقرار قائم
-            // ويجب أن يُسجَّل مثله في مسار البريد تماماً.
+            // إصدار ولا وقت ولا إقرار سنّ. النصّ فوق الزرّ يذكر الشروط،
+            // فالإقرار قائم ويجب أن يُسجَّل مثله في مسار البريد تماماً.
+            // v15.80 — ومن كاتبٍ واحدٍ يُثبت كتابته بقراءة، ولا يُبتلع فشلُه:
+            // بوّابةُ الموافقة تُعيد السؤالَ عند الفتحة القادمة فيُستعاد.
             if (ok) {
-                try {
-                    await supabase.rpc('record_user_consent', {
-                        p_terms_version: TERMS_VERSION,
-                        p_ip: null,
-                        p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
-                        p_kind: 'terms',
-                        p_min_age: MIN_AGE,
-                    });
-                } catch { /* لا يُعطّل الدخول */ }
+                const rec = await authService.recordConsent(TERMS_VERSION);
+                if (!rec.ok) await customAlert(language === 'ar'
+                    ? '⚠️ لم نتمكّن من حفظ موافقتك على الوثائق القانونية — سنطلبها مرّةً أخرى عند فتح التطبيق.'
+                    : '⚠️ We could not save your legal consent — we will ask again next time you open the app.');
             }
             if (!ok) {
                 await customAlert(language === 'ar'
@@ -160,9 +156,8 @@ const Register: React.FC = () => {
     // v14.19 — الإصدار يطابق تاريخ آخر تحديث للوثائق الثلاث. 🪤 كان '2026-05-20'
     // ولا يقابله تاريخُ أي صفحة، فما كان الأثر المحفوظ يدلّ على نصٍّ بعينه.
     const TERMS_VERSION = LEGAL_VERSION;
-    // v14.19 — سنّ الأهلية للتعاقد في السعودية. يُخزَّن **إقرارٌ** لا تاريخ
-    // ميلاد: أقلّ بيانٍ شخصي يكفي للغرض (طلب ناصر).
-    const MIN_AGE = 18;
+    // v15.80 — و`MIN_AGE` صار مستورداً من `authService`: كاتبُ الإقرار يملك
+    // قيمتَه، وبوّابةُ الموافقة تحتاج نفسَ الرقم فلا يُكتب مرّتين.
     // v12.30 — «من أين سمعت عن تاكي؟» (اختياري) + رمز دعوة المتجر من الرابط.
     // ?ref=CODE يُلتقط فور فتح الصفحة ويثبت في sessionStorage حتى لو تنقّل
     // المستخدم بين الشاشات قبل إكمال التسجيل — فلا يفقد المتجر إحالته.
@@ -765,21 +760,16 @@ const Register: React.FC = () => {
             return;
         }
 
-        // v11.2 — persist legal consent now that we have an authenticated user
-        // session. Done as fire-and-forget; a failure here doesn't block the
-        // user reaching their dashboard (we'll retry on next login).
-        try {
-            await supabase.rpc('record_user_consent', {
-                p_terms_version: TERMS_VERSION,
-                // v14.19 — العنوان يُشتقّ على الخادم من ترويسة الطلب. ما يقوله
-                // المتصفّح عن عنوانه ليس دليلاً، وكان يُمرَّر `null` دائماً
-                // فبقي العمود فارغاً عند الجميع بينما الشروط تَعِد بتسجيله.
-                p_ip: null,
-                p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
-                p_kind: 'terms',
-                p_min_age: MIN_AGE,
-            });
-        } catch { /* non-blocking */ }
+        // v11.2 — تُحفظ الموافقة الآن وقد صارت الجلسةُ موثَّقة.
+        // v15.80 — 🔴 وكانت «أطلقها وانسَها» داخل `catch` فارغ، والتعليقُ
+        // يَعِد بإعادةِ محاولةٍ «عند الدخول القادم» **لم تُكتب أبداً** (قِيس:
+        // مطابقةٌ واحدة في المستودع كلّه، وهي التعليقُ نفسه). فانقطاعُ شبكةٍ
+        // لحظةً كان يُفقد التوقيعَ القانونيَّ نهائيّاً وبصمت. الآن الكتابةُ
+        // تُقرأ بعدها، وفشلُها يُقال، والتعافي قائمٌ ببوّابة الموافقة.
+        const rec = await authService.recordConsent(TERMS_VERSION);
+        if (!rec.ok) await customAlert(t(
+            '⚠️ لم نتمكّن من حفظ موافقتك على الوثائق القانونية — سنطلبها مرّةً أخرى عند فتح التطبيق.',
+            '⚠️ We could not save your legal consent — we will ask again next time you open the app.'));
 
         await customAlert(t('✅ تم التحقق والتسجيل بنجاح!', '✅ Registration verified successfully!'));
         history.push(userType === 'seller' ? '/seller' : '/');

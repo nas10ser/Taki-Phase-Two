@@ -8,15 +8,36 @@ name: بناء تطبيق آيفون
 #    ومنصّاتُ GitHub من نوع `macos-26` تحمل Xcode 26، ومجّانيّةٌ لمستودعٍ عامّ.
 #
 # 🪤 ويعمل **بلا شهادةِ أبل**: بلا أسرارٍ يبني التطبيقَ بلا توقيع — فيثبت أن
-#    المشروعَ **يُجمَّع فعلاً** قبل أن يدفع ناصر ٩٩ دولاراً. وبوجود الشهادة
-#    يُنتج `.ipa` جاهزاً للرفع إلى App Store Connect.
+#    المشروعَ **يُجمَّع فعلاً** قبل أن يدفع ناصر ٩٩ دولاراً. وبوجود الأسرار
+#    يُنتج `.ipa` موقَّعاً **ويرفعه** إلى App Store Connect.
+#
+# 🔴 **ولماذا أُعيد هذا السيرُ كاملاً في v15.81** (كلُّ سببٍ مقيس):
+#    ① **سبعُ جلساتٍ خضراء وصفرُ ملفّ.** خطوتا التوقيع خُطّيتا ١٤/١٤ مرّة
+#       (الأسرارُ غائبة)، و`if-no-files-found: ignore` جعل رفعَ الأثر يصمت،
+#       فجلستا ٧ نوفمبر (42365643717 · 42374499153) أعطتا `artifacts total=0`.
+#       أي أن «أخضر» كان يعني «جُمِّع»، ولا شيءَ يفرّقه عن «قابلٌ للرفع».
+#    ② **ولا خطوةَ رفعٍ إلى أبل في المستودع كلِّه.** آخرُ خطوةٍ كانت
+#       `upload-artifact` — أي ملفٌّ في تخزين GitHub لا تراه أبل إطلاقاً.
+#    ③ **والتوقيعُ كان متناقضاً داخلياً** ولم يُنفَّذ قطّ فلم يظهر تناقضُه:
+#       `CODE_SIGN_STYLE = Automatic` في المشروع (بلا `DEVELOPMENT_TEAM`
+#       وبلا `PROVISIONING_PROFILE_SPECIFIER`) مع ملفِّ تزويدٍ **مركَّبٍ
+#       يدوياً** يتجاهله الأسلوبُ التلقائيّ تماماً، ثمّ
+#       `-allowProvisioningUpdates` وهو أمرُ «اذهب إلى بوّابة أبل» ويحتاج
+#       جلسةَ حسابٍ لا تملكها المنصّة. ⇒ أوّلُ محاولةٍ بالشهادة المدفوعة
+#       كانت ستفشل بعد عشرين دقيقةَ أرشفةٍ لسببٍ لا علاقةَ له بالشهادة.
+#    ④ و`CODE_SIGN_IDENTITY = "iPhone Developer"` على مستوى المشروع
+#       (project.pbxproj:243 و:300) — هويّةُ **تطوير**، وأرشيفٌ بها لا يقبله
+#       المتجر مهما صحّ ما حولها. فتُدهَس صراحةً في سطر الأمر.
+#    ⑤ و«إثباتُ التوقيع» القديم كان فحصاً **لا يستطيع الفشل**:
+#       `find-identity | grep -c 'valid identities'` يعدّ سطرَ الخلاصة الذي
+#       تطبعه الأداةُ دائماً — فيطبع ١ على سلسلةٍ فارغة.
 # ═══════════════════════════════════════════════════════════════════════════
 
 on:
   workflow_dispatch:
     inputs:
       release:
-        description: 'أرشيفٌ موقَّع للرفع (يحتاج شهادةَ أبل)'
+        description: 'أرشيفٌ موقَّع يُرفع إلى App Store Connect (يحتاج أسرارَ أبل السبعة)'
         type: boolean
         default: false
   push:
@@ -31,7 +52,7 @@ jobs:
     #    تنتقل يوماً إلى نسخةٍ لا تحمل Xcode المطلوب — فينكسر البناءُ بلا
     #    تغييرٍ منّا. والإصدارُ المثبَّت يُراجَع عمداً عند كلّ شرطٍ جديد من أبل.
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -76,25 +97,49 @@ jobs:
       - name: تسجيلُ ملفّات المتجر في مشروع Xcode
         run: node scripts/ios-project-patch.js
 
-      # ── التوقيع: خطوةٌ تفحص وجودَ السرّ (سياقُ secrets غيرُ مضمونٍ في if) ──
-      - name: هل الشهادةُ متاحة؟
+      # ══════════════════════════════════════════════════════════════════════
+      # بوّابةُ الأسرار — **خطوةٌ لا شرطُ `if`** (سياقُ `secrets` غيرُ مضمونٍ
+      # داخل شروط الخطوات، فشرطٌ يبدو صحيحاً قد يُقيَّم دائماً خطأً).
+      # 🪤 وتُفحص **السبعةُ** لا اثنان: بالقديم كان مفتاحُ الرفع غائباً
+      #    والبوّابةُ تقول «الشهادةُ متاحة» — فيبدأ أرشيفٌ لا منتهى له.
+      # ══════════════════════════════════════════════════════════════════════
+      - name: هل أسرارُ التوقيع والرفع كاملة؟
         id: sign
         env:
-          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
-          PROF: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          if [ -n "$CERT" ] && [ -n "$PROF" ]; then echo "ok=true" >> "$GITHUB_OUTPUT";
-          else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
-          echo "الشهادةُ متاحة: $([ -n "$CERT" ] && [ -n "$PROF" ] && echo نعم || echo 'لا — يُبنى بلا توقيع')"
-
-      - name: تركيبُ الشهادة وملفّ التزويد
-        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
-        env:
-          CERT: ${{ secrets.APPLE_CERT_P12_BASE64 }}
-          CERT_PW: ${{ secrets.APPLE_CERT_PASSWORD }}
-          PROF: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          CERT:       ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PW:    ${{ secrets.APPLE_CERT_PASSWORD }}
+          PROF:       ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          TEAM:       ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY:    ${{ secrets.APPLE_ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER: ${{ secrets.APPLE_ASC_ISSUER_ID }}
         run: |
           set -euo pipefail
+          # 🔴 ولا تُطبع قيمةُ سرٍّ أبداً — الأسماءُ الناقصةُ وحدها.
+          miss=""
+          for n in CERT CERT_PW PROF TEAM ASC_KEY ASC_KEY_ID ASC_ISSUER; do
+            eval "v=\${$n:-}"
+            [ -n "$v" ] || miss="$miss $n"
+          done
+          if [ -z "$miss" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+          echo "missing=${miss# }" >> "$GITHUB_OUTPUT"
+          echo "الناقصُ من الأسرار:${miss:- (لا شيء)}"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # تركيبُ الشهادة وملفّ التزويد — **ويُقرأ الملفّان لا يُفترضان**
+      # ══════════════════════════════════════════════════════════════════════
+      - name: تركيبُ الشهادة وملفّ التزويد
+        id: install_cert
+        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        env:
+          CERT:    ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          CERT_PW: ${{ secrets.APPLE_CERT_PASSWORD }}
+          PROF:    ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          TEAM:    ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUNDLE_ID="net.takisa.app"
           # 🪤 سلسلةُ مفاتيحَ مؤقّتةٌ للجلسة وحدها: لا تُلمَس سلسلةُ المنصّة،
           #    وتختفي مع الجهاز الافتراضيّ عند انتهاء السير.
           KC="$RUNNER_TEMP/taki.keychain-db"
@@ -102,43 +147,245 @@ jobs:
           security create-keychain -p "$KC_PW" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PW" "$KC"
-          echo "$CERT" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 -k "$KC"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PW" "$KC" >/dev/null
-          security list-keychain -d user -s "$KC"
-          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          echo "$PROF" | base64 -d > "$HOME/Library/MobileDevice/Provisioning Profiles/taki.mobileprovision"
-          echo "✓ هويّاتُ التوقيع: $(security find-identity -v -p codesigning "$KC" | grep -c 'valid identities' || true)"
+          printf '%s' "$CERT" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          # 🔴 `-T /usr/bin/codesign` إلزاميّ: بلا منح codesign وصولاً إلى
+          #    المفتاح الخاصّ يسأل النظامُ كلمةَ السلسلة **تفاعلياً** فيعلق
+          #    السيرُ حتى المهلة — بلا رسالةِ خطأ، فقط صمتٌ طويل.
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PW" -A -t cert -f pkcs12 \
+            -k "$KC" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KC" >/dev/null
+          security list-keychain -d user -s "$KC" login.keychain-db
           rm -f "$RUNNER_TEMP/cert.p12"
 
-      - name: أرشيفٌ موقَّع ثمّ تصديرُ .ipa
-        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+          # ── ① الهويّة: تُعدّ **أسطرُ الهويّات** لا سطرُ الخلاصة ───────────
+          # 🔴 القديم كان `grep -c 'valid identities'` وهو يطبع ١ على سلسلةٍ
+          #    فارغة لأن الأداةَ تطبع سطرَ الخلاصة دائماً. والسطرُ الحقيقيّ
+          #    صيغتُه: `  1) <٤٠ محرفاً ست عشرياً> "<الاسم>"`.
+          security find-identity -v -p codesigning "$KC" > "$RUNNER_TEMP/ids.txt" || true
+          cat "$RUNNER_TEMP/ids.txt"
+          N_ALL=$(grep -cE '^[[:space:]]*[0-9]+\)[[:space:]]+[0-9A-F]{40}[[:space:]]+"' "$RUNNER_TEMP/ids.txt" || true)
+          echo "عددُ الهويّات الفعليّ: ${N_ALL:-0}"
+          IDENTITY=$(grep -oE '"(Apple|iPhone) Distribution[^"]*"' "$RUNNER_TEMP/ids.txt" | head -1 | tr -d '"' || true)
+          if [ -z "$IDENTITY" ]; then
+            echo "::error title=iOS::صفرُ هويّةِ توزيع في الشهادة (وُجد ${N_ALL:-0} هويّة). المطلوب «Apple Distribution» — وشهادةُ Apple Development لا تصلح للمتجر."
+            exit 1
+          fi
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+          echo "✓ هويّةُ التوزيع: $IDENTITY"
+
+          # ── ② ملفُّ التزويد: يُفكّ ويُقرأ، ثمّ يُركَّب باسم UUID الصحيح ────
+          # 🪤 والقديم كان يكتبه باسم `taki.mobileprovision` ولا يقرؤه إطلاقاً
+          #    — فملفٌّ لبرنامجٍ آخر أو ملفُّ تطويرٍ كان يُقبل بصمت.
+          printf '%s' "$PROF" | base64 -d > "$RUNNER_TEMP/taki.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/taki.mobileprovision" > "$RUNNER_TEMP/prof.plist"
+          PNAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/prof.plist")
+          PUUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/prof.plist")
+          PAPPID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$RUNNER_TEMP/prof.plist")
+          PAPS=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' "$RUNNER_TEMP/prof.plist" 2>/dev/null || echo '')
+          PEXP=$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$RUNNER_TEMP/prof.plist")
+          HAS_DEV=$(/usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/prof.plist" >/dev/null 2>&1 && echo yes || echo no)
+          echo "ملفُّ التزويد: «$PNAME» · $PAPPID · aps=${PAPS:-(لا شيء)} · أجهزةٌ مُزوَّدة=$HAS_DEV · ينتهي $PEXP"
+
+          if [ "$PAPPID" != "${TEAM}.${BUNDLE_ID}" ]; then
+            echo "::error title=iOS::ملفُّ التزويد لـ«$PAPPID» لا لـ«${TEAM}.${BUNDLE_ID}» — معرّفُ التطبيق أو الفريقُ خاطئ."
+            exit 1
+          fi
+          # 🔴 ملفُّ المتجر **بلا** `ProvisionedDevices`؛ ووجودُها يعني تطويراً
+          #    أو Ad Hoc. وهذا الفحصُ وحده يوفّر عشرين دقيقةَ أرشفةٍ تفشل آخرها.
+          if [ "$HAS_DEV" = "yes" ]; then
+            echo "::error title=iOS::ملفُّ التزويد يحمل أجهزةً مُزوَّدة ⇒ تطويرٌ/Ad Hoc لا App Store. أنشئ ملفَّ «App Store Connect»."
+            exit 1
+          fi
+          # 🪤 و`aps-environment` في الملفّ يجب أن تكون `production`: الصلاحيّاتُ
+          #    التي يُوقَّع بها يجب أن تكون مشمولةً بالملفّ، وملفُّ تطويرٍ يحمل
+          #    `development` ⇒ تصادمٌ عند التوقيع، أو إشعاراتٌ ميتةٌ في المتجر.
+          if [ "$PAPS" != "production" ]; then
+            echo "::error title=iOS::aps-environment في ملفّ التزويد «${PAPS:-غائبة}» لا «production» — فعّل Push Notifications على معرّف التطبيق ثمّ أعِد إصدار ملفّ المتجر."
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/taki.mobileprovision" \
+             "$HOME/Library/MobileDevice/Provisioning Profiles/${PUUID}.mobileprovision"
+          echo "profile=$PNAME" >> "$GITHUB_OUTPUT"
+          echo "✓ رُكّب ملفُّ التزويد باسم ${PUUID}.mobileprovision"
+
+      # ══════════════════════════════════════════════════════════════════════
+      # أرشيفٌ موقَّع — **توقيعٌ يدويٌّ صِرف**
+      # ══════════════════════════════════════════════════════════════════════
+      - name: أرشيفٌ موقَّع
+        id: archive
+        if: steps.install_cert.outcome == 'success'
         env:
-          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          TEAM:     ${{ secrets.APPLE_TEAM_ID }}
+          IDENTITY: ${{ steps.install_cert.outputs.identity }}
+          PROFILE:  ${{ steps.install_cert.outputs.profile }}
         run: |
           set -euo pipefail
+          set -o pipefail
           cd ios/App
-          xcodebuild -scheme App -configuration Release \
+          # 🔴 و`-allowProvisioningUpdates` **محذوفٌ عمداً**: هو أمرُ «اذهب إلى
+          #    بوّابة أبل وأنشئ ملفَّ تزويد»، ويحتاج جلسةَ حسابٍ أو
+          #    `-authenticationKey*`. والمنصّةُ النظيفة لا تملك جلسةً — وهذا
+          #    بعينه كان التناقض: ملفٌّ مركَّبٌ يدوياً مع أسلوبٍ تلقائيٍّ يتجاهله.
+          # 🪤 و`CODE_SIGN_IDENTITY` يُمرَّر صراحةً لأن المشروعَ يحمل
+          #    `"iPhone Developer"` على مستواه — هويّةُ تطوير.
+          # 🪤 و`App.Release.entitlements` لأن `aps-environment` في ملفّ
+          #    الصلاحيّات العاديّ `development`؛ واستبدالُها آلياً سلوكُ
+          #    التوقيع **التلقائيّ** وحده، وcodesign اليدويّ يضمّن الملفَّ حرفياً.
+          # 🪤 و`-project` صراحةً: الاستنتاجُ الضمنيّ يختار حاويةً قد تتغيّر
+          #    مع أيّ `cap sync` يولّد مساحةَ عمل.
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="$TEAM" \
-            -allowProvisioningUpdates archive
+            CODE_SIGN_IDENTITY="$IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE" \
+            CODE_SIGN_ENTITLEMENTS=App/App.Release.entitlements \
+            archive 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | tail -40
+          test -d "$RUNNER_TEMP/App.xcarchive" \
+            || { echo "::error title=iOS::انتهى xcodebuild بلا أرشيف"; exit 1; }
+          echo "✓ أُنشئ الأرشيف"
+
+      - name: تصديرُ .ipa
+        id: export
+        if: steps.archive.outcome == 'success'
+        env:
+          TEAM:    ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE: ${{ steps.install_cert.outputs.profile }}
+        run: |
+          set -euo pipefail
+          # 🔴 `signingStyle: manual` + خريطةُ `provisioningProfiles` هما ما
+          #    يجعل التصديرَ يستعمل الملفَّ المركَّب. وبلاهما — وهو الحالُ
+          #    القائم قبل اليوم — يحاول التصديرُ الاتّصالَ بأبل ويفشل.
+          # 🪤 و`method` قيمتُها `app-store-connect` (كانت `app-store` قبل
+          #    Xcode 15.3، والقديمةُ تُرفض بخطأِ مفتاحٍ غير صالح).
           cat > "$RUNNER_TEMP/export.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
-            <key>teamID</key><string>$TEAM</string>
-            <key>uploadSymbols</key><true/>
             <key>destination</key><string>export</string>
+            <key>teamID</key><string>${TEAM}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>stripSwiftSymbols</key><true/>
+            <key>uploadSymbols</key><true/>
+            <key>provisioningProfiles</key>
+            <dict><key>net.takisa.app</key><string>${PROFILE}</string></dict>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
-            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates
+            -exportPath "$RUNNER_TEMP/export" 2>&1 | tail -40
+          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' | head -1 || true)
+          [ -n "$IPA" ] || { echo "::error title=iOS::التصديرُ لم يُنتج ipa"; exit 1; }
+          echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
+          echo "✓ $IPA ($(du -h "$IPA" | cut -f1))"
+
+      - name: إثباتُ أن الحزمةَ موقَّعةٌ توقيعَ توزيع
+        id: verify_sig
+        if: steps.export.outcome == 'success'
+        env:
+          IPA: ${{ steps.export.outputs.ipa }}
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/unz"; mkdir -p "$RUNNER_TEMP/unz"
+          unzip -q "$IPA" -d "$RUNNER_TEMP/unz"
+          APP=$(find "$RUNNER_TEMP/unz/Payload" -maxdepth 1 -name '*.app' | head -1 || true)
+          [ -n "$APP" ] || { echo "::error title=iOS::لا Payload/*.app داخل الـipa"; exit 1; }
+          # 🔴 وجودُ `embedded.mobileprovision` هو الفرقُ الماديُّ الوحيد بين
+          #    حزمةٍ موقَّعةٍ وحزمةٍ لا تُثبَّت على جهازٍ أبداً.
+          test -f "$APP/embedded.mobileprovision" \
+            || { echo "::error title=iOS::لا embedded.mobileprovision — الحزمةُ غيرُ موقَّعة"; exit 1; }
+          codesign -dv --verbose=4 "$APP" > "$RUNNER_TEMP/cs.txt" 2>&1 || true
+          cat "$RUNNER_TEMP/cs.txt"
+          grep -qE '^Authority=(Apple|iPhone) Distribution' "$RUNNER_TEMP/cs.txt" \
+            || { echo "::error title=iOS::التوقيعُ ليس بهويّة توزيع"; exit 1; }
+          codesign --verify --strict "$APP" \
+            || { echo "::error title=iOS::التوقيعُ غيرُ سليم"; exit 1; }
+          # 🔴 والعقودُ القديمة تُقاس هنا — **داخل الحزمة الموقَّعة** لا داخل
+          #    `App.app` خامّاً كما كانت تُقاس (وهو ما جعل كلَّ جلسةٍ خضراء).
+          test -f "$APP/PrivacyInfo.xcprivacy" || { echo "::error title=iOS::لا بيانَ خصوصية"; exit 1; }
+          test -d "$APP/ar.lproj"              || { echo "::error title=iOS::لا ترجمةَ عربية"; exit 1; }
+          test -f "$APP/public/index.html"     || { echo "::error title=iOS::لا واجهةَ ويب"; exit 1; }
+          ls "$APP" | grep -q 'AppIcon'        || { echo "::error title=iOS::لا أيقونة"; exit 1; }
+          echo "✓ موقَّعةٌ توقيعَ توزيع · خصوصية · عربية · واجهة · أيقونة"
+
+      - name: الرفعُ إلى App Store Connect
+        id: upload_asc
+        if: steps.verify_sig.outcome == 'success'
+        env:
+          IPA:        ${{ steps.export.outputs.ipa }}
+          TEAM:       ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE:    ${{ steps.install_cert.outputs.profile }}
+          ASC_KEY:    ${{ secrets.APPLE_ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          # 🔴 والمفتاحُ يُقرأ من **مسارٍ على القرص** لا من وسيطٍ في السطر:
+          #    `altool --apiKey` تبحث عن `AuthKey_<ID>.p8` في `./private_keys`
+          #    أو `~/private_keys` أو `~/.private_keys` أو
+          #    `~/.appstoreconnect/private_keys`. وبلا الملفّ تردّ «Could not
+          #    find the private key» فيبدو المفتاحُ خاطئاً وهو سليم.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          P8="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY" | base64 -d > "$P8"; chmod 600 "$P8"
+          echo "مفتاحُ App Store Connect: $(wc -c < "$P8") بايت"   # الطولُ لا القيمة
+
+          # ── ① تحقّقٌ أوّلاً: يكشف أخطاءَ البيانات الوصفية في دقيقةٍ بدل أن
+          #       تعود بريداً بعد ساعة. و`--validate-app` غيرُ مُهمَلة.
+          xcrun altool --validate-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER" \
+            --output-format json | tee "$RUNNER_TEMP/validate.json"
+          # 🪤 و`altool` قد تخرج بصفرٍ وفي جسمها `product-errors` — الحالةُ
+          #    وحدها لا تكفي، يُقرأ الجسم.
+          if grep -q '"product-errors"' "$RUNNER_TEMP/validate.json"; then
+            echo "::error title=iOS::التحقّقُ ردَّ product-errors — لا تُرفع"; exit 1
+          fi
+
+          # ── ② الرفعُ نفسُه: `xcodebuild -exportArchive` بـ`destination=upload`
+          #       🔴 ولا `altool --upload-app`: أبل تقول عنها حرفياً
+          #          «[DEPRECATED use --upload-package]»، و`--upload-package`
+          #          تشترط `--apple-id` وهو **رقمُ التطبيق في App Store
+          #          Connect** — سرٌّ ثامنٌ لا نحتاجه. ومسارُ xcodebuild
+          #          (منذ Xcode 13) يرفع بمفتاح App Store Connect نفسِه،
+          #          بلا رقمٍ إضافيّ وبلا أداةٍ مُهمَلة.
+          cat > "$RUNNER_TEMP/upload.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>uploadSymbols</key><true/>
+            <key>provisioningProfiles</key>
+            <dict><key>net.takisa.app</key><string>${PROFILE}</string></dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/upload.plist" \
+            -exportPath "$RUNNER_TEMP/upload-out" \
+            -authenticationKeyPath "$P8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER" 2>&1 \
+            | tee "$RUNNER_TEMP/upload.log" | tail -40
+          # 🪤 والحكمُ على الرفع **بحالة الخروج** (و`pipefail` مضبوطةٌ أعلاه
+          #    فالأنبوبُ لا يُخفيها)، لا بـ`grep` على كلمةِ «error» في السجلّ:
+          #    سجلَّ xcodebuild ناجحاً يحمل تلك الكلمةَ في سياقاتٍ بريئة
+          #    («0 errors»)، فقاعدةٌ كهذه تصرخ كذباً — وقاعدةٌ تصرخ كذباً
+          #    أسوأُ من غيابها. و`عقدُ الإصدار` في آخر السير يقرأ حالةَ هذه
+          #    الخطوة بعينها، فلا تمرّ نشرةٌ لم تُرفع.
+          echo "✓ رُفعت — تظهر في TestFlight بعد معالجة أبل (دقائق إلى ساعة)"
+
+      - name: مسحُ مفتاح أبل
+        if: always()
+        run: rm -rf "$HOME/.appstoreconnect/private_keys" || true
 
       - name: بناءُ تحقّقٍ بلا توقيع
+        id: unsigned
         if: steps.sign.outputs.ok != 'true' || !(inputs.release || github.event_name == 'push')
         run: |
           set -euo pipefail
@@ -151,9 +398,6 @@ jobs:
           #    الصلاحيّات لا عن التوقيع — ويُضلّل تماماً.
           # 🪤 و`-skipPackagePluginValidation` لأن Capacitor 8 يستعمل SPM،
           #    والمنصّةُ النظيفة تسأل عن الثقة في الحزم تفاعلياً وتعلق.
-          # 🪤 والمخرجاتُ تُحفظ: سجلّاتُ GitHub تحتاج صلاحيةَ مدير (قِيس: 403
-          #    بلا توكن)، فالخطوةُ التالية تُخرج آخرَ الأسطر كـ`::error::`
-          #    — والتنبيهاتُ تُقرأ من واجهة البرمجة **بلا أيّ توكن**.
           set -o pipefail
           xcodebuild -scheme App -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -164,8 +408,9 @@ jobs:
             build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | tail -40
 
       # ── عقودٌ تُفحص في الناتج ───────────────────────────────────────────
-      # 🪤 وسجلُّ الفشل يُطبع هنا: لا يمكن قراءةُ سجلّات GitHub بلا توكن،
-      #    فآخرُ خمسين سطراً في مخرجات السير نفسِها هي الدليلُ الوحيد.
+      # 🪤 وسجلُّ الفشل يُطبع هنا: لا يمكن قراءةُ سجلّات GitHub بلا توكن
+      #    (قِيس: 403)، فآخرُ الأسطر في مخرجات السير نفسِها هي الدليلُ
+      #    الوحيد — والتنبيهاتُ `::error::` تُقرأ من واجهة البرمجة بلا توكن.
       - name: أثرُ الفشل (إن وقع)
         if: failure()
         run: |
@@ -176,9 +421,6 @@ jobs:
           if [ -f "$LOG" ]; then
             echo "── أسطرُ الخطأ:"
             grep -nE "error:|error$|BUILD FAILED|fatal|Missing|unable to|cannot" "$LOG" | tail -25 | tee /tmp/errs.txt
-            # 🔴 كلُّ سطرٍ يُخرج كتنبيهِ خطأ: التنبيهاتُ تُقرأ من
-            #    /check-runs/<id>/annotations **بلا توكن** على مستودعٍ عامّ،
-            #    والسجلُّ نفسُه لا يُقرأ إلا بصلاحية مدير.
             while IFS= read -r line; do
               clean=$(printf '%s' "$line" | tr '\n\r' '  ' | cut -c1-300)
               echo "::error title=iOS::${clean}"
@@ -187,20 +429,17 @@ jobs:
             echo "::error title=iOS::لا سجلَّ بناءٍ — الفشلُ قبل xcodebuild"
           fi
 
-      - name: التحقّقُ من الحزمة
+      # 🔴 ويُفحص **بناءُ التحقّق وحده** هنا. والحزمةُ الموقَّعة لها خطوتُها
+      #    (`verify_sig`) — وجمعُهما في فحصٍ واحدٍ يقبل `App.app` خامّاً هو
+      #    ما جعل سبعَ جلساتٍ خضراء بلا توقيعٍ ولا ملفّ.
+      - name: التحقّقُ من بناء التحقّق (غيرِ الموقَّع)
+        if: steps.unsigned.outcome == 'success'
         run: |
           set -euo pipefail
-          APP=$(find "$RUNNER_TEMP" -name 'App.app' -maxdepth 6 | head -1 || true)
-          IPA=$(find "$RUNNER_TEMP/export" -name '*.ipa' 2>/dev/null | head -1 || true)
-          if [ -n "$IPA" ]; then
-            echo "✓ الحزمة: $IPA ($(du -h "$IPA" | cut -f1))"
-            unzip -l "$IPA" > /tmp/l.txt
-          elif [ -n "$APP" ]; then
-            echo "✓ التطبيقُ المُجمَّع: $APP"
-            (cd "$(dirname "$APP")" && zip -qr /tmp/a.zip App.app && unzip -l /tmp/a.zip > /tmp/l.txt)
-          else
-            echo "❌ لم يُنتج شيء"; exit 1
-          fi
+          APP=$(find "$RUNNER_TEMP/dd" -maxdepth 6 -name 'App.app' | head -1 || true)
+          [ -n "$APP" ] || { echo "❌ لم يُنتج شيء"; exit 1; }
+          echo "✓ التطبيقُ المُجمَّع: $APP"
+          (cd "$(dirname "$APP")" && zip -qr /tmp/a.zip App.app && unzip -l /tmp/a.zip > /tmp/l.txt)
           # 🔴 بيانُ الخصوصية: غيابُه رفضٌ آليٌّ من App Store Connect.
           grep -q "PrivacyInfo.xcprivacy" /tmp/l.txt || { echo "❌ بيانُ الخصوصية ليس في الحزمة"; exit 1; }
           grep -q "public/index.html"     /tmp/l.txt || { echo "❌ واجهةُ الويب ليست في الحزمة"; exit 1; }
@@ -208,11 +447,56 @@ jobs:
           grep -qE "AppIcon"              /tmp/l.txt || { echo "❌ الأيقونةُ ليست في الحزمة"; exit 1; }
           echo "✓ بيانُ الخصوصية · الواجهة · العربية · الأيقونة — كلُّها داخل الحزمة"
 
-      - uses: actions/upload-artifact@v4
+      # 🔴 ولا `ignore` على مسارِ إصدار: هي بعينها التي جعلت جلسةً خضراء
+      #    تُنتج `artifacts total=0` فيُقرأ الأخضرُ على أنه نشرةٌ جاهزة.
+      - name: أثرُ الإصدار (.ipa)
+        uses: actions/upload-artifact@v4
+        if: steps.verify_sig.outcome == 'success'
         with:
-          name: taki-ios
-          path: |
-            ${{ runner.temp }}/export/*.ipa
-            ${{ runner.temp }}/App.xcarchive
-          if-no-files-found: ignore
+          name: taki-ios-release
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
           retention-days: 30
+
+      - name: أثرُ بناء التحقّق
+        uses: actions/upload-artifact@v4
+        if: steps.unsigned.outcome == 'success'
+        with:
+          name: taki-ios-verify
+          path: ${{ runner.temp }}/dd/Build/Products/Release-iphoneos/App.app
+          if-no-files-found: error
+          retention-days: 7
+
+      # ═══════════════════════════════════════════════════════════════════════
+      # 🔴 عقدُ الإصدار: «السيرُ أخضر» لا يعني «ملفٌّ وصل أبل».
+      #    قِيس: سبعُ جلساتٍ خضراء وصفرُ ملفّ. والسببُ بنيويّ لا سهو —
+      #    الخطواتُ **تُخطَّى** ولا تفشل، و`skipped` لا يُلوّن السيرَ أحمر،
+      #    ومن يقرأ اللوحةَ يصدّق الأخضر. فالعقدُ يُقرأ من حالات الخطوات.
+      # 🪤 و`if: always()` إلزاميّ: حارسٌ يُخطَّى ليس حارساً. (في الجلسة
+      #    42312941466 خُطّيت كلُّ خطوةٍ بعد فشل البناء — فحارسٌ بلا
+      #    `always()` كان سيُخطّى في الحالة التي يُراد له فيها أن يصرخ.)
+      # 🪤 ويقرأ `outcome` لا `conclusion`: الأوّلُ يقول «skipped» صريحةً،
+      #    والثاني يُسوّي `skipped` بالنجاح في تعبيرات كثيرة.
+      # 🪤 ومعرّفٌ مكتوبٌ خطأً يُعطي سلسلةً فارغة — وهي **ليست** «success»،
+      #    فالعقدُ يفشل مغلقاً. و`scripts/check-release-contract.js` يفحص
+      #    أن كلَّ معرّفٍ يقرؤه العقدُ معلَنٌ فعلاً في نفس المهمّة.
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: عقدُ الإصدار — أخضرُ لا يعني قابلاً للرفع
+        if: always()
+        env:
+          PLATFORM:     آيفون
+          INTENT_INPUT: ${{ inputs.release }}
+          EVENT:        ${{ github.event_name }}
+          SIGN_OK:      ${{ steps.sign.outputs.ok }}
+          SIGN_MISSING: ${{ steps.sign.outputs.missing }}
+          # 🪤 كلُّ زوجٍ «معرّف=حالة». ومعرّفٌ غيرُ موجودٍ يُعطي حالةً فارغة،
+          #    وهي ليست «success» — فالعقدُ يفشل مغلقاً لا مفتوحاً.
+          CONTRACT_STEPS: >-
+            install_cert=${{ steps.install_cert.outcome }}
+            archive=${{ steps.archive.outcome }}
+            export=${{ steps.export.outcome }}
+            verify_sig=${{ steps.verify_sig.outcome }}
+            upload_asc=${{ steps.upload_asc.outcome }}
+          CONTRACT_ARTIFACT: ${{ runner.temp }}/export
+          CONTRACT_ARTIFACT_GLOB: '*.ipa'
+        run: bash .github/release-contract.sh

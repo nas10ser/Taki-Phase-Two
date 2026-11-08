@@ -10,6 +10,7 @@ import { userRepository } from '../repositories/userRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
+import { blockService } from '../services/blockService';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { notifySetupGapsChanged } from '../components/seller/SetupPath';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
@@ -188,15 +189,41 @@ const StoreDetails: React.FC = () => {
         }
     };
 
+    /**
+     * v15.80 — الحجبُ يَحجب. وكان هذا الزرُّ يكتب `users.blocked_merchants`
+     * وحدها: مصفوفةٌ تقرؤها دوالُّ التصفية، **ولا تقرؤها أيُّ دالّةٍ تكتب
+     * رسالة** ⇒ المتجرُ «المحظور» يبقى يُراسلك ويصلك إشعارُه. والمصدرُ الآن
+     * `user_blocks` ويُفرَض بمشغّلٍ على جدول الرسائل نفسِه.
+     * 🪤 ونداءُ `toggleBlockMerchant` يبقى **بعد** نجاح القاعدة: هو من يُحدّث
+     *    حالةَ الواجهة فتُصفّى الخلاصةُ فوراً بلا إعادة تحميل.
+     * 🪤 ولا يُخبر المتجرُ بالحجب — لا إشعارٌ ولا وسم — وإلّا صار الحجبُ
+     *    دعوةً للانتقام.
+     */
     const toggleBlock = async () => {
+        if (!user?.id) {
+            customAlert(isRTL ? 'سجّل الدخول أولاً لحظر متجر.' : 'Sign in first to block a store.');
+            return;
+        }
         if (!isBlocked) {
             const ok = await customConfirm(isRTL
-                ? 'حظر هذا المتجر؟ لن تظهر لك عروضه في الرئيسية ولا في «حولي» ولن تصلك أي تنبيهات منه — حتى لو طابقت تنبيهك الذكي. يمكنك إلغاء الحظر في أي وقت.'
-                : 'Block this store? Its deals will be hidden from Home and Nearby and you will get no alerts from it — even if they match your smart alert. You can unblock anytime.');
+                ? 'حظر هذا المتجر؟ لن تظهر لك عروضه في الرئيسية ولا في «حولي»، ولن تصلك أي تنبيهات منه — حتى لو طابقت تنبيهك الذكي — ولن تتبادلا رسائل على المحادثة.\n\nولا يُلغى طلبٌ قائم: على طلبٍ جارٍ مدفوعٍ أو توصيلٍ تبقى رسائلُ تنسيقٍ محدودة حتى يُغلق الطلب، وإن لم ترد الطلبَ فألغِه من «طلباتي».\n\nولا يُخبر المتجرُ بذلك، ويمكنك إلغاء الحظر في أي وقت.'
+                : 'Block this store? Its deals disappear from Home and Nearby, you get no alerts from it — even ones matching your smart alert — and neither of you can message the other.\n\nAn existing order is not cancelled: on an open paid or delivery order a limited number of coordination messages still get through until the order closes. Cancel the order from My Orders if you no longer want it.\n\nThe store is not told, and you can unblock anytime.');
             if (!ok) return;
+            const r = await blockService.block(user.id, id);
+            if (!r.ok) {
+                customAlert('⚠️ ' + (isRTL ? 'تعذّر الحظر — أعد المحاولة.' : 'Could not block — try again.'));
+                return;
+            }
             await toggleBlockMerchant(id);
-            customAlert(isRTL ? '🚫 تم حظر المتجر. لن تظهر لك عروضه ولن تصلك تنبيهاته.' : '🚫 Store blocked. Its deals and alerts are now hidden from you.');
+            customAlert(isRTL
+                ? '🚫 تم حظر المتجر. لن تظهر لك عروضه ولا تنبيهاته، ولن تتبادلا رسائل.'
+                : '🚫 Store blocked. Its deals and alerts are hidden, and messages are closed.');
         } else {
+            const r = await blockService.unblock(user.id, id);
+            if (!r.ok) {
+                customAlert('⚠️ ' + (isRTL ? 'تعذّر إلغاء الحظر — أعد المحاولة.' : 'Could not unblock — try again.'));
+                return;
+            }
             await toggleBlockMerchant(id);
             customAlert(isRTL ? '✅ تم إلغاء حظر المتجر.' : '✅ Store unblocked.');
         }
@@ -812,16 +839,21 @@ const StoreDetails: React.FC = () => {
                                 {isFollowed ? (isRTL ? 'متابَع' : 'Following') : (isRTL ? 'متابعة' : 'Follow')}
                             </button>
 
+                            {/* v15.80 — 🪤 أيقونةٌ بلا نصٍّ ظاهر لا يجدها أحد: كان هذا
+                                زرَّ الحظر الوحيد في الموقع كلِّه، و`aria-label` لا يُقرأ
+                                بالعين. وقاعدةُ آبل ١٫٢ تُقاس على ما يجده المستخدم. */}
                             <button onClick={toggleBlock}
                                 aria-label={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر' : 'Block store')}
-                                title={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر — إخفاء عروضه وتنبيهاته' : 'Block store — hide its deals & alerts')}
+                                title={isBlocked ? (isRTL ? 'إلغاء حظر المتجر' : 'Unblock store') : (isRTL ? 'حظر المتجر — إخفاء عروضه وتنبيهاته وإغلاق المحادثة' : 'Block store — hide its deals & alerts and close the chat')}
                                 style={{
-                                    width: 48, minWidth: 48, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                                     background: isBlocked ? 'rgba(239,68,68,0.28)' : 'rgba(255,255,255,0.1)',
                                     color: '#fff', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 14,
-                                    fontSize: '1.05rem', cursor: 'pointer', transition: 'all 0.2s ease', WebkitTapHighlightColor: 'transparent',
+                                    padding: '12px 10px', fontSize: '0.86rem', fontWeight: 900, whiteSpace: 'nowrap',
+                                    cursor: 'pointer', transition: 'all 0.2s ease', WebkitTapHighlightColor: 'transparent',
                                 }}>
-                                🚫
+                                <span style={{ fontSize: '1rem' }}>🚫</span>
+                                {isBlocked ? (isRTL ? 'محظور' : 'Blocked') : (isRTL ? 'حظر' : 'Block')}
                             </button>
 
                             {effectiveUserType === 'buyer' && (

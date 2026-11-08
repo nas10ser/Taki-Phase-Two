@@ -37,6 +37,12 @@ if ((globalThis as any).Capacitor?.isNativePlatform?.()) {
             document.dispatchEvent(esc);
             return document.querySelector('[data-taki-modal="open"]') !== null;
         },
+        // عودةُ المصادقة على المخطَّط المخصَّص (`net.takisa.app://auth/callback`).
+        // 🪤 وتُحمَّل الوحدةُ **عند الحاجة** لا ساكنةً: الويبُ لا يحتاجها إطلاقاً.
+        onAuthReturn: (frag) => {
+            void import('./services/nativeAuthReturn')
+                .then(m => m.consumeNativeAuthReturn(frag));
+        },
     }));
 }
 

@@ -11,6 +11,7 @@ import { waLink } from '../../utils/helpers';
 import {
     AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     AdmToolbar, AdmSearch, AdmSelect, admNum,
+    admCount, USERS, SHOWN_F, ENTRIES, WINNERS,
 } from '../../components/admin/ui';
 import { ExportButton } from '../../components/admin/ExportButton';
 import type { CsvColumn } from '../../utils/csvExport';
@@ -234,7 +235,7 @@ const AdminContests: React.FC = () => {
             if (!ok) return;
         }
         const r = await contestRepository.announce(c);
-        if (r.success) await customAlert(`📣 تم إرسال إشعار المسابقة داخل الموقع (${(r.notified ?? 0).toLocaleString('ar-SA')} مستخدم).`);
+        if (r.success) await customAlert(`📣 تم إرسال إشعار المسابقة داخل الموقع (${admCount(Number(r.notified ?? 0), USERS)}).`);
         else await customAlert('⚠️ تعذّر إرسال الإشعار: ' + (r.error || ''));
     };
 
@@ -831,8 +832,8 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                     : 'الدرجة تُحتسب آلياً من الإجابات الصحيحة التي حدّدتَها في الأسئلة.'}
                 badge={{
                     text: entriesTotal > entries.length
-                        ? `${admNum(entries.length)} معروضة من ${admNum(entriesTotal)}`
-                        : `${admNum(entriesTotal)} مشاركة`,
+                        ? `${admCount(entries.length, SHOWN_F)} من ${admNum(entriesTotal)}`
+                        : admCount(entriesTotal, ENTRIES),
                     tone: entriesTotal > entries.length ? 'warn' : 'neutral',
                 }}
                 action={entries.length > 0 ? (
@@ -978,7 +979,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                         notifiedRef.current = null;
                         if (n === null) return;
                         await customAlert(n > 0
-                            ? `📣 وصل إشعارٌ في التطبيق إلى ${n} فائز${n > 2 ? 'اً' : ''}. تواصل معهم لتسليم الجائزة، ثم علّمها «سُلِّمت».`
+                            ? `📣 وصل إشعارٌ في التطبيق إلى ${admCount(n, WINNERS, true)}. تواصل معهم لتسليم الجائزة، ثم علّمها «سُلِّمت».`
                             : 'ℹ️ لا حساب مرتبط بجوال أيٍّ من الفائزين — أبلغهم بالاتصال، ثم علّم الجائزة «سُلِّمت».');
                     }}
                 />

@@ -3977,15 +3977,15 @@ if (supabase && bot) {
     async function drainOutbox() {
         if (outboxBusy) return;            // never overlap polls
         outboxBusy = true;
-        // When the admin disables the bot we still advance the outbox cursor but send
-        // NOTHING — so the kill-switch silences notifications too, with no stale flood
-        // when it's switched back on (request 2).
+        // 🔴 v15.80 — السحبُ كان يسبق سؤالَ المفتاح، و`bot_pull_outbox` تختم كلَّ صفٍّ تلتقطه بلا شرط ⇒ الإنذاراتُ تُرمى لا تُؤجَّل (٣٣ أُتلفت، ٢٨ بلا قناة).
+        //    الآن لا يُسحب الصندوقُ والقناةُ مطفأة، فتبقى الصفوفُ وتُسلَّم عند التشغيل (نافذةُ الإعادة يومان). الشرحُ في JEDDAH_v15_80_alert_fanout.sql.
         const enabled = await botEnabled();
+        if (!enabled) { outboxBusy = false; return; }
         try {
             let batch;
             do {
                 batch = await rpc('bot_pull_outbox', { p_limit: 25 });
-                if (enabled && Array.isArray(batch) && batch.length) {
+                if (Array.isArray(batch) && batch.length) {
                     for (const n of batch) { try { await deliverNotification(n); } catch(e) { console.warn('deliver:', e.message); } }
                 }
             } while (Array.isArray(batch) && batch.length === 25);   // drain a backlog fast

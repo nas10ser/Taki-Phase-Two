@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+import { arCount } from '../../utils/arPlural';
+import type { ArForms } from '../../utils/arPlural';
+import { VISITORS, BOOKINGS } from './ui';
 
 /**
  * SiteTrafficPanel — «من أين يأتي الزوّار؟» (v14.80)
@@ -16,6 +19,10 @@ import { supabase } from '../../services/supabaseClient';
 type Traffic = any;
 
 const arNum = (n: any) => (Number(n) || 0).toLocaleString('ar-SA');
+
+// 🪤 أرقامُ هذه البطاقة هنديّة (`ar-SA`) خلافاً لبقيّة اللوحة، فيُمرَّر
+//    `arNum` إلى `arCount` بدل `admCount` — فلا يتغيّر شكلُ الرقم مع إصلاح النحو.
+const arN = (n: number, f: ArForms, g = false) => arCount(n, f, g, arNum);
 const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
 /** أسماء القنوات بالعربية — وما لا نعرفه يظهر كما هو بدل أن يُخفى. */
@@ -45,7 +52,7 @@ const Bars: React.FC<{ rows: Array<{ d: string; n: number; booked: number }> }> 
                 const n = Number(r.n) || 0;
                 const b = Number(r.booked) || 0;
                 return (
-                    <div key={r.d} title={`${r.d} — ${arNum(n)} زائر · ${arNum(b)} حجز`}
+                    <div key={r.d} title={`${r.d} — ${arN(n, VISITORS)} · ${arN(b, BOOKINGS)}`}
                          style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%', minWidth: 4 }}>
                         <div style={{ height: `${(n / max) * 100}%`, background: 'var(--primary)', borderRadius: '3px 3px 0 0', position: 'relative' }}>
                             {b > 0 && (
@@ -170,7 +177,7 @@ const SiteTrafficPanel: React.FC = () => {
                         {channels.map((c: any) => {
                             const m = chLabel(c.channel);
                             return <Row key={c.channel} label={`${m.emoji} ${m.ar}`} n={Number(c.n)} total={sessions}
-                                        sub={Number(c.booked) > 0 ? `${arNum(c.booked)} حجز` : undefined} />;
+                                        sub={Number(c.booked) > 0 ? arN(Number(c.booked), BOOKINGS) : undefined} />;
                         })}
                     </Card>
 
@@ -191,7 +198,7 @@ const SiteTrafficPanel: React.FC = () => {
                             {campaigns.map((c: any, i: number) => (
                                 <Row key={i} label={[c.source, c.medium, c.campaign].filter(Boolean).join(' · ')}
                                      n={Number(c.n)} total={sessions}
-                                     sub={Number(c.booked) > 0 ? `${arNum(c.booked)} حجز` : 'بلا حجز'} />
+                                     sub={Number(c.booked) > 0 ? arN(Number(c.booked), BOOKINGS) : 'بلا حجز'} />
                             ))}
                         </Card>
                     )}

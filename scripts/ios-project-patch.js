@@ -171,25 +171,63 @@ if (!new RegExp(`IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN};`).test(s)) {
     }
 }
 
-if (s === before) { console.log('ℹ️ مشروعُ Xcode مسجَّلٌ سلفاً — لا تغيير.'); process.exit(0); }
-fs.writeFileSync(PBX, s);
+// 🔴 **ولا خروجَ قبل التحقّق.** كان هنا:
+//      if (s === before) { console.log('…مسجَّلٌ سلفاً'); process.exit(0); }
+//    قبل كتلة العقود السبعة — أي أن المشروعَ لو وُجد مطابقاً **خرج أخضرَ
+//    بلا فحصِ** أن `PrivacyInfo` والصلاحيّاتَ والترجماتِ وiOS 15 و
+//    `TakiIapPlugin.swift` مسجَّلةٌ فعلاً. وهي بعينها الرفضياتُ الصامتةُ
+//    التي كُتب هذا السكربتُ لمنعها. وكان العيبُ **مُقنَّعاً** لأن السطرَين
+//    ١٣٩–١٤٠ يُعيدان كتابةَ رقم الإصدار في كلّ تشغيلٍ فيكون `s !== before`
+//    غالباً — أي حارسٌ يعمل بالحظّ.
+const changed = s !== before;
+if (changed) fs.writeFileSync(PBX, s);
 
 // ── التحقّق: كلُّ عقدٍ يُفحص في الناتج، لا في النيّة ────────────────────────
 const out = fs.readFileSync(PBX, 'utf8');
 const must = [
-    ['PrivacyInfo.xcprivacy in Resources', 'بيانُ الخصوصية في مرحلة الموارد'],
     ['CODE_SIGN_ENTITLEMENTS = App/App.entitlements;', 'الصلاحيات'],
-    ['InfoPlist.strings in Resources', 'الترجماتُ في مرحلة الموارد'],
     [`MARKETING_VERSION = ${ver};`, 'الإصدارُ التسويقيّ'],
     ['isa = PBXVariantGroup', 'مجموعةُ التنويع'],
     ['IPHONEOS_DEPLOYMENT_TARGET = 15.0;', 'الحدُّ الأدنى iOS 15'],
-    ['TakiIapPlugin.swift in Sources', 'إضافةُ الشراء في مرحلة Sources'],
 ];
 let bad = 0;
 for (const [needle, label] of must) {
     if (!out.includes(needle)) { console.error(`❌ ${label} لم يُسجَّل`); bad = 1; }
 }
+
+// 🔴 **والعضويّةُ في المرحلة تُقاس داخل المرحلة، لا في الملفّ كلِّه.** جُرِّب
+//    هذا مكسوراً فمرّ كاذباً: حُذف سطرُ `PrivacyInfo.xcprivacy in Resources`
+//    من **مرحلة الموارد** فبقي السطرُ التصريحيُّ (`PBXBuildFile`) يحمل نفسَ
+//    التعليق حرفياً، فوجدَه `includes` وأُعلن النجاح — والحزمةُ تُبنى بلا
+//    بيانِ خصوصيةٍ فتردّها أبل آلياً. وهو نفسُ فخّ «التصريحُ ليس النداء»
+//    الذي دُفع ثمنُه في `finalizePurchase`.
+const inPhase = (phaseIsa, endMark, needle) => {
+    const i = out.indexOf(`isa = ${phaseIsa}`);
+    const j = out.indexOf(endMark);
+    return i >= 0 && j > i && out.slice(i, j).includes(needle);
+};
+for (const [phase, endMark, needle, label] of [
+    ['PBXResourcesBuildPhase', '/* End PBXResourcesBuildPhase section */',
+     'PrivacyInfo.xcprivacy in Resources', 'بيانُ الخصوصية في مرحلة الموارد'],
+    ['PBXResourcesBuildPhase', '/* End PBXResourcesBuildPhase section */',
+     'InfoPlist.strings in Resources', 'الترجماتُ في مرحلة الموارد'],
+    ['PBXSourcesBuildPhase', '/* End PBXSourcesBuildPhase section */',
+     'TakiIapPlugin.swift in Sources', 'إضافةُ الشراء في مرحلة Sources'],
+]) {
+    if (!inPhase(phase, endMark, needle)) {
+        console.error(`❌ ${label} — موجودٌ كتصريحٍ وغيرُ مُدرَجٍ في المرحلة نفسِها، أو غائبٌ تماماً.`);
+        bad = 1;
+    }
+}
 if (!/knownRegions = \([^)]*\bar\b/s.test(out)) { console.error('❌ ar غائبةٌ عن knownRegions'); bad = 1; }
+// وملفُّ صلاحيّات الإصدار موجود: الأرشفةُ تُمرّره في سطر الأمر، فملفٌّ
+// غائبٌ يُفشل الأرشيفَ بعد عشرين دقيقةً بدل أن يُكشف هنا في ثانية.
+if (!fs.existsSync(path.join(ROOT, 'ios/App/App/App.Release.entitlements'))) {
+    console.error('❌ App.Release.entitlements غائب — وهو ما يُوقَّع به أرشيفُ المتجر '
+        + '(aps-environment = production). التوقيعُ اليدويّ يضمّن الملفَّ حرفياً.');
+    bad = 1;
+}
 if (bad) process.exit(1);
 
+if (!changed) { console.log('ℹ️ مشروعُ Xcode مسجَّلٌ سلفاً — والعقودُ السبعةُ مفحوصةٌ كلُّها.'); process.exit(0); }
 console.log('✅ مشروعُ Xcode:', changes.join(' · '));

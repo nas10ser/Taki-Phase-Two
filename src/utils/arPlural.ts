@@ -28,17 +28,33 @@ export interface ArForms {
 }
 
 /**
+ * صياغةُ الرقم نفسه. الافتراضُ `String` — أي الشكلُ الذي كانت عليه الدالّة
+ * قبل v15.81 بالحرف، فلا يتغيّر مخرجٌ قائمٌ واحد بإضافة المُعامل.
+ */
+export type ArNumFmt = (x: number) => string;
+
+/**
  * يُرجع العدد مصوغاً. `genitive` للمواضع بعد حرف جرّ («خلال ساعتين»).
  * 🪤 الكسور تُعامَل معاملة ما فوق العشرة («١٫٥ ساعة») — وهي واردة فعلاً:
  *    ومهلة الحجز تقبل الكسور فوق الأرضيّة (١٫٥ · ٢٫٥).
+ *
+ * 🪤 و`fmt` أُضيف لسببٍ قِيس، لا للتوسيع: لوحةُ الإدارة توحّد شكلَ الرقم على
+ *    `admNum` (فواصلُ الآلاف وأرقامٌ لاتينية). فلو استُبدلت عباراتُها المصنوعة
+ *    بيدها بـ`arCount` بلا هذا المُعامل، لسقطت فاصلةُ الآلاف فوق ٩٩٩ بصمت —
+ *    وهو **سببُ** كتابةِ تلك العبارات بالأيدي أصلاً. فالمُعاملُ يُسبق التحويلَ،
+ *    وإلّا صار الإصلاحُ يُنتج عيباً ثانياً أهدأ من الأوّل.
+ * 🪤 ولا يُمسّ الرقمُ في فرعَي ١ و٢: الصيغتان لا تحويان رقماً إطلاقاً
+ *    («يوم واحد» · «يومان»)، فتمريرُ `fmt` هناك لا معنى له.
  */
-export const arCount = (n: number, f: ArForms, genitive = false): string => {
-    if (!Number.isFinite(n)) return `${n} ${f.many}`;
-    if (!Number.isInteger(n)) return `${n} ${f.many}`;
+export const arCount = (
+    n: number, f: ArForms, genitive = false, fmt: ArNumFmt = String,
+): string => {
+    if (!Number.isFinite(n)) return `${fmt(n)} ${f.many}`;
+    if (!Number.isInteger(n)) return `${fmt(n)} ${f.many}`;
     if (n === 1) return f.one;
     if (n === 2) return genitive ? (f.twoGen || f.two) : f.two;
-    if (n >= 3 && n <= 10) return `${n} ${f.few}`;
-    return `${n} ${f.many}`;
+    if (n >= 3 && n <= 10) return `${fmt(n)} ${f.few}`;
+    return `${fmt(n)} ${f.many}`;
 };
 
 export const HOURS: ArForms = {

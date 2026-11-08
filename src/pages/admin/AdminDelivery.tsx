@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
 import { AdmError, AdmSkeleton, AdmEmpty, admNum } from '../../components/admin/ui';
+import { admCount, MINUTES, SUSPENDED_STORES } from '../../components/admin/ui';
 
 /* 🪤 كانت `ar-SA` تطبع ١٢٬٣٤٥٫٥ بينما عدد الطلبات يُطبع 12345 — بطاقتان
    متجاورتان بخطّين رقميّين. `admNum` هو شكل اللوحة الواحد. */
@@ -165,7 +166,7 @@ const AdminDelivery: React.FC = () => {
                 <Stat label="طلبات توصيل" value={dlv} hint={`${share}% من كل الطلبات`} />
                 <Stat label="طلبات استلام" value={pick} />
                 <Stat label="متاجر مفعّلة" value={ov?.stores_enabled ?? '—'}
-                      hint={Number(ov?.stores_blocked) > 0 ? `${ov.stores_blocked} موقوف إدارياً` : undefined} />
+                      hint={Number(ov?.stores_blocked) > 0 ? admCount(Number(ov?.stores_blocked), SUSPENDED_STORES) : undefined} />
                 <Stat label="نطاقات مرسومة" value={ov?.zones ?? '—'} />
                 <Stat label="رسوم التوصيل المحصّلة" value={`${money(ov?.fees_collected)} ر.س`}
                       hint="تذهب للتاجر لا للمنصّة" />
@@ -196,7 +197,7 @@ const AdminDelivery: React.FC = () => {
                                         <div className="font-black text-sm">{s.store_name}</div>
                                         <div className="text-[0.68rem] text-[var(--text-secondary)] mt-0.5">
                                             رسوم {money(s.delivery_fee)} ر.س · حدّ أدنى {money(s.delivery_min_order)} ر.س
-                                            {s.delivery_eta_min ? ` · ${s.delivery_eta_min} دقيقة` : ''}
+                                            {s.delivery_eta_min ? ` · ${admCount(Number(s.delivery_eta_min), MINUTES)}` : ''}
                                             {' · '}{s.zones} نطاق · {s.orders} طلب
                                         </div>
                                         {s.delivery_blocked_by_admin && (

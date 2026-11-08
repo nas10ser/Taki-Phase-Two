@@ -3,6 +3,7 @@ import Navbar from '../components/Navbar';
 import BottomNav from '../components/BottomNav';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import DealCard from '../components/DealCard';
+import EmptyDeals, { BASELINE_NO_DEALS } from '../components/EmptyDeals';
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, getCity, CATEGORIES, GENDERS, geoName } from '../data/mock';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -538,33 +539,25 @@ const Home: React.FC = () => {
                         <div key={`sk-${i}`} className="taki-skeleton" style={{ height: 440 }} />
                     ))
                 ) : (
-                    <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '80px 20px' }}>
-                        {/* v14.63 — لماذا الشبكة فارغة؟ ثلاث حالات لا واحدة. الجملة
-                            القديمة كانت تتّهم «بحثاً» لم يحدث أصلاً (اختار قسماً أو
-                            مدينة)، وبلا أي زرٍّ يُعيده إلى حالٍ يرى فيها شيئاً. */}
-                        <div style={{ fontSize: '3rem', marginBottom: 15 }}>{searchQuery.trim() ? '🔍' : '📭'}</div>
-                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
-                            {searchQuery.trim()
-                                ? (isRTL ? 'لم نجد عروضاً تطابق بحثك' : 'No deals match your search')
-                                : (activeCategory !== 'all' || activeGender !== 'all' || explicitLocationFilter)
-                                    ? (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')
-                                    : (isRTL ? 'لا توجد عروض متاحة الآن — عد قريباً' : 'No deals available right now — check back soon')}
-                        </div>
-                        {(searchQuery.trim() || activeCategory !== 'all' || activeGender !== 'all' || explicitLocationFilter) && (
-                            <button
-                                onClick={() => {
-                                    setSearchQuery('');
-                                    setActiveCategory('all');
-                                    setActiveGender('all');
-                                    setTopLocation({ region: '', city: '', mall: '' });
-                                }}
-                                style={{
-                                    marginTop: 16, padding: '12px 24px', background: 'var(--primary)', color: 'white',
-                                    border: 'none', borderRadius: 12, fontWeight: 800, cursor: 'pointer',
-                                }}
-                            >{isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}</button>
-                        )}
-                    </div>
+                    /* v14.63 — لماذا الشبكة فارغة؟ ثلاث حالات لا واحدة. الجملة
+                       القديمة كانت تتّهم «بحثاً» لم يحدث أصلاً (اختار قسماً أو
+                       مدينة)، وبلا أي زرٍّ يُعيده إلى حالٍ يرى فيها شيئاً.
+                       v15.81 — والفروعُ الثلاثُ صارت في `EmptyDeals` لأن نسخَها
+                       الثلاث انحرفت: `DealsList` لم تصلها هذه الحالةُ أصلاً. */
+                    <EmptyDeals
+                        isRTL={isRTL}
+                        searching={!!searchQuery.trim()}
+                        filtered={activeCategory !== 'all' || activeGender !== 'all' || explicitLocationFilter}
+                        icon="📭"
+                        baseline={BASELINE_NO_DEALS}
+                        onReset={() => {
+                            setSearchQuery('');
+                            setActiveCategory('all');
+                            setActiveGender('all');
+                            setTopLocation({ region: '', city: '', mall: '' });
+                        }}
+                        style={{ gridColumn: 'span 2', padding: '80px 20px' }}
+                    />
                 )}
             </div>
 

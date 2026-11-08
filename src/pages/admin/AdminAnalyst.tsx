@@ -45,7 +45,7 @@ import { CATEGORIES } from '../../data/mock';
 import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
     AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, AdmToolbar,
-    AdmDateRange, admNum,
+    AdmDateRange, admNum, admCount, DAYS, MERCHANTS, VIEWS, BOOKINGS, DEALS, ACTIVE_DEALS, BUYERS, ACTIVE_BUYERS, EMAILS, DIAGNOSES, PIECES, SEARCHES, CATEGORIES as CATEGORY_F,
 } from '../../components/admin/ui';
 import type { Tone } from '../../components/admin/ui';
 
@@ -103,7 +103,7 @@ const sellerRisk = (s: SellerRow): { score: number; reasons: string[] } => {
     const reasons: string[] = [];
     const dl = daysLeft(s.expires_at);
     if (dl !== null && dl < 0) { score += 40; reasons.push('اشتراكه منتهٍ ولم يجدّد'); }
-    else if (dl !== null && dl <= 7) { score += 25; reasons.push(`اشتراكه ينتهي خلال ${admNum(dl)} يوم`); }
+    else if (dl !== null && dl <= 7) { score += 25; reasons.push(`اشتراكه ينتهي خلال ${admCount(dl, DAYS, true)}`); }
     if (s.active_deals === 0) { score += 25; reasons.push('لا يملك أي عرض نشط'); }
     if (s.bookings_30 === 0) { score += 20; reasons.push('صفر حجوزات آخر ٣٠ يوماً'); }
     else if (s.bookings_prev30 > 0 && s.bookings_30 < s.bookings_prev30 / 2) {
@@ -161,7 +161,7 @@ const buildInsights = (d: any): Insight[] => {
     if (expiredNoRenew.length > 0) {
         out.push({
             id: 'churn-now', severity: 'critical', icon: '🚨',
-            title: `${admNum(expiredNoRenew.length)} تاجر منتهي الاشتراك ولم يجدّد`,
+            title: `${admCount(expiredNoRenew.length, MERCHANTS)} — اشتراكٌ منتهٍ بلا تجديد`,
             body: expiredNoRenew.slice(0, 5).map((s) => `«${s.shop}»${sellerRisk(s).reasons[1] ? ' — ' + sellerRisk(s).reasons[1] : ''}`).join(' • '),
             action: 'افتح «صحة التجار» بالأسفل، راجع السبب المرجّح لكل تاجر، وأرسل له التوصية أو خصماً من شاشة التجّار.',
         });
@@ -187,8 +187,8 @@ const buildInsights = (d: any): Insight[] => {
     if (expiringSoon.length > 0) {
         out.push({
             id: 'expiring', severity: 'warn', icon: '⏳',
-            title: `${admNum(expiringSoon.length)} تاجر ينتهي اشتراكه خلال أسبوع`,
-            body: expiringSoon.slice(0, 5).map((s) => `«${s.shop}» (${admNum(daysLeft(s.expires_at) || 0)} يوم)`).join(' • '),
+            title: `${admCount(expiringSoon.length, MERCHANTS)} — اشتراكٌ ينتهي خلال أسبوع`,
+            body: expiringSoon.slice(0, 5).map((s) => `«${s.shop}» (${admCount(daysLeft(s.expires_at) || 0, DAYS)})`).join(' • '),
             action: 'من ينتهي وهو ضعيف الحجوزات غالباً لن يجدّد — أرسل له توصية تحسين الآن قبل قرار التجديد.',
         });
     }
@@ -202,7 +202,7 @@ const buildInsights = (d: any): Insight[] => {
             out.push({
                 id: 'conv-low', severity: 'warn', icon: '🔻',
                 title: `نسبة تحويل المشاهدات لحجوزات منخفضة (${(conv * 100).toFixed(1)}٪)`,
-                body: `${admNum(views)} مشاهدة عرض أنتجت ${admNum(bookings)} حجزاً فقط في الفترة.`,
+                body: `${admCount(views, VIEWS)} لعروضٍ أنتجت ${admCount(bookings, BOOKINGS)} فقط في الفترة.`,
                 action: 'الأسباب المعتادة: خصومات غير مقنعة أو صور ضعيفة. شجّع التجار على خصومات ٣٠٪+ وصور واضحة.',
             });
         } else {
@@ -247,14 +247,14 @@ const buildInsights = (d: any): Insight[] => {
         out.push({
             id: 'content-imgs', severity: 'warn', icon: '🖼',
             title: `${Math.round((weakImgs / activeDeals) * 100)}٪ من العروض النشطة صورها ضعيفة`,
-            body: `${admNum(weakImgs)} من ${admNum(activeDeals)} عرضاً بصورة واحدة أو بلا صور — الصور أول ما يقنع المشتري.`,
+            body: `${admNum(weakImgs)} من ${admCount(activeDeals, DEALS, true)} بصورة واحدة أو بلا صور — الصور أول ما يقنع المشتري.`,
             action: 'استخدم «الإرسال المستهدف» مع قالب «جودة الصور» لتنبيه المتاجر المعنية دفعة واحدة.',
         });
     }
     if (activeDeals >= 3 && (Number(content.no_desc) || 0) / activeDeals > 0.4) {
         out.push({
             id: 'content-desc', severity: 'info', icon: '📝',
-            title: `${admNum(Number(content.no_desc) || 0)} عرضاً بلا وصف كافٍ`,
+            title: `${admCount(Number(content.no_desc) || 0, DEALS)} بلا وصف كافٍ`,
             body: 'الوصف الناقص يزيد أسئلة الشات والإلغاءات — ذكّر التجار بكتابة المقاسات والتفاصيل.',
         });
     }
@@ -299,8 +299,8 @@ const buildDiagnosis = (
                 : 'أسباب متفاوتة — افتح بطاقة كل تاجر في «صحة التجار» لسببه الفردي.';
         items.push({
             id: 'dg-churn', severity: 'critical', icon: '🚨',
-            title: `${admNum(expired.length)} تاجر انتهى اشتراكه ولم يجدّد`,
-            evidence: expired.slice(0, 5).map((s) => `«${s.shop}» (${admNum(s.bookings_30)} حجز/٣٠ي، ${admNum(s.active_deals)} عرض نشط)`).join(' • '),
+            title: `${admCount(expired.length, MERCHANTS)} — انتهى الاشتراك بلا تجديد`,
+            evidence: expired.slice(0, 5).map((s) => `«${s.shop}» (${admCount(s.bookings_30, BOOKINGS)}/٣٠ي، ${admCount(s.active_deals, ACTIVE_DEALS)})`).join(' • '),
             why: dominantWhy,
             fix: [
                 'أرسل لكل واحد توصيته الجاهزة من بطاقته (سبب ضعفه بالضبط) قبل عرض أي خصم.',
@@ -318,7 +318,7 @@ const buildDiagnosis = (
         items.push({
             id: 'dg-seller-cancel', severity: 'critical', icon: '⛔',
             title: 'تجار يلغون حجوزات عملائهم بأنفسهم',
-            evidence: selfCancelers.map((s) => `«${s.shop}» ألغى ${admNum(Number(s.c_seller))} حجزاً`).join(' • '),
+            evidence: selfCancelers.map((s) => `«${s.shop}» ألغى ${admCount(Number(s.c_seller), BOOKINGS)}`).join(' • '),
             why: 'السلعة غير متوفرة فعلاً وقت وصول العميل (كمية وهمية أو عرض شكلي) — هذا أسرع طريق لفقدان ثقة المشترين.',
             fix: [
                 'أرسل تنبيهاً مباشراً لهؤلاء التجار من الإرسال المستهدف (فلتر «الأكثر إلغاءً من التاجر» في راصد الأسوأ).',
@@ -335,7 +335,7 @@ const buildDiagnosis = (
         penalties.push({ label: 'عدم استلام', pts: 8 });
         items.push({
             id: 'dg-noshow', severity: 'warn', icon: '⏱',
-            title: `${admNum(sysCanc)} حجزاً ماتت بانتهاء المهلة دون استلام`,
+            title: `انتهت مهلة ${admCount(sysCanc, BOOKINGS, true)} دون استلام`,
             evidence: `${Math.round((sysCanc / Math.max(1, b)) * 100)}٪ من حجوزات الفترة انتهت تلقائياً.`,
             why: 'المشتري يحجز بحماس ثم ينسى أو يستصعب الوصول — أو مدة التحضير لدى التاجر أطول من صبره.',
             fix: [
@@ -354,7 +354,7 @@ const buildDiagnosis = (
         items.push({
             id: 'dg-concentration', severity: 'warn', icon: '🎯',
             title: `«${topStore.shop}» وحده يمثل ${Math.round((Number(topStore.bookings) / b) * 100)}٪ من كل الحجوزات`,
-            evidence: `${admNum(Number(topStore.bookings))} من أصل ${admNum(b)} حجزاً في الفترة.`,
+            evidence: `${admNum(Number(topStore.bookings))} من أصل ${admCount(b, BOOKINGS, true)} في الفترة.`,
             why: 'الاعتماد على متجر واحد هشّ — لو توقف أو غادر تنهار أرقام المنصة كلها.',
             fix: [
                 'كثّف استقطاب تجار في المدن والأقسام الموسومة «⚡ فرصة» في لوحة «أين الفرصة؟».',
@@ -369,8 +369,8 @@ const buildDiagnosis = (
     if (hungryCats.length > 0) {
         items.push({
             id: 'dg-hungry-cats', severity: 'warn', icon: '⚡',
-            title: `${admNum(hungryCats.length)} قسم عليه طلب حقيقي بلا أي عرض نشط الآن`,
-            evidence: hungryCats.map((c) => `${catLabel(c.category)} (${admNum(Number(c.bookings_30))} حجزاً سابقاً)`).join(' • '),
+            title: `طلبٌ حقيقي في ${admCount(hungryCats.length, CATEGORY_F, true)} بلا أي عرض نشط الآن`,
+            evidence: hungryCats.map((c) => `${catLabel(c.category)} (${admCount(Number(c.bookings_30), BOOKINGS)} سابقاً)`).join(' • '),
             why: 'مشترون جرّبوا وحجزوا في هذه الأقسام ثم اختفى المعروض — طلب مثبت بالمال يضيع يومياً.',
             fix: [
                 'استقطب تاجراً واحداً على الأقل لكل قسم منها (نص الإقناع جاهز في خطة النمو والتسويق).',
@@ -391,7 +391,7 @@ const buildDiagnosis = (
             items.push({
                 id: 'dg-retention', severity: 'warn', icon: '🔁',
                 title: `فقط ${Math.round(rr * 100)}٪ من المشترين يعودون لحجز ثانٍ`,
-                evidence: `${admNum(retBack)} عادوا من أصل ${admNum(retTot)} مشترياً جرّبوا الحجز (التفصيل بالكوهورت في «التحليلات»).`,
+                evidence: `${admNum(retBack)} عادوا من أصل ${admCount(retTot, BUYERS, true)} جرّبوا الحجز (التفصيل بالكوهورت في «التحليلات»).`,
                 why: 'التجربة الأولى لا تخلق عادة — غالباً لقلة العروض الجديدة أو غياب سبب للعودة.',
                 fix: [
                     'مسابقة شهرية بجائزة (شاشة المسابقات + إشعار تلقائي) — أقوى أداة عودة.',
@@ -575,7 +575,7 @@ const WeekHeatmap = memo<{
                             return (
                                 <button
                                     key={h} type="button" onClick={() => onPick(dow, h)} className="adm-focusable"
-                                    title={`${DOW_AR[dow]} ${fmtHour(h)} — ${n} حجز`}
+                                    title={`${DOW_AR[dow]} ${fmtHour(h)} — ${admCount(n, BOOKINGS)}`}
                                     style={{
                                         flex: 1, minWidth: 10, height: 16, borderRadius: 3, border: 'none', cursor: 'pointer',
                                         background: n === 0 ? 'var(--adm-surface-3)' : 'var(--adm-accent)',
@@ -879,11 +879,11 @@ const AdminAnalyst: React.FC = () => {
             });
             setBulkSending(false);
             await customAlert(r.success
-                ? `✅ وصلت إلى ${admNum(r.notified)} تاجراً${r.emailed ? ` (و${admNum(r.emailed)} بريداً)` : ''}.`
+                ? `✅ وصلت إلى ${admCount(r.notified, MERCHANTS)}${r.emailed ? ` (و${admCount(r.emailed, EMAILS)})` : ''}.`
                 : `❌ تعذّر الإرسال: ${r.error || ''}`);
             return;
         }
-        const ok = await customConfirm(`سيتم إرسال هذه الرسالة إلى ${filteredSellers.length} تاجراً (${fCity === 'all' ? 'كل المدن' : fCity} / ${fCat === 'all' ? 'كل التصنيفات' : catLabel(fCat)})${bulkEmail ? ' + بريد إلكتروني' : ''}. متابعة؟`);
+        const ok = await customConfirm(`سيتم إرسال هذه الرسالة إلى ${admCount(filteredSellers.length, MERCHANTS)} (${fCity === 'all' ? 'كل المدن' : fCity} / ${fCat === 'all' ? 'كل التصنيفات' : catLabel(fCat)})${bulkEmail ? ' + بريد إلكتروني' : ''}. متابعة؟`);
         if (!ok) return;
         setBulkSending(true);
         setBulkProgress({ done: 0, total: filteredSellers.length });
@@ -895,7 +895,7 @@ const AdminAnalyst: React.FC = () => {
         }
         setBulkSending(false);
         setBulkProgress(null);
-        await customAlert(failed === 0 ? `✅ أُرسلت الرسالة لـ${admNum(done)} تاجراً.` : `⚠️ نجح ${admNum(done)} وفشل ${admNum(failed)}.`);
+        await customAlert(failed === 0 ? `✅ أُرسلت الرسالة لـ${admCount(done, MERCHANTS, true)}.` : `⚠️ نجح ${admNum(done)} وفشل ${admNum(failed)}.`);
     };
 
     const openReport = async (s: SellerRow) => {
@@ -994,13 +994,13 @@ const AdminAnalyst: React.FC = () => {
                     </div>
 
                     <AdmStatGrid cols={3}>
-                        <AdmStat icon="📦" label="حجوزات الفترة" value={admNum(bookings)} scope={`آخر ${admNum(days)} يوماً`} />
+                        <AdmStat icon="📦" label="حجوزات الفترة" value={admNum(bookings)} scope={`آخر ${admCount(days, DAYS, true)}`} />
                         <AdmStat icon="✅" label="اكتمل استلامها" value={admNum(completed)} tone="ok" scope={shareOfPeriod(completed)} />
                         <AdmStat icon="🚫" label="أُلغيت" value={admNum(cancelled)} scope={shareOfPeriod(cancelled)}
                             tone={bookings && cancelled / bookings > 0.35 ? 'bad' : 'neutral'} />
                         <AdmStat icon="⏰" label="أقوى ٣ ساعات" value={peakHours.length ? fmtHour(peakHours[0].h) : '—'}
                             scope={peakHours.length > 1 ? `ثم ${peakHours.slice(1).map((r) => fmtHour(r.h)).join(' · ')} — كل المنصّة` : 'لا بيانات ساعات بعد'} />
-                        <AdmStat icon="🔁" label="عودة المشترين" scope={`${admNum(Number(buyers.active_30) || 0)} مشترياً نشطاً آخر ٣٠ يوماً`}
+                        <AdmStat icon="🔁" label="عودة المشترين" scope={`${admCount(Number(buyers.active_30) || 0, ACTIVE_BUYERS)} آخر ٣٠ يوماً`}
                             value={`${Number(buyers.with_booking) ? Math.round(((Number(buyers.repeaters) || 0) / Number(buyers.with_booking)) * 100) : 0}٪`} />
                         <AdmStat icon="💳" label="تجديد الشهر الحالي" scope={lastRenew ? `${admNum(lastRenew.renewed)} من ${admNum(lastRenew.expired)} جدّدوا` : 'لا اشتراكات انتهت بعد'}
                             value={lastRenew && lastRenew.expired ? `${Math.round((lastRenew.renewed / lastRenew.expired) * 100)}٪` : '—'} />
@@ -1026,7 +1026,7 @@ const AdminAnalyst: React.FC = () => {
 
             {/* ── ٢) التشخيص: مكمن الخلل والعلاج ───────────────────────────── */}
             <AdmSection title="التشخيص — مكمن الخلل والعلاج" icon="🧠"
-                badge={diagnosis.items.length ? { text: `${admNum(diagnosis.items.length)} تشخيصاً`, tone: 'neutral' } : undefined}
+                badge={diagnosis.items.length ? { text: admCount(diagnosis.items.length, DIAGNOSES), tone: 'neutral' } : undefined}
                 desc="الأخطر أولاً. كل بطاقة: الدليل بالأرقام، ثم السبب الجذري، ثم خطوات العلاج.">
                 {diagnosis.items.length === 0 ? (
                     <AdmEmpty icon="✅" title="لا مشاكل مرصودة حالياً" hint="كل القواعد التي يفحصها المحلل ضمن الحدود الصحية — عاود الفحص بعد تغيّر الفترة." />
@@ -1089,7 +1089,7 @@ const AdminAnalyst: React.FC = () => {
                                             <span>👁 {admNum(s.deal_views_30 + s.store_views_30)} زيارة</span>
                                             <span>🏷 {admNum(s.active_deals)} عرض نشط</span>
                                             <span>⭐ {s.rating_avg ?? '—'}</span>
-                                            <span>{dl === null ? '🆓 بلا اشتراك' : dl < 0 ? `⛔ منتهٍ منذ ${admNum(-dl)} يوم` : `⏳ ${admNum(dl)} يوم متبقٍ`}</span>
+                                            <span>{dl === null ? '🆓 بلا اشتراك' : dl < 0 ? `⛔ منتهٍ منذ ${admCount(-dl, DAYS, true)}` : `⏳ يتبقّى ${admCount(dl, DAYS)}`}</span>
                                         </div>
                                         {risk.reasons.length > 0 && (
                                             <div style={{ marginTop: 6, fontSize: '.76rem', fontWeight: 700, color: `var(--adm-${riskTone}-fg)` }}>
@@ -1117,7 +1117,7 @@ const AdminAnalyst: React.FC = () => {
 
             {/* ── ٤) الإرسال المستهدف ───────────────────────────────────────── */}
             <AdmSection title="إرسال مستهدف للتجار" icon="📣" collapsible defaultOpen={false}
-                badge={{ text: wholeAudience ? 'كل التجار' : `${admNum(filteredSellers.length)} تاجراً`, tone: wholeAudience ? 'warn' : 'info' }}
+                badge={{ text: wholeAudience ? 'كل التجار' : admCount(filteredSellers.length, MERCHANTS), tone: wholeAudience ? 'warn' : 'info' }}
                 desc="المستقبِلون هم نتيجة مرشّحات «صحة التجار» أعلاه. لا شيء يُرسل إلا بتأكيدك.">
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                     {bulkTemplates.map((t) => (
@@ -1135,7 +1135,7 @@ const AdminAnalyst: React.FC = () => {
                     <AdmButton variant="primary" onClick={sendBulk} disabled={bulkSending || !bulkMsg.trim() || filteredSellers.length === 0}>
                         {bulkSending && bulkProgress
                             ? `⏳ ${admNum(bulkProgress.done)}/${admNum(bulkProgress.total)}…`
-                            : wholeAudience ? '📨 إرسال لكل التجار' : `📨 إرسال لـ${admNum(filteredSellers.length)} تاجراً`}
+                            : wholeAudience ? '📨 إرسال لكل التجار' : `📨 إرسال لـ${admCount(filteredSellers.length, MERCHANTS, true)}`}
                     </AdmButton>
                 </div>
                 <p style={noteStyle}>
@@ -1207,7 +1207,7 @@ const AdminAnalyst: React.FC = () => {
                 {!funnelData ? <AdmSkeleton rows={2} height={70} /> : (
                     <div style={{ display: 'grid', gap: 16 }}>
                         <AdmStatGrid cols={4}>
-                            <AdmStat icon="🛒" label="ألغاها المشتري" value={admNum(Number(fn.cancel_buyer) || 0)} scope={`آخر ${admNum(days)} يوماً`} />
+                            <AdmStat icon="🛒" label="ألغاها المشتري" value={admNum(Number(fn.cancel_buyer) || 0)} scope={`آخر ${admCount(days, DAYS, true)}`} />
                             <AdmStat icon="🏪" label="ألغاها التاجر" value={admNum(Number(fn.cancel_seller) || 0)} tone={Number(fn.cancel_seller) > 0 ? 'bad' : 'neutral'} scope="مؤشّر خطير: سلعة غير متوفرة" />
                             <AdmStat icon="⏱" label="انتهت المهلة" value={admNum(Number(fn.cancel_system) || 0)} scope="حجز لم يُستلم" />
                             <AdmStat icon="🗂" label="قديمة" value={admNum(Number(fn.cancel_legacy) || 0)} scope="قبل تتبّع «من ألغى»" />
@@ -1318,7 +1318,7 @@ const AdminAnalyst: React.FC = () => {
                                     <AdmStat icon="📦" label="حجوزات" value={admNum(Number(hoursData.totals.bookings) || 0)} scope="في هذا المدى" />
                                     <AdmStat icon="🛒" label="مشترون نشطون" value={admNum(Number(hoursData.totals.buyers) || 0)} scope="في هذا المدى" />
                                     <AdmStat icon="🏪" label="تجار مستفيدون" value={admNum(Number(hoursData.totals.sellers) || 0)} scope="في هذا المدى" />
-                                    <AdmStat icon="👁" label="مشاهدات ونقرات" value={admNum((Number(hoursData.totals.views) || 0) + (Number(hoursData.totals.clicks) || 0))} scope={`${admNum(Number(hoursData.totals.searches) || 0)} عملية بحث`} />
+                                    <AdmStat icon="👁" label="مشاهدات ونقرات" value={admNum((Number(hoursData.totals.views) || 0) + (Number(hoursData.totals.clicks) || 0))} scope={admCount(Number(hoursData.totals.searches) || 0, SEARCHES)} />
                                     <AdmStat icon="✅" label="اكتملت" value={admNum(Number(hoursData.totals.completed) || 0)} tone="ok" scope="في هذا المدى" />
                                     <AdmStat icon="🏷" label="عروض نُشرت" value={admNum(Number(hoursData.totals.deals_published) || 0)} scope="في هذا المدى" />
                                 </AdmStatGrid>
@@ -1381,7 +1381,7 @@ const AdminAnalyst: React.FC = () => {
                         return (
                             <>
                                 <AdmStatGrid cols={4}>
-                                    <AdmStat icon="📦" label="حجوزات" value={admNum(b)} scope={`${admNum(Number(tt.qty) || 0)} قطعة — في هذه الشريحة`} />
+                                    <AdmStat icon="📦" label="حجوزات" value={admNum(b)} scope={`${admCount(Number(tt.qty) || 0, PIECES)} — في هذه الشريحة`} />
                                     <AdmStat icon="✅" label="مكتمل" value={admNum(ok)} tone="ok" scope={b ? `${admNum(Math.round((ok / b) * 100))}٪ من الشريحة` : 'لا حجوزات'} />
                                     <AdmStat icon="🛒" label="مشترون" value={admNum(Number(tt.buyers) || 0)} scope="في هذه الشريحة" />
                                     <AdmStat icon="🏪" label="تجار مستفيدون" value={admNum(Number(tt.sellers) || 0)} scope="في هذه الشريحة" />
@@ -1492,7 +1492,7 @@ const AdminAnalyst: React.FC = () => {
 
             {/* ── ١١) ماذا يبحث الزوار؟ ─────────────────────────────────────── */}
             <AdmSection title="ماذا يبحث الزوار؟" icon="🔎" collapsible defaultOpen={false}
-                badge={{ text: `${admNum(Number(pulse2?.search_total_30) || 0)} عملية بحث / ٣٠ يوماً`, tone: 'neutral' }}
+                badge={{ text: `${admCount(Number(pulse2?.search_total_30) || 0, SEARCHES)} / ٣٠ يوماً`, tone: 'neutral' }}
                 desc="كل كلمةٍ تتكرّر بلا عروضٍ تلبّيها = طلبٌ جاهز تستقطب له تاجراً أو تطلبه من تجارك.">
                 {((pulse2?.searches || []) as any[]).length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

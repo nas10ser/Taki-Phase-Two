@@ -109,6 +109,27 @@ const purgePrivateCache = async (): Promise<void> => {
     } catch { /* متصفّحٌ بلا Cache Storage، أو تصفّحٌ خاصّ */ }
 };
 
+/**
+ * v15.80 — سنُّ الأهلية للتعاقد في السعودية، **مصدرٌ واحد**.
+ * يُخزَّن إقرارٌ لا تاريخَ ميلاد: أقلُّ بيانٍ شخصيٍّ يكفي للغرض (طلبُ ناصر).
+ * 🪤 وكان معرَّفاً داخل `Register.tsx` وحدها، فبوّابةُ الموافقة كانت ستحمل
+ *    رقماً ثانياً يَنحرف عنه. وموضعُه هنا لأنّ كاتبَ الإقرار هو من يملك قيمتَه.
+ */
+export const MIN_AGE = 18;
+
+/** حدثٌ يُبثّ بعد كتابةِ موافقةٍ **مُثبَتةٍ بقراءة** — تسمعه بوّابةُ الموافقة. */
+export const CONSENT_EVENT = 'taki:consent-recorded';
+
+/**
+ * وسمٌ في الذاكرة لآخر إصدارٍ ثبُتت موافقتُه في هذه الصفحة.
+ * 🪤 بلا هذا الوسمِ يقع سباقٌ حقيقيّ: شاشةُ التسجيل تكتب الموافقةَ في نفس
+ *    اللحظة التي تظهر فيها الجلسةُ للبوّابة، فتقرأ البوّابةُ الصفَّ قبل
+ *    الكتابةِ وتظهر لمن وافق للتوّ. وهو وسمٌ **تابعٌ لكتابةٍ مقروءة** لا
+ *    بديلٌ عنها — فليس ثقباً.
+ */
+let lastRecordedVersion: string | null = null;
+export const consentRecordedFor = (version: string): boolean => lastRecordedVersion === version;
+
 export const authService = {
     // Current memory-only profile for synchronous checks
     _profile: null as UserProfile | null,
@@ -120,7 +141,66 @@ export const authService = {
         authService._profile = profile;
     },
 
+    /**
+     * v15.80 — الكاتبُ الوحيد لموافقةِ الشروط في الموقع.
+     *
+     * 🔴 ولا «أطلقها وانسَها»: الموضعان القائمان كانا ملفوفَين بـ
+     *    `try { } catch { }` فارغ، فانقطاعُ شبكةٍ لحظةَ التسجيل كان يُفقد
+     *    التوقيعَ القانونيَّ **نهائيّاً وبصمت** — والتعليقُ يَعِد بإعادةِ
+     *    محاولةٍ «عند الدخول القادم» لم تُكتب قطّ (قِيس: مطابقةٌ واحدة،
+     *    وهي التعليقُ نفسه).
+     * 🔴 والكتابةُ لا تُصدَّق حتى تُقرأ: `record_user_consent` تُرجع
+     *    `{changed:false,error:'AUTH_REQUIRED'}` **بلا استثناء** إن لم تكن
+     *    هناك جلسة، وتُرجع `already` إن لم تكتب شيئاً. فالحُكمُ على الصفِّ
+     *    بعدها لا على ردّها (درسُ v14.44: كتابةٌ بصفر صفوفٍ بلا خطأ).
+     *
+     * ويُستعاد الفشلُ الآن بلا عمل: بوّابةُ الموافقة تسأل عند كلّ فتحة،
+     * فكتابةٌ ضائعةٌ تُطلَب مرّةً أخرى بدل أن تُفقد إلى الأبد.
+     */
+    recordConsent: async (termsVersion: string): Promise<{ ok: boolean; reason?: string }> => {
+        let uid: string | undefined;
+        try {
+            const { data } = await supabase.auth.getSession();
+            uid = data?.session?.user?.id;
+        } catch { /* تُعالَج أدناه */ }
+        if (!uid) return { ok: false, reason: 'AUTH_REQUIRED' };
+
+        try {
+            const { data, error } = await supabase.rpc('record_user_consent', {
+                p_terms_version: termsVersion,
+                // العنوانُ يُشتقّ على الخادم من ترويسة الطلب. ما يقوله
+                // المتصفّح عن عنوانه ليس دليلاً.
+                p_ip: null,
+                p_user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 250) : null,
+                p_kind: 'terms',
+                p_min_age: MIN_AGE,
+            });
+            if (error) return { ok: false, reason: error.message || 'RPC_FAILED' };
+            const soft = (data as { error?: string } | null)?.error;
+            if (soft) return { ok: false, reason: soft };
+
+            const { data: row, error: readErr } = await supabase
+                .from('users')
+                .select('consent_terms_version, consent_age_confirmed')
+                .eq('id', uid)
+                .maybeSingle();
+            if (readErr) return { ok: false, reason: readErr.message || 'READBACK_FAILED' };
+            if (!row || row.consent_terms_version !== termsVersion || row.consent_age_confirmed !== true) {
+                return { ok: false, reason: 'NOT_PERSISTED' };
+            }
+
+            lastRecordedVersion = termsVersion;
+            try { window.dispatchEvent(new Event(CONSENT_EVENT)); } catch { /* بيئةٌ بلا نافذة */ }
+            return { ok: true };
+        } catch (e: any) {
+            return { ok: false, reason: e?.message || 'NETWORK' };
+        }
+    },
+
     logout: async (): Promise<void> => {
+        // v15.80 — ويُنسى وسمُ الموافقة مع الجلسة، وإلّا ورث الحسابُ التالي
+        // على نفس الصفحة «وافق للتوّ» وهو لم يوافق.
+        lastRecordedVersion = null;
         // Clear local cache IMMEDIATELY
         authService._profile = null;
         localStorage.removeItem('supabase.auth.token');

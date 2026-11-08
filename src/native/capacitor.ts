@@ -14,6 +14,21 @@
 
 type Platform = 'ios' | 'android' | 'web';
 
+/**
+ * المخطَّطُ المخصَّص الذي تعود به عمليّاتُ المصادقة إلى التطبيق.
+ * 🔴 **ثلاثُ نسخٍ يجب أن تتّفق**، وتغييرُ واحدةٍ وحدَها يكسر الدخولَ بصمت:
+ *    • `ios/App/App/Info.plist` → `CFBundleURLSchemes`
+ *    • `android/app/src/main/res/values/strings.xml` → `custom_url_scheme`
+ *    • هذا السطر.
+ * 🪤 وكان المخطَّطُ **معلَناً في المنصّتين ولا يذكره سطرٌ واحدٌ من TypeScript**
+ *    (قِيس: `grep -rn 'net.takisa.app' src/` ⇒ صفر). والعودةُ كانت تُطلب إلى
+ *    `window.location.origin` — وهو `capacitor://localhost` داخل آيفون و
+ *    `https://localhost` داخل أندرويد، أي عنوانٌ لا يستطيع أيُّ متصفّحٍ
+ *    خارجيٍّ ولا أيُّ مزوّدِ هويّةٍ الوصولَ إليه.
+ */
+export const NATIVE_AUTH_SCHEME = 'net.takisa.app';
+export const NATIVE_AUTH_REDIRECT = `${NATIVE_AUTH_SCHEME}://auth/callback`;
+
 interface CapGlobal {
     isNativePlatform?: () => boolean;
     getPlatform?: () => Platform;
@@ -34,6 +49,8 @@ export const nativePlatform = (): Platform => {
 export async function initNative(opts: {
     onDeepLink: (path: string) => void;
     onBack: () => boolean;      // تُرجع true إن ابتلعت الضغطة
+    /** عودةُ مصادقةٍ على المخطَّط المخصَّص — يُمرَّر جسمُ التجزئة أو الاستعلام. */
+    onAuthReturn: (fragment: string) => void;
 }): Promise<void> {
     if (!isNative()) return;
 
@@ -66,10 +83,29 @@ export async function initNative(opts: {
             else void App.exitApp();                // الجذرُ وحده يُغلق التطبيق
         });
 
-        // ── الروابطُ العميقة: رابطُ تاكي يفتح الشاشةَ لا الصفحةَ الرئيسية ──
+        // ── الروابطُ العميقة وعودةُ المصادقة ──────────────────────────────
+        // 🔴 **المخطَّطُ يُفحص أوّلاً، لا المضيف.** كان الشرطُ الوحيدُ هنا
+        //    `hostname` ينتهي بـ`takisa.net`، و`net.takisa.app://auth/callback`
+        //    مضيفُه `auth` (قِيس بـ`new URL`) — فكانت كلُّ عودةِ مصادقةٍ
+        //    **تُسقط بلا سجلٍّ ولا فرعِ else**.
+        // 🪤 ولا يكفي تمريرُ المسار: supabase-js يقرأ رموزَ العنوان **مرّةً
+        //    واحدةً داخل `_initialize()`** عند إنشاء العميل، فتجزئةٌ تصل
+        //    بعد ذلك خاملةٌ تماماً ⇒ يلزم `setSession` صريحة.
         await App.addListener('appUrlOpen', ({ url }) => {
             try {
                 const u = new URL(url);
+                if (u.protocol === `${NATIVE_AUTH_SCHEME}:`) {
+                    opts.onAuthReturn(u.hash || u.search);
+                    // ورقةُ المتصفّح داخل التطبيق تُغلق بنفسها، وإلّا بقيت
+                    // فوق الشاشة بعد نجاح الدخول فيظنّ المستخدمُ أنه فشل.
+                    void (async () => {
+                        try {
+                            const { Browser } = await import('@capacitor/browser');
+                            await Browser.close();
+                        } catch { /* لا ورقةَ مفتوحة */ }
+                    })();
+                    return;
+                }
                 if (/(^|\.)takisa\.net$/i.test(u.hostname)) {
                     opts.onDeepLink(u.pathname + u.search + u.hash);
                 }
@@ -130,6 +166,15 @@ export async function scanBarcodeNative(): Promise<string | null | undefined> {
 }
 
 /**
+ * نتيجةُ تسجيلِ الإشعارات.
+ * • `granted`     — وصل رمزُ الجهاز فعلاً وحُفظ.
+ * • `denied`      — رفض المستخدمُ الإذن.
+ * • `no-token`    — أُذن ولم يصل رمزٌ (جسرٌ مفقود · بلا Firebase · بلا شبكة).
+ * • `unavailable` — لا منصّةَ أصليّة أو سقطت الإضافة.
+ */
+export type NativePushResult = 'granted' | 'denied' | 'no-token' | 'unavailable';
+
+/**
  * تسجيلُ الجهاز للإشعارات الأصليّة (APNs / FCM).
  * 🔴 ولماذا هذا لا يُغني عنه Web Push: آيفون لا يُسلّم Web Push إلا لتطبيقٍ
  *    **مثبَّتٍ من المتصفّح**، ولا يُسلّمه إطلاقاً داخل تطبيقٍ من المتجر.
@@ -139,7 +184,7 @@ export async function scanBarcodeNative(): Promise<string | null | undefined> {
  */
 export async function registerNativePush(
     save: (token: string, platform: 'ios' | 'android') => Promise<void>,
-): Promise<'granted' | 'denied' | 'unavailable'> {
+): Promise<NativePushResult> {
     if (!isNative()) return 'unavailable';
     try {
         const { PushNotifications } = await import('@capacitor/push-notifications');
@@ -150,8 +195,26 @@ export async function registerNativePush(
         if (perm.receive !== 'granted') return 'denied';
 
         const platform = nativePlatform() === 'ios' ? 'ios' : 'android';
-        await PushNotifications.addListener('registration', (t) => { void save(t.value, platform); });
-        await PushNotifications.register();
+
+        // 🔴 **ينتظر الرمزَ، لا الإذن.** كان هنا `return 'granted'` بعد
+        //    `register()` مباشرةً — فتقول الواجهةُ «✅ تم تفعيل الإشعارات»
+        //    وقد لا يوجد رمزُ جهازٍ إطلاقاً. و«نجاحٌ واثقٌ كاذب» أغلى من
+        //    فجوةٍ ظاهرة: لا أحدَ يبحث عن عيبٍ أُعلن إصلاحُه.
+        const token = await new Promise<string | null>((resolve) => {
+            let done = false;
+            const finish = (v: string | null) => { if (!done) { done = true; resolve(v); } };
+            // 🪤 ويُسجَّل المستمعان **قبل** `register()`: الرمزُ قد يصل في
+            //    نفس الدورة على جهازٍ سجّل سابقاً، فمستمعٌ يُضاف بعدها يفوته.
+            void PushNotifications.addListener('registration', (t) => finish(t.value));
+            void PushNotifications.addListener('registrationError', () => finish(null));
+            void PushNotifications.register().catch(() => finish(null));
+            // مهلةٌ قصوى: APNs/FCM قد يصمتان تماماً (بلا شبكة، أو جسرُ
+            // AppDelegate مفقود) — وبلا مهلةٍ يبقى الزرُّ «جاري…» إلى الأبد.
+            setTimeout(() => finish(null), 12000);
+        });
+
+        if (!token) return 'no-token';
+        await save(token, platform);
         return 'granted';
     } catch {
         return 'unavailable';

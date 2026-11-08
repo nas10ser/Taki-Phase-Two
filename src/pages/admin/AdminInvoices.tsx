@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { AdmStat, AdmPill, admNum, admMoney } from '../../components/admin/ui';
+import { admCount, OPERATIONS, LINKED_GATEWAYS } from '../../components/admin/ui';
 import RefundWindowCard from '../../components/admin/RefundWindowCard';
 import { openPrintWindow, esc } from '../../utils/invoice';
 import { downloadCsv } from '../../utils/csvExport';
@@ -224,7 +225,7 @@ const AdminInvoices: React.FC = () => {
                 { header: 'مرجع البوابة', accessor: (r: LogRow) => r.payment_ref },
                 { header: 'الحالة', accessor: (r: LogRow) => STATUS_AR[r.status] || r.status },
             ]);
-            customAlert(ok ? `✅ تم تصدير ${all.length} عملية` : '❌ تعذّر إنشاء الملف');
+            customAlert(ok ? `✅ تم تصدير ${admCount(all.length, OPERATIONS)}` : '❌ تعذّر إنشاء الملف');
         } catch (e: any) {
             const msg = String(e?.message || '');
             customAlert(msg.includes('RANGE_TOO_WIDE')
@@ -259,7 +260,7 @@ const AdminInvoices: React.FC = () => {
         if (!next[pid]) {
             const affected = gateways.filter(g => g.provider === pid).length;
             const ok = await customConfirm(
-                `إيقاف مزود «${PROVIDER_AR[pid]}»؟ سيختفي من خيارات التجار${affected ? `، و${affected} بوابة مرتبطة به ستسقط تلقائياً لـ«عند الاستلام»` : ''}.`);
+                `إيقاف مزود «${PROVIDER_AR[pid]}»؟ سيختفي من خيارات التجار${affected ? `، و${admCount(affected, LINKED_GATEWAYS)} به ستسقط تلقائياً لـ«عند الاستلام»` : ''}.`);
             if (!ok) return;
         }
         setSavingProvider(pid);
@@ -480,7 +481,7 @@ const AdminInvoices: React.FC = () => {
                                 <span style={{ flex: 1, minWidth: 0 }}>
                                     <span style={{ display: 'block', fontWeight: 900, fontSize: '0.8rem', color: 'var(--text-primary)' }}>{name}</span>
                                     <span style={{ display: 'block', fontWeight: 700, fontSize: '0.75rem', color: on ? '#059669' : 'var(--text-secondary)', marginTop: 2 }}>
-                                        {on ? 'مفتوح للتجار' : 'موقوف'}{linked ? ` · ${linked} بوابة مرتبطة` : ''}
+                                        {on ? 'مفتوح للتجار' : 'موقوف'}{linked ? ` · ${admCount(linked, LINKED_GATEWAYS)}` : ''}
                                     </span>
                                 </span>
                             </button>

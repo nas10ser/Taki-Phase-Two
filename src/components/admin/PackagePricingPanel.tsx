@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { packageRepository } from '../../repositories/packageRepository';
 import { adminService } from '../../services/adminService';
 import { LocationPackage, effectivePrice, branchesShort } from '../../data/packages';
+import { admCount, SUBSCRIBED_STORES } from './ui';
 
 /**
  * Admin panel to edit EVERY subscription package's monthly pricing (v11.36):
@@ -172,7 +173,7 @@ const PackagePricingPanel: React.FC<{ onSaved?: () => void }> = ({ onSaved }) =>
             const { data, error } = await supabase.rpc('admin_sync_package_limits');
             if (!error && data?.success) {
                 const n = Number(data.stores_updated) || 0;
-                if (n > 0) syncedMsg = `\n🔄 حُدّث عدد المواقع لـ${n} ${n === 1 ? 'متجر' : 'متاجر'} مشترك في الباقات المعدّلة.`;
+                if (n > 0) syncedMsg = `\n🔄 حُدّث عدد المواقع لـ${admCount(n, SUBSCRIBED_STORES, true)} في الباقات المعدّلة.`;
                 // v14.76 — متجرٌ بلا باقة لا تصله تعديلاتك **أبداً**: المزامنة
                 // تُطابق على `subscription_package_id`، فالفارغُ خارجها. كان
                 // ذلك صامتاً تماماً (وهو ما جعل سقف متجر «تاكي» رقماً حرّاً لا

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import DealCard from '../components/DealCard';
 import BottomNav from '../components/BottomNav';
+import EmptyDeals, { BASELINE_NO_DEALS } from '../components/EmptyDeals';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { useApp } from '../context/AppContext';
 import { CATEGORIES, GENDERS, Category, GenderTarget } from '../data/mock';
@@ -71,6 +72,14 @@ const DealsList: React.FC = () => {
     }, [type]);
 
     const isComingSoonView = type === 'coming_soon';
+
+    /* v15.81 — «لماذا الشبكةُ فارغة؟» ثلاثُ حالات، وهذه الشاشةُ كانت تعرف
+       اثنتين فقط فتتّهم «اختياراتك الحالية» أمام زائرٍ لم يختر شيئاً (وهي
+       صفحةُ هبوطٍ من جوجل بأولويّة ٠٫٩). الفروعُ في `EmptyDeals`.
+       🪤 و«المفتوحة الآن» ليست في `userFiltered`: افتراضُها مفعّل (v11.77) فلم
+          يخترها أحد — لكنّ إعادةَ الضبط تُطفئها، فهي في `canReset` وحدها. */
+    const explicitLocationFilter = !!(topLocation.region || topLocation.city || topLocation.mall);
+    const userFiltered = activeCategory !== 'all' || activeGender !== 'all' || verifiedOnly || explicitLocationFilter;
 
     // v13.24 — الترشيح والترتيب والعدّ كلها على القاعدة. أثناء البحث يتحوّل
     // الترتيب تلقائياً إلى `best` (الأفضل مطابقةً) كما في متاجر العالم، ويعود
@@ -319,37 +328,28 @@ const DealsList: React.FC = () => {
                         <div key={`sk-${i}`} className="taki-skeleton" style={{ aspectRatio: '4 / 5', height: 'auto' }} />
                     ))
                 ) : (
-                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 20px' }}>
-                        <div style={{ fontSize: '3rem', marginBottom: 12 }}>📭</div>
-                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
-                            {searchQuery.trim()
-                                ? (isRTL ? 'لم نجد عروضاً تطابق بحثك' : 'No deals match your search')
-                                : (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')}
-                        </div>
-                        {openNow && (
-                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.7 }}>
-                                {isRTL
-                                    ? '🟢 المعروض الآن هو «المحلات المفتوحة» فقط — جرّب «جميع المحلات».'
-                                    : '🟢 Showing “Open now” only — try “All shops”.'}
-                            </div>
-                        )}
-                        <button
-                            /* v14.63 — كان الزرّ يترك ثلاثة مرشِّحات حيّة (الموقع،
-                               «المفتوحة الآن»، «الموثّقة»)، فيُضغط ويبقى الفراغ. */
-                            onClick={() => {
-                                setActiveCategory('all'); setActiveGender('all'); setSearchQuery('');
-                                setOpenNow(false); setVerifiedOnly(false);
-                                setTopLocation({ region: '', city: '', mall: '' });
-                            }}
-                            style={{
-                                marginTop: 16, padding: '12px 24px',
-                                background: 'var(--primary)', color: 'white',
-                                border: 'none', borderRadius: 12, fontWeight: 800,
-                                cursor: 'pointer'
-                            }}>
-                            {isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}
-                        </button>
-                    </div>
+                    <EmptyDeals
+                        isRTL={isRTL}
+                        searching={!!searchQuery.trim()}
+                        filtered={userFiltered}
+                        openNow={openNow && !isComingSoonView}
+                        icon="📭"
+                        baseline={isComingSoonView
+                            ? { ar: 'لا توجد عروض قادمة حالياً — عد قريباً', en: 'No upcoming deals right now — check back soon' }
+                            : BASELINE_NO_DEALS}
+                        /* إعادةُ الضبط تُطفئ «المفتوحة الآن» أيضاً، فالزرُّ نافعٌ
+                           حتى بلا اختيارٍ من المستخدم — لكنه يختفي إن لم يبقَ
+                           شيءٌ يُعاد ضبطُه. */
+                        canReset={!!searchQuery.trim() || userFiltered || (openNow && !isComingSoonView)}
+                        /* v14.63 — كان الزرّ يترك ثلاثة مرشِّحات حيّة (الموقع،
+                           «المفتوحة الآن»، «الموثّقة»)، فيُضغط ويبقى الفراغ. */
+                        onReset={() => {
+                            setActiveCategory('all'); setActiveGender('all'); setSearchQuery('');
+                            setOpenNow(false); setVerifiedOnly(false);
+                            setTopLocation({ region: '', city: '', mall: '' });
+                        }}
+                        style={{ gridColumn: '1 / -1', padding: '60px 20px' }}
+                    />
                 )}
             </div>
 

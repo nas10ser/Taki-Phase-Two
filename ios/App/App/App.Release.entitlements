@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  صلاحيّاتُ **الإصدار** (الأرشيفُ الذي يُرفع إلى المتجر).
+
+  🔴 ولماذا ملفٌّ ثانٍ: `App.entitlements` يقول `aps-environment = development`
+     وتعليقُه يَعِد بأن أبل «تستبدلها آلياً بـproduction عند التوزيع». وهذا
+     صحيحٌ **للتوقيع التلقائيّ وحده** — Xcode هناك يُعيد كتابةَ الصلاحيّة من
+     ملفّ التزويد. وسيرُ البناء يوقّع **يدوياً** (وهو ما أصلح تناقضَ v15.81)،
+     وcodesign اليدويّ يُضمّن هذا الملفَّ **حرفياً**. ⇒ بلا هذا الملفّ يُرفع
+     أرشيفٌ يحمل صلاحيّةَ إشعاراتِ تطويرٍ لا تطابق ملفَّ المتجر: إمّا يفشل
+     الأرشيف، وإمّا — وهو الأسوأ — ينجح وتموت الإشعاراتُ في الإنتاج بلا أثر.
+
+  🪤 ولا يحتاج تسجيلاً في `project.pbxproj`: `CODE_SIGN_ENTITLEMENTS` مسارٌ
+     يُمرَّر في سطر أمرِ الأرشفة، لا ملفُّ بناءٍ يُضاف إلى هدف. ويبقى ملفُّ
+     التطوير هو الافتراضيَّ في المشروع كي يعمل البناءُ على جهازٍ موصول.
+
+  🪤 والنطاقاتُ المرتبطة تُنسخ هنا حرفياً: ملفُّ صلاحيّاتٍ ناقصٌ **يسقط**
+     ما لم يذكره — فحذفُ `associated-domains` من هذه النسخة كان سيُسكت
+     الروابطَ العميقة في نشرة المتجر وحدها، والتطويرُ يبقى سليماً فلا يُلاحظ.
+-->
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>production</string>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:www.takisa.net</string>
+		<string>applinks:takisa.net</string>
+	</array>
+</dict>
+</plist>

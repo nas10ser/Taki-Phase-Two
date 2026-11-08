@@ -76,7 +76,20 @@ export interface PlatformSettings {
     contactEmails: { info: string; complain: string };
 }
 
-/** المفاتيح التي تُجلب عند الإقلاع — **مشتقّةٌ من فروع التطبيق أدناه**. */
+/**
+ * المفاتيح التي تُجلب عند الإقلاع — **مشتقّةٌ من فروع التطبيق أدناه**.
+ *
+ * 🔴 واستثناءٌ مقصودٌ من قاعدة «ثلاثة مواضع» (v14.92 · v15.25): مفاتيحُ
+ *    **تنبيهات الخادم** (`alert_email` · `alert_channels`) **لا تُضاف هنا
+ *    ولا إلى قائمة سماح `platform_settings_select`**. تلك القاعدةُ لمفتاحٍ
+ *    **يقرؤه المتصفّح**؛ وهذان يقرؤهما موزّعٌ `SECURITY DEFINER` على القاعدة
+ *    وحده (`taki_alert_dispatch`). و`alert_email` يحمل بريدَ ناصر الشخصيّ ⇒
+ *    وضعُه في قائمة السماح العامّة **ينشره لكلّ زائرٍ مجهول**.
+ *    وشاشاتُ الأدمن تقرأ الجدولَ مباشرةً بفرعِ `taki_admin_perm` القائم في
+ *    نفس السياسة — ولذلك `capacity_limits` و`tax_settings` و`vapid_public_key`
+ *    في قائمة السماح ولا أثرَ لها هنا. فمن أراد ضبطَ العنوان من اللوحة فلا
+ *    يحتاج هذه القائمة، وإضافتُه إليها تسريبٌ لا إصلاح.
+ */
 export const PLATFORM_SETTING_KEYS = [
     'oauth_google_enabled', 'oauth_apple_enabled',
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
@@ -102,7 +115,16 @@ const num = (x: any, d: number, lo: number, hi: number, exclusiveLo = false): nu
 export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings => ({
     oauthGoogleEnabled: false,
     oauthAppleEnabled: false,
-    telegramBotEnabled: true,
+    // 🔴 مطفأٌ افتراضاً (كان `true`) — قرارُ ناصر ٨ نوفمبر ٢٠٢٦: **لا تيليجرام
+    //    ولا واتساب في البداية**، وv15.80 مسحت معرِّفاتهما وأضافت حارساً يرفض
+    //    تفعيلَ القناة حتى يُعاد إفصاحُها في سياسة الخصوصيّة
+    //    (`BOT_CHANNEL_NOT_DISCLOSED`). والصفُّ الحيُّ `false` فعلاً — لكنّ
+    //    الافتراضَ يحكم في حالتين قِيستا في `AppContext`: قبل وصول الجلب،
+    //    و**إلى الأبد** إن فشل الجلب (`catch` يُبقي الافتراضات).
+    //    فكان زرُّ «اربط تيليجرام» يظهر لقناةٍ لا تردّ — وزرٌّ لا يُنجز شيئاً
+    //    أسوأُ من غيابه (نفسُ قاعدة `stockLinkEnabled` في v15.25).
+    //    🪤 ويفشل **مغلقاً**: `=== true` في الفرع أدناه، فغيابُ الصفّ = مخفيّ.
+    telegramBotEnabled: false,
     whatsappBotEnabled: false,
     whatsappBotNumber: '',
     seasonalTheme,

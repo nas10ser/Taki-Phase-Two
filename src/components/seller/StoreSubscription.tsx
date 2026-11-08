@@ -36,8 +36,11 @@ const MSG: Record<string, [string, string]> = {
               'Your purchase is pending with the store. Your plan activates automatically once it completes.'],
     not_mapped: ['هذه الباقةُ غيرُ مربوطةٍ بعد. راسِلنا ولا تُعِد المحاولة.',
                  'This plan is not linked yet. Please contact us instead of retrying.'],
-    not_configured: ['الاشتراكُ داخل التطبيق لم يُفعَّل بعد. اشترِك من الموقع مؤقّتاً.',
-                     'In-app subscriptions are not live yet. Please subscribe from the website for now.'],
+    // 🔴 ولا إحالةَ شراءٍ خارجَ التطبيق في أيّ نصّ — البندُ ٣٫١٫١ يمنع
+    //    **الإحالة** نفسَها لا المعاملةَ وحدها، ورفضُه فوريّ. والرسالةُ
+    //    الصحيحةُ تقول ما جرى (لم يُخصم شيء) وتُعطي مخرجاً داخل التطبيق.
+    not_configured: ['الشراءُ داخل التطبيق غيرُ متاحٍ الآن — ولم يُخصم شيء. راسِلنا من «حسابي ← اتصل بنا».',
+                     'In-app purchase is unavailable right now — nothing was charged. Please contact us from Profile → Contact us.'],
     verify_failed: ['تعذّر التحقّقُ من الشراء. لم يُفعَّل شيء — ولم يُفقَد شيء: اضغط «استعادة المشتريات».',
                     'We could not verify the purchase. Nothing was activated and nothing is lost — tap “Restore purchases”.'],
     nothing_to_restore: ['لا يوجد اشتراكٌ سابقٌ على هذا الحساب في المتجر.',
@@ -51,8 +54,8 @@ const MSG: Record<string, [string, string]> = {
 const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> = ({ isRTL, onActivated }) => {
     const [products, setProducts] = useState<IapProduct[] | null>(null);
     // 🪤 ويُفصل «لم يُجلب بعد» عن «فشل الجلب» عن «لا منتجاتَ مربوطة»:
-    //    ثلاثُ حالاتٍ تُعطي نفسَ الشاشة الفارغة لو جُمعت، وإحداها نصيحةٌ
-    //    خاطئة («اشترك من الموقع») لمن مشكلتُه شبكةٌ منقطعة.
+    //    ثلاثُ حالاتٍ تُعطي نفسَ الشاشة الفارغة لو جُمعت، ونصيحةُ كلٍّ
+    //    منها مختلفة — فمن مشكلتُه شبكةٌ منقطعة يُقال له «أعِد المحاولة».
     const [loadErr, setLoadErr] = useState<'unavailable' | 'not_mapped' | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [note, setNote] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -93,20 +96,23 @@ const StoreSubscription: React.FC<{ isRTL: boolean; onActivated: () => void }> =
     }
 
     // 🔴 وثلاثُ حالاتٍ لا واحدة، لأن نصيحةَ كلٍّ منها مختلفة:
-    //    • فشلُ الجلب (شبكةٌ · متجرُ Play يُحدَّث) ⇒ «أعِد المحاولة»، ولا
-    //      يُقال «اشترك من الموقع» فذاك إرسالُ تاجرٍ مشكلتُه دقيقةٌ إلى مسارٍ
-    //      آخرَ بناءً على خطأٍ كُتم.
-    //    • لا منتجاتَ مربوطة ⇒ «لم تُفتح بعد»، وهي حالتُنا نحن لا حالتُه.
+    //    • فشلُ الجلب (شبكةٌ · متجرُ Play يُحدَّث) ⇒ «أعِد المحاولة». وإرسالُ
+    //      تاجرٍ مشكلتُه دقيقةٌ إلى مسارٍ آخرَ بناءً على خطأٍ كُتم عيبٌ بذاته.
+    //    • لا منتجاتَ مربوطة ⇒ «غيرُ متاحةٍ للشراء الآن»، وهي حالتُنا نحن
+    //      لا حالتُه — ولا يُقال له «اشترِ من مكانٍ آخر».
     //    • مربوطةٌ وصفرُ نتيجة ⇒ المتجرُ لم يعتمدها بعد.
+    // 🔴 ولا تذكر أيُّ حالةٍ منها موقعاً ولا متصفّحاً ولا رابطاً: البندُ ٣٫١٫١
+    //    يمنع **الإحالةَ** إلى شراءٍ خارج التطبيق، ويحرسه
+    //    `scripts/check-iap-compliance.js` بنيوياً ونصّياً معاً.
     if (!products.length) {
         const [title, hint] = loadErr === 'unavailable'
             ? [t(isRTL, 'تعذّر جلبُ الباقات من المتجر.', 'Could not load plans from the store.'),
                t(isRTL, 'تحقّق من الاتّصال وأعِد المحاولة — لا شيءَ خطأٌ في حسابك.',
                         'Check your connection and try again — nothing is wrong with your account.')]
             : loadErr === 'not_mapped'
-            ? [t(isRTL, 'الاشتراكُ داخل التطبيق لم يُفتح بعد.', 'In-app subscriptions are not open yet.'),
-               t(isRTL, 'يمكنك الاشتراك من موقع تاكي على المتصفّح الآن.',
-                        'You can subscribe from the TAKI website in a browser for now.')]
+            ? [t(isRTL, 'الباقاتُ غيرُ متاحةٍ للشراء الآن.', 'Plans are not available for purchase right now.'),
+               t(isRTL, 'نُجهّزها الآن — أعِد المحاولة لاحقاً، ولا شيءَ خطأٌ في حسابك.',
+                        'We are still setting them up — please try again later; nothing is wrong with your account.')]
             : [t(isRTL, 'لا توجد باقاتٌ متاحةٌ في المتجر الآن.',
                         'No plans are available from the store right now.'),
                t(isRTL, 'قد تكون قيد الاعتماد — أعِد المحاولة لاحقاً.',

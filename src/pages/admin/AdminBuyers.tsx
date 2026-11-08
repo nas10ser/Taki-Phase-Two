@@ -33,6 +33,7 @@ import { SmartChip } from '../../components/admin/SmartChip';
 import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton, AdmSearch, AdmToolbar,
+    admCount, ROWS, ACCOUNTS,
 } from '../../components/admin/ui';
 import { CsvColumn } from '../../utils/csvExport';
 
@@ -686,8 +687,8 @@ const AdminBuyers: React.FC = () => {
 
     const scopeText = useMemo(() => (
         debouncedQuery.trim()
-            ? `ضمن نتائج بحثك · ${num(filteredUsers.length)} صفّاً`
-            : `في هذه الصفحة · ${num(filteredUsers.length)} صفّاً`
+            ? `ضمن نتائج بحثك · ${admCount(filteredUsers.length, ROWS)}`
+            : `في هذه الصفحة · ${admCount(filteredUsers.length, ROWS)}`
     ), [debouncedQuery, filteredUsers.length]);
 
     // أعداد الشرائح — تُحسب ممّا هو محمَّل أصلاً، بلا أي نداءٍ إضافي للقاعدة.
@@ -722,7 +723,7 @@ const AdminBuyers: React.FC = () => {
     const bulkSetSuspended = async (suspend: boolean) => {
         if (selected.size === 0) return;
         const ok = await customConfirm(
-            `${suspend ? 'تعليق' : 'استرجاع'} ${selected.size} حساب؟${
+            `${suspend ? 'تعليق' : 'استرجاع'} ${admCount(selected.size, ACCOUNTS)}؟${
                 suspend ? '\nسيُمنعون من الدخول فوراً وتُنهى جلساتهم المفتوحة.' : ''
             }`
         );
@@ -739,7 +740,7 @@ const AdminBuyers: React.FC = () => {
         setBulkBusy(false);
         await customAlert(
             failed === 0
-                ? `✅ تم ${suspend ? 'تعليق' : 'استرجاع'} ${okCount} حساب`
+                ? `✅ تم ${suspend ? 'تعليق' : 'استرجاع'} ${admCount(okCount, ACCOUNTS)}`
                 : `⚠️ نجح: ${okCount} | فشل: ${failed}`
         );
         exitSelection();
@@ -993,7 +994,7 @@ const AdminBuyers: React.FC = () => {
                         ? 'اضغط أي صفّ لتحديده أو إلغاء تحديده، ثم اختر الإجراء من الشريط أعلاه.'
                         : 'اضغط أي صفّ لفتح بطاقته وتعديل بياناته. ☆ تُثبّت المشتري في أعلى القائمة على هذا الجهاز.'
                 }
-                badge={loading ? undefined : { text: `${num(filteredUsers.length)} صفّاً`, tone: 'neutral' }}
+                badge={loading ? undefined : { text: admCount(filteredUsers.length, ROWS), tone: 'neutral' }}
             >
                 {loading ? (
                     <AdmSkeleton rows={6} height={56} />

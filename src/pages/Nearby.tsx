@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
+import EmptyDeals from '../components/EmptyDeals';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { LOCATIONS, getLocation, USER_LOCATION , geoName } from '../data/mock';
 import { useApp } from '../context/AppContext';
@@ -730,40 +731,37 @@ const Nearby: React.FC = () => {
                         </div>
                     );
                 }) : (
-                    <div className="empty-state animate-fade-in" style={{ textAlign: 'center', padding: '60px 20px' }}>
-                        {/* v14.63 — كانت تتّهم «النطاق» دائماً، حتى حين يكون السبب
-                            فئةً أو مدينةً اختارها المستخدم. و«المفتوحة الآن» مفعّل
-                            افتراضياً، فبعد إغلاق المحلات تفرغ القائمة والنطاق بريء. */}
-                        <div style={{ fontSize: '4rem', marginBottom: 16 }}>📍</div>
-                        <div style={{ fontWeight: 800, color: 'var(--text-muted)' }}>
-                            {(searchQuery.trim() || selectedCategory !== 'all' || selectedRegion || selectedCity || selectedLocationId || locationType)
-                                ? (isRTL ? 'لا توجد عروض ضمن اختياراتك الحالية' : 'No deals match your current filters')
-                                : (isRTL ? 'لا توجد عروض في هذا النطاق' : 'No deals in this radius')}
-                        </div>
-                        {openNow && (
-                            <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginTop: 8, lineHeight: 1.7 }}>
-                                {isRTL
-                                    ? '🟢 المعروض الآن هو «المحلات المفتوحة» فقط — جرّب «جميع المحلات».'
-                                    : '🟢 Showing “Open now” only — try “All shops”.'}
-                            </div>
-                        )}
-                        <button
-                            onClick={() => {
-                                setSearchQuery('');
-                                setSelectedCategory('all');
-                                setSelectedRegion('');
-                                setSelectedCity('');
-                                setSelectedLocationId('');
-                                setLocationType('');
-                                setOpenNow(false);
-                                setRadius(30);
-                            }}
-                            style={{
-                                marginTop: 16, padding: '12px 24px', background: 'var(--primary)', color: 'white',
-                                border: 'none', borderRadius: 12, fontWeight: 800, cursor: 'pointer',
-                            }}
-                        >{isRTL ? '🔄 إعادة ضبط الفلاتر' : '🔄 Reset filters'}</button>
-                    </div>
+                    /* v14.63 — كانت تتّهم «النطاق» دائماً، حتى حين يكون السبب
+                       فئةً أو مدينةً اختارها المستخدم. و«المفتوحة الآن» مفعّل
+                       افتراضياً، فبعد إغلاق المحلات تفرغ القائمة والنطاق بريء.
+                       v15.81 — والفروعُ صارت في `EmptyDeals` (نسخةٌ واحدة لثلاث
+                       شاشات)، و«النطاق» يبقى صياغةَ هذه الشاشةِ وحدها. */
+                    <EmptyDeals
+                        isRTL={isRTL}
+                        searching={!!searchQuery.trim()}
+                        filtered={selectedCategory !== 'all' || !!selectedRegion || !!selectedCity || !!selectedLocationId || !!locationType}
+                        openNow={openNow}
+                        icon="📍"
+                        baseline={{ ar: 'لا توجد عروض في هذا النطاق', en: 'No deals in this radius' }}
+                        /* النطاقُ ليس «اختياراً» يُتَّهم في الرسالة (الرسالةُ تقول
+                           «في هذا النطاق» أصلاً)، لكنّ إعادةَ الضبط تُعيده إلى ٣٠
+                           وتُطفئ «المفتوحة الآن» — فالزرُّ نافعٌ، ويختفي وحده إن
+                           لم يبقَ شيءٌ يتغيّر. */
+                        canReset={!!searchQuery.trim() || selectedCategory !== 'all' || !!selectedRegion
+                            || !!selectedCity || !!selectedLocationId || !!locationType || openNow || radius !== 30}
+                        onReset={() => {
+                            setSearchQuery('');
+                            setSelectedCategory('all');
+                            setSelectedRegion('');
+                            setSelectedCity('');
+                            setSelectedLocationId('');
+                            setLocationType('');
+                            setOpenNow(false);
+                            setRadius(30);
+                        }}
+                        className="empty-state animate-fade-in"
+                        style={{ padding: '60px 20px' }}
+                    />
                 )}
             </div>
             )}

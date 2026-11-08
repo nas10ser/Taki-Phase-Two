@@ -6,6 +6,7 @@ import React from 'react';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph, Bullets } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
 
 const About: React.FC = () => {
     const { language } = useApp();
@@ -98,6 +99,11 @@ const About: React.FC = () => {
                     'High security standards: TLS encryption, strict row-level controls, a firm content policy, and encryption at rest in the database.',
                     'Full transparency across the legal documents: Terms of Service, Privacy Policy and Refund Policy — all available to every user.',
                 ]} />
+                {/* 🪤 والبيانُ موضعُه هنا بالضبط: البندُ أعلاه يَدّعي «الامتثال
+                    الكامل لأنظمة المملكة» ومنها نظامُ التجارة الإلكترونية —
+                    والإفصاحُ عن هويّة مُقدِّم الخدمة هو ما يجعل الادّعاء
+                    صحيحاً. ادّعاءٌ بلا ما يُثبته هو عينُ ما نمنعه. */}
+                <OperatorIdentityBlock />
             </Section>
 
             <Section title={isRTL ? 'تواصل معنا' : 'Get in touch'}>

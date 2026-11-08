@@ -22,6 +22,7 @@ import { adminService, LiveStats, ActivityRow } from '../../services/adminServic
 import { useApp } from '../../context/AppContext';
 import { useKpiSnapshot } from '../../hooks/useKpiSnapshot';
 import { AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty, AdmSkeleton, AdmButton, admNum, admMoney } from '../../components/admin/ui';
+import { admCount, SECONDS, MINUTES, HOURS, OPEN_REPORTS, OPEN_COMPLAINTS, SUBSCRIBERS } from '../../components/admin/ui';
 import SystemHealthCard from '../../components/admin/SystemHealthCard';
 import { AdminTabId } from '../../data/adminNav';
 
@@ -46,9 +47,9 @@ const ACTION_META: Record<string, { icon: string; label: string }> = {
 
 function timeAgo(iso: string, now: number): string {
     const sec = Math.floor((now - new Date(iso).getTime()) / 1000);
-    if (sec < 60) return `قبل ${sec} ثانية`;
-    if (sec < 3600) return `قبل ${Math.floor(sec / 60)} دقيقة`;
-    if (sec < 86400) return `قبل ${Math.floor(sec / 3600)} ساعة`;
+    if (sec < 60) return `قبل ${admCount(sec, SECONDS, true)}`;
+    if (sec < 3600) return `قبل ${admCount(Math.floor(sec / 60), MINUTES, true)}`;
+    if (sec < 86400) return `قبل ${admCount(Math.floor(sec / 3600), HOURS, true)}`;
     return new Date(iso).toLocaleDateString('ar-SA-u-ca-gregory');
 }
 
@@ -176,7 +177,7 @@ const AdminOverview: React.FC<{ onNavigate: (tab: AdminTabId) => void }> = ({ on
                             {!!openReports && (
                                 <QueueRow
                                     icon="🚩"
-                                    title={`${openReports} بلاغاً مفتوحاً`}
+                                    title={admCount(openReports, OPEN_REPORTS)}
                                     desc="بلاغات المستخدمين على بعضهم — لم تُراجَع بعد."
                                     onOpen={() => onNavigate('reports')}
                                 />
@@ -184,7 +185,7 @@ const AdminOverview: React.FC<{ onNavigate: (tab: AdminTabId) => void }> = ({ on
                             {!!openComplaints && (
                                 <QueueRow
                                     icon="📣"
-                                    title={`${openComplaints} شكوى مفتوحة`}
+                                    title={admCount(openComplaints, OPEN_COMPLAINTS)}
                                     desc="شكاوى وصلت الإدارة مباشرةً من المستخدمين."
                                     onOpen={() => onNavigate('reports')}
                                 />
@@ -233,7 +234,7 @@ const AdminOverview: React.FC<{ onNavigate: (tab: AdminTabId) => void }> = ({ on
                                 icon="💰"
                                 label="اشتراكات شهرية"
                                 value={admMoney(stats?.mrr)}
-                                scope={`${admNum(stats?.paying_sellers)} مشترك · قبل الخصومات`}
+                                scope={`${admCount(Number(stats?.paying_sellers) || 0, SUBSCRIBERS)} · قبل الخصومات`}
                                 delta={deltaChip(deltas.mrr)}
                                 title="مجموع مبالغ الاشتراكات النشطة كما هي مسجّلة، قبل طرح أي خصم. الرقم بعد الخصومات في شاشة التجّار."
                             />

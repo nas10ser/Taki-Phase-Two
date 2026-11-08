@@ -62,7 +62,11 @@ captures/
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# google-services.json
+# 🔴 أُعيد تفعيلُ هذا السطر (كان معلَّقاً، أي أن الملفَّ لم يكن مُستثنى
+#    إطلاقاً). والمستودعُ **عامّ**: ملفٌّ يدخله لحظةً يبقى في تاريخه أبداً.
+#    وهو يُكتب في البناء من سرِّ GitHub `ANDROID_GOOGLE_SERVICES_JSON_B64`.
+google-services.json
+app/google-services.json
 
 # Freeline
 freeline.py

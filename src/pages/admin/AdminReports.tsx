@@ -49,6 +49,7 @@ import {
     AdmStat, AdmStatGrid,
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     admNum, toneFg, toneBg,
+    admCount, DAYS, ROWS, SHOWN_M, FILED_REPORTS, RECEIVED_REPORTS, REPORTERS, REPLIES, OPEN_SESSIONS,
 } from '../../components/admin/ui';
 import type { Tone } from '../../components/admin/ui';
 
@@ -318,7 +319,7 @@ const AdminReports: React.FC = () => {
             if (txt.length < 3) { await customAlert('⚠️ اكتب سبباً واضحاً — يصل صاحب الحساب.'); return; }
             const r = await adminService.suspendAccount(userId, true, txt);
             if (!r.success) { customAlert('❌ تعذّر تنفيذ الإجراء'); return; }
-            await customAlert(`⛔ أُوقف الحساب.\n• مُنع من تسجيل الدخول\n• أُنهيت ${r.sessionsKilled || 0} جلسة مفتوحة\n• وصله إشعار بالسبب`);
+            await customAlert(`⛔ أُوقف الحساب.\n• مُنع من تسجيل الدخول\n• أُنهيت ${admCount(r.sessionsKilled || 0, OPEN_SESSIONS)}\n• وصله إشعار بالسبب`);
             load();
             return;
         }
@@ -342,7 +343,7 @@ const AdminReports: React.FC = () => {
         if (!days || days <= 0) { await customAlert('⚠️ اكتب عدد أيام صحيحاً أكبر من صفر.'); return; }
         const { data, error } = await supabase.rpc('admin_set_booking_ban', { p_user_id: userId, p_days: days, p_reason: 'قرار إداري' });
         if (error || !(data as any)?.success) { await customAlert('❌ تعذّر التعليق: ' + (error?.message || '')); return; }
-        await customAlert(`⏸️ تم تعليق الحجز على «${name}» لمدة ${days} يوماً — وصله إشعار بذلك.`);
+        await customAlert(`⏸️ تم تعليق الحجز على «${name}» لمدة ${admCount(days, DAYS, true)} — وصله إشعار بذلك.`);
     };
     const bookingBanLift = async (userId: string, name: string) => {
         const ok = await customConfirm(`▶️ رفع تعليق الحجز عن «${name}»؟`);
@@ -495,7 +496,7 @@ const AdminReports: React.FC = () => {
                 ))}
                 {hasMore && (
                     <AdmButton full onClick={() => setShown((n) => n + PAGE)} disabled={loading}>
-                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admNum(reports.length)} صفّاً`}
+                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admCount(reports.length, ROWS)}`}
                     </AdmButton>
                 )}
             </div>
@@ -523,7 +524,7 @@ const AdminReports: React.FC = () => {
                 ))}
                 {hasMore && (
                     <AdmButton full onClick={() => setShown((n) => n + PAGE)} disabled={loading}>
-                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admNum(complaints.length)} صفّاً`}
+                        {loading ? 'جارٍ التحميل…' : `عرض المزيد — ظهر ${admCount(complaints.length, ROWS)}`}
                     </AdmButton>
                 )}
             </div>
@@ -715,7 +716,7 @@ const AdminReports: React.FC = () => {
                 icon={cur.icon}
                 title={cur.label}
                 desc={cur.desc}
-                badge={loading ? undefined : { text: `${admNum(shownCount)} معروض`, tone: 'neutral' }}
+                badge={loading ? undefined : { text: admCount(shownCount, SHOWN_M), tone: 'neutral' }}
             >
                 {body}
             </AdmSection>
@@ -759,7 +760,7 @@ const ReportCard: React.FC<ReportCardProps> = ({ report: r, onOpenAccount, onSta
                     label="المُبلِّغ"
                     name={r.reporter_name}
                     role={r.reporter_role}
-                    extra={`${admNum(r.reporter_filed_count)} بلاغ مُقدّم`}
+                    extra={admCount(r.reporter_filed_count, FILED_REPORTS)}
                     extraTooltip="عدد البلاغات التي قدّمها هذا المستخدم — كثرة الأرقام = مُبلِّغ كيدي محتمل"
                     onClick={() => onOpenAccount(r.reporter_id, r.reporter_role, r.reporter_name)}
                     icon="👤"
@@ -769,8 +770,8 @@ const ReportCard: React.FC<ReportCardProps> = ({ report: r, onOpenAccount, onSta
                     label="المُبلَّغ ضدّه"
                     name={r.reported_name}
                     role={r.reported_role}
-                    extra={`${admNum(r.reported_received_count)} بلاغ مستلَم · ${admNum(r.reported_distinct_reporters)} مبلِّغ مختلف/14ي`}
-                    extraTooltip="إذا تجاوز عدد المبلِّغين المختلفين 3 خلال 14 يوم، النظام يحوّل الحساب تلقائياً لتحت المراجعة"
+                    extra={`${admCount(r.reported_received_count, RECEIVED_REPORTS)} · ${admCount(r.reported_distinct_reporters, REPORTERS)}/14ي`}
+                    extraTooltip="إذا تجاوز عدد المبلِّغين المختلفين 3 خلال 14 يوماً، النظام يحوّل الحساب تلقائياً لتحت المراجعة"
                     onClick={() => onOpenAccount(r.reported_id, r.reported_role, r.reported_name)}
                     icon="🎯"
                     danger
@@ -917,8 +918,8 @@ const ComplaintReplyBox: React.FC<{ complaint: AdminComplaintRow; onDone: () => 
                 {c.reply_count > 0 && (
                     <AdmPill tone={c.last_reply_role === 'user' ? 'warn' : 'neutral'}>
                         {c.last_reply_role === 'user'
-                            ? `${c.reply_count} ردّاً · ينتظر ردّك`
-                            : `${c.reply_count} ردّاً · آخرها منك`}
+                            ? `${admCount(c.reply_count, REPLIES)} · ينتظر ردّك`
+                            : `${admCount(c.reply_count, REPLIES)} · آخرها منك`}
                     </AdmPill>
                 )}
             </div>

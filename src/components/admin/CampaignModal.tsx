@@ -9,7 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import { CITIES, REGIONS } from '../../data/mock';
-import { AdmButton, AdmSwitch as Sw } from './ui';
+import { AdmButton, AdmSwitch as Sw, admCount, USERS } from './ui';
 import { useEscClose } from '../../hooks/useEscClose';
 // v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
 import { useBackClose } from '../../hooks/useBackClose';
@@ -201,7 +201,7 @@ export const CampaignModal: React.FC<{
             isEdit
                 ? '✅ تم تعديل الحملة'
                 : (broadcastCount > 0
-                    ? `✅ تم نشر الحملة ووصلت إلى ${broadcastCount.toLocaleString('ar-SA')} مستخدم.`
+                    ? `✅ تم نشر الحملة ووصلت إلى ${admCount(broadcastCount, USERS)}.`
                     : '✅ تم نشر الحملة.')
         );
         onSaved();

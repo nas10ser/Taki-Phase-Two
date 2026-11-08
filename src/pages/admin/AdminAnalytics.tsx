@@ -30,7 +30,7 @@ const TIME_RANGES: Record<TimeRange, { label: string; minutes: number; bucket: '
     '1hour':  { label: 'ساعة',      minutes: 60,          bucket: 'minute' },
     '24hour': { label: '24 ساعة',   minutes: 60 * 24,     bucket: 'hour' },
     '7day':   { label: '7 أيام',    minutes: 60 * 24 * 7, bucket: 'day' },
-    '30day':  { label: '30 يوم',    minutes: 60 * 24 * 30,bucket: 'day' },
+    '30day':  { label: '30 يوماً',    minutes: 60 * 24 * 30,bucket: 'day' },
     'custom': { label: 'مخصص',      minutes: 60 * 24,     bucket: 'hour' },
 };
 
@@ -379,7 +379,7 @@ const AdminAnalytics: React.FC = () => {
                     <RangePreset label="اليوم" onClick={() => { const t = isoDate(new Date()); setRangeFrom(t); setRangeTo(t); }} />
                     <RangePreset label="أمس" onClick={() => { const y = isoDate(new Date(Date.now() - 864e5)); setRangeFrom(y); setRangeTo(y); }} />
                     <RangePreset label="آخر 7 أيام" onClick={() => { setRangeFrom(isoDate(new Date(Date.now() - 6 * 864e5))); setRangeTo(isoDate(new Date())); }} />
-                    <RangePreset label="آخر 30 يوم" onClick={() => { setRangeFrom(isoDate(new Date(Date.now() - 29 * 864e5))); setRangeTo(isoDate(new Date())); }} />
+                    <RangePreset label="آخر 30 يوماً" onClick={() => { setRangeFrom(isoDate(new Date(Date.now() - 29 * 864e5))); setRangeTo(isoDate(new Date())); }} />
                     <RangePreset label="هذا الشهر" onClick={() => { const n = new Date(); setRangeFrom(isoDate(new Date(n.getFullYear(), n.getMonth(), 1))); setRangeTo(isoDate(n)); }} />
                 </div>
                 {rangeLoading ? (

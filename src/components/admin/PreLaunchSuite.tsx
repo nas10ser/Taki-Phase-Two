@@ -17,6 +17,7 @@ import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { useApp } from '../../context/AppContext';
 import { CopyButton } from './CopyButton';
+import { admCount, POINTS, EVENTS } from './ui';
 
 // ============================================================
 // Health Check Runner — ~30 checks, one click, color-coded report
@@ -272,7 +273,7 @@ const BUILD_CHECKS = (): CheckDef[] => [
             );
             const dur = Math.round(performance.now() - start);
             return Array.isArray(r)
-                ? { status: 'pass' as const, detail: `${dur}ms · ${r.length} نقطة` }
+                ? { status: 'pass' as const, detail: `${dur}ms · ${admCount(r.length, POINTS)}` }
                 : { status: 'fail' as const, detail: 'فشل' };
         },
     },
@@ -298,7 +299,7 @@ const BUILD_CHECKS = (): CheckDef[] => [
             const r = await adminService.getRecentActivity(5);
             const dur = Math.round(performance.now() - start);
             return Array.isArray(r)
-                ? { status: 'pass' as const, detail: `${dur}ms · ${r.length} حدث` }
+                ? { status: 'pass' as const, detail: `${dur}ms · ${admCount(r.length, EVENTS)}` }
                 : { status: 'fail' as const, detail: 'فشل' };
         },
     },
@@ -849,7 +850,7 @@ const LAUNCH_CHECKLIST: ChecklistItem[] = [
     { id: 'edge-fn',         category: 'business', status: 'needs_work',  label: 'Edge Function للـwebhook منشورة',          detail: 'تستقبل أحداث الدفع وتنشئ subscription_payment' },
     { id: 'pricing',         category: 'business', status: 'manual',      label: 'خطة تسعير واضحة للتجار',                   detail: 'إذا فعّلت الدفع — كم يدفع التاجر شهرياً؟ ما الباقات؟' },
     { id: 'support',         category: 'business', status: 'manual',      label: 'قناة دعم عملاء',                            detail: 'واتساب أو إيميل مخصّص — راجع response time SLA' },
-    { id: 'onboarding',      category: 'business', status: 'manual',      label: 'دعوة 10-20 تاجر أولي',                     detail: 'لبدء الزخم — منصة marketplace بدون تجار = فارغة' },
+    { id: 'onboarding',      category: 'business', status: 'manual',      label: 'دعوة 10-20 تاجراً أولياً',                     detail: 'لبدء الزخم — منصة marketplace بدون تجار = فارغة' },
     { id: 'social',          category: 'business', status: 'manual',      label: 'حسابات Twitter + Instagram + TikTok',      detail: 'لإعلانات التسويق ودعم المجتمع' },
     { id: 'launch-plan',     category: 'business', status: 'manual',      label: 'خطة إطلاق + مواد تسويقية',                  detail: 'صور + فيديو + بيان صحفي + لائحة media kit' },
     { id: 'app-store',       category: 'business', status: 'manual',      label: 'App Store + Play Store (PWA-only الآن)',   detail: 'PWA يكفي للبداية — Native لاحقاً' },
@@ -1149,7 +1150,7 @@ const PaymentAttemptsTable: React.FC = () => {
     }
     return (
         <section className="bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
-            <h3 className="text-xl font-extrabold text-[var(--text-primary)] mb-3">💸 محاولات الدفع — آخر 30 يوم</h3>
+            <h3 className="text-xl font-extrabold text-[var(--text-primary)] mb-3">💸 محاولات الدفع — آخر 30 يوماً</h3>
             <div className="space-y-1.5 max-h-80 overflow-y-auto">
                 {attempts.map((a) => {
                     const tone =

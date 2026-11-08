@@ -118,7 +118,17 @@
   <link rel="alternate" hreflang="ar-SA" href="https://www.takisa.net/">
   <link rel="alternate" hreflang="en" href="https://www.takisa.net/">
   <link rel="alternate" hreflang="x-default" href="https://www.takisa.net/">
-  <script type="application/ld+json">
+  <!-- v15.81 — 🔴 ولا يُكتب اسمٌ نظاميٌّ ولا رقمُ سجلٍّ ولا رقمٌ ضريبيٌّ هنا نصّاً.
+       عقدةُ `Organization` كانت تحمل علامةً تجاريّةً بلا كيانٍ نظاميٍّ خلفها (صفرُ
+       `legalName`/`identifier`/`vatID`/`address`)، والمصدرُ الوحيد لتلك القيم هو
+       `platform_settings.tax_settings` الذي يحرّره ناصر من لوحة المدير ← «الزكاة
+       والضريبة». فتُحقن لحظياً من `src/data/operatorIdentity.ts`
+       (`applyOperatorIdentityToJsonLd`) بعد قراءةِ الإعداد.
+       🪤 ولا تُحقن وقتَ البناء: الحقنُ يتجمّد عند لحظة النشر فيكذب بعد أوّل
+          تعديلٍ من الشاشة — وهو نفسُ فخّ «رقمٍ مكتوبٍ في نصّ».
+       🪤 والوسمُ يُعثَر عليه بـ`id` ثمّ **بمحتواه** إن حذف المُصغِّرُ الخاصّية:
+          الحقنُ على مرساةٍ غائبةٍ لا يُخطئ، فتبدو الأداةُ سليمةً ولا تحقن شيئاً. -->
+  <script type="application/ld+json" id="taki-org-ld">
   {
     "@context": "https://schema.org",
     "@graph": [

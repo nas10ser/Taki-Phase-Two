@@ -10,6 +10,7 @@ import React from 'react';
 import { LEGAL_VERSION } from '../../data/legalVersion';
 import { LegalLayout, Section, Paragraph } from './LegalLayout';
 import { useApp } from '../../context/AppContext';
+import OperatorIdentityBlock from '../../components/OperatorIdentityBlock';
 
 const Contact: React.FC = () => {
     const { language, platformSettings } = useApp();
@@ -84,6 +85,10 @@ const Contact: React.FC = () => {
                         </a>
                     </Paragraph>
                 )}
+                {/* 🔴 v15.81 — صفحةُ «اتصل بنا» كانت تذكر القنوات ولا تسمّي
+                    **من** تتّصل به: لا اسمَ منشأةٍ ولا سجلّاً ولا عنواناً.
+                    وزائرٌ بلا حسابٍ لم يكن يملك خصماً معلومَ الهويّة أصلاً. */}
+                <OperatorIdentityBlock />
             </Section>
 
             <Section title={isRTL ? '📣 الشكاوى والاقتراحات والاستفسارات' : '📣 Complaints, suggestions and enquiries'}>

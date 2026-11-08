@@ -1,15 +1,23 @@
 # نشرُ تاكي على المتجرين — الحالةُ والخطوات
 
-> 🔴 **الحالةُ اليوم (٧ نوفمبر ٢٠٢٦ — قِيست من المتجرين لا من الذاكرة):**
+> 🔴 **الحالةُ اليوم (٨ نوفمبر ٢٠٢٦ — قِيست، ومُصحَّحةٌ عمّا كان مكتوباً هنا):**
 > التطبيقان **غير منشورين**. `itunes.apple.com/lookup?bundleId=net.takisa.app`
 > يردّ `resultCount: 0`، و`play.google.com/store/apps/details?id=net.takisa.app`
-> يردّ **٤٠٤**. والبناءان أخضران في نفس اليوم (`build-android` · `build-ios`)
-> — فالناقصُ ما في القسم ٣ وحده: حسابان مدفوعان ومفاتيحُ توقيع.
+> يردّ **٤٠٤**.
 >
-> **سطران:** المشروعان **موجودان الآن** في المستودع ويُبنيان في GitHub.
-> أندرويد **يُبنى بنجاح اليوم** (قِيس). وآيفون يُبنى على منصّة `macos-26`
-> لأن ماكَ ناصر **لا يستطيع** تحقيق شرط أبل (Xcode 26) ولا يقبل الترقية.
-> ما ينقص بعدَه: حسابان مدفوعان ومفاتيحُ توقيع — ولا شيءَ تقنيّ.
+> 🔴 **وما كان مكتوباً هنا («البناءان أخضران») صحيحٌ ومُضلِّلٌ معاً، وقِيس:**
+> البناءان **يُجمِّعان** ولم يُنتجا قطُّ ملفّاً قابلاً للتثبيت ولا للرفع.
+> سبعُ جلساتٍ لسير آيفون، وخطوتا التوقيع `skipped` **١٤/١٤ مرّة**، وجلستا
+> ٧ نوفمبر الخضراوان أنتجتا **صفرَ أثر** (`artifacts total= 0`). وأندرويد
+> أنتج أثراً واحداً ٣١٫٧ م.ب وهو حزمةُ **تصحيح** (`assembleDebug`) ترفضها
+> قوقل. ⇒ «أخضر» كان يعني «جُمِّع» لا «جاهزٌ للرفع».
+> وأُصلح ذلك في v15.81: توقيعٌ يدويٌّ صحيحٌ من طرفٍ إلى طرف، ورفعٌ فعليٌّ
+> إلى App Store Connect، **وعقدُ إصدارٍ يُحمّر السيرَ** إن طُلبت نشرةٌ ولم
+> يصل أبلَ شيء (`.github/release-contract.sh` + `scripts/check-release-contract.js`).
+>
+> **سطران:** المشروعان موجودان ويُبنيان في GitHub، وآيفون على منصّة
+> `macos-26` لأن ماكَ ناصر **لا يستطيع** تحقيق شرط أبل (Xcode 26) ولا يقبل
+> الترقية. والناقصُ الآن: حسابان مدفوعان وأسرارُ القسم ٣ — ولا شيءَ تقنيّ.
 
 ---
 
@@ -46,8 +54,18 @@ store/assets/                  أيقونةُ أبل ١٠٢٤ (بلا ألفا) 
 - **ماسحُ باركود ML Kit** — التاجرُ يمسح باركود المشتري. وماسحُ الويب يفكّ
   الصورةَ برمجياً إطاراً بإطار: بطيءٌ في ضوء المتجر، ولا يقرأ Code128 أصلاً.
 - **موقعُ النظام الأصليّ** — إذنُ **التطبيق** بنصّنا، لا إذنُ ويبٍ غامض.
-- **إشعاراتُ APNs/FCM** — آيفون لا يُسلّم Web Push داخل تطبيقٍ من المتجر.
+- **الشراءُ داخل التطبيق** — StoreKit 2 على آيفون وPlay Billing على أندرويد،
+  إضافتان أصليّتان مكتوبتان بـSwift وJava في مشروعَينا.
 - زرُّ الرجوع · الروابطُ العميقة · اهتزازٌ عند المسح · شاشةُ بدءٍ لا تومض.
+
+🔴 **وأُسقطت من هذه القائمة «إشعاراتُ APNs/FCM» — وكانت مكتوبةً وغيرَ
+منفَّذة.** قِيس (٨ نوفمبر ٢٠٢٦): `registerNativePush` بصفر موضعِ نداء، ولا
+جدولَ رموزِ أجهزةٍ في القاعدة، ودالّةُ الإرسال `send-push` بـVAPID وحدها،
+**وجسرُ `AppDelegate` الذي بلا سطرَيه لا يصل رمزُ جهازٍ إطلاقاً كان مفقوداً**.
+أُضيف الجسرُ وبنيةُ القاعدة في v15.81، ويبقى مفتاحُ APNs ومشروعُ Firebase
+(القسم ٣/د). ⇒ **ولا يُذكر الإشعارُ لمراجِعٍ قبل أن يعمل**: وثيقةٌ تَعِد بما
+لا يُنفَّذ أسوأُ من وثيقةٍ لا تَعِد، وهذه هي الوثيقةُ التي يُقرأ منها ما
+يُقال لأبل.
 
 ---
 
@@ -67,13 +85,64 @@ store/assets/                  أيقونةُ أبل ١٠٢٤ (بلا ألفا) 
    `ANDROID_KEYSTORE_BASE64` · `ANDROID_KEYSTORE_PASSWORD` ·
    `ANDROID_KEY_ALIAS` · `ANDROID_KEY_PASSWORD`.
 
-### ب) أبل (٩٩ دولاراً سنوياً)
-1. اشترك في Apple Developer Program (للشركة: D‑U‑N‑S أيضاً).
-2. من **Membership** انسخ **Team ID** (عشرةُ محارف) — وأكتب
-   `apple-app-site-association` بأمرٍ واحد.
-3. أنشئ التطبيق في App Store Connect بالمعرّف `net.takisa.app`.
-4. أربعةُ أسرارٍ في GitHub: `APPLE_CERT_P12_BASE64` · `APPLE_CERT_PASSWORD` ·
-   `APPLE_PROVISIONING_PROFILE_BASE64` · `APPLE_TEAM_ID`.
+### ب) أبل (٩٩ دولاراً سنوياً) — **سبعةُ أسرارٍ لا أربعة**
+
+🔴 والسبعةُ كلُّها تُفحص **قبل** أن يبدأ الأرشيف. وبالأربعة القديمة كان
+السيرُ يقول «الشهادةُ متاحة» ويبني عشرين دقيقةً ثمّ يسقط عند الرفع — فمفتاحُ
+الرفع لم يكن مفحوصاً أصلاً.
+
+كلُّها في موضعٍ واحد: github.com/nas10ser/Taki-Phase-Two ← **Settings** ←
+**Secrets and variables** ← **Actions** ← «New repository secret».
+
+1. **`APPLE_TEAM_ID`** — developer.apple.com ← **Membership**. عشرةُ محارف
+   مثل `A1B2C3D4E5`. تُنسخ كما هي.
+2. **`APPLE_CERT_P12_BASE64`** — شهادةُ التوزيع.
+   developer.apple.com ← Certificates ← «+» ← **Apple Distribution** ←
+   نزّل `.cer` ← انقر عليه مرّتين (يدخل Keychain) ← في Keychain Access من
+   «My Certificates» ← زرّ يمين ← Export ← احفظه `.p12` واختر له كلمةَ مرور.
+   ⚠️ و`.p12` **ملفٌّ** وسرُّ GitHub **نصّ**، فيُحوَّل بأمرٍ واحدٍ على ماكك
+   (ينسخ الناتجَ إلى الحافظة فتلصقه مباشرةً):
+   `base64 -i ~/Desktop/dist.p12 | tr -d '\n' | pbcopy`
+   **المتوقَّع:** لا يُطبع شيء — ثمّ الصقه في الصندوق. (سطرٌ طويلٌ واحدٌ بلا
+   مسافات؛ و`tr -d '\n'` هي ما يضمن ذلك.)
+   🔴 و**Apple Distribution** لا Apple Development: شهادةُ التطوير يرفضها
+   السيرُ الآن صراحةً برسالة «صفرُ هويّةِ توزيع» في ثانيةٍ لا بعد الأرشفة.
+3. **`APPLE_CERT_PASSWORD`** — نفسُ الكلمة التي اخترتَها في الخطوة ٢.
+4. **`APPLE_PROVISIONING_PROFILE_BASE64`** — ملفُّ تزويد **App Store**.
+   developer.apple.com ← Identifiers ← «+» ← App ID بالمعرّف
+   **`net.takisa.app`** ← فعّل **Push Notifications** و**Associated Domains**
+   (كلتاهما في صلاحيّاتنا، وملفٌّ بلاهما يُرفض الآن قبل الأرشفة) ← ثمّ
+   Profiles ← «+» ← **App Store Connect** ← اختر هذا المعرّف وشهادةَ
+   Apple Distribution ← نزّل `.mobileprovision`. ثمّ:
+   `base64 -i ~/Desktop/TAKI_AppStore.mobileprovision | tr -d '\n' | pbcopy`
+   (ولا سرَّ لاسم الملفّ: السيرُ يقرأ الاسمَ والمعرّفَ والصلاحيّةَ **من داخل
+   الملفّ نفسِه** — موضعٌ أقلُّ يجب تذكُّرُ تحديثِه.)
+5. **`APPLE_ASC_KEY_ID`**
+6. **`APPLE_ASC_ISSUER_ID`**
+7. **`APPLE_ASC_KEY_P8_BASE64`**
+   الثلاثةُ من شاشةٍ واحدة: appstoreconnect.apple.com ← **Users and Access**
+   ← **Integrations** ← **App Store Connect API** ← «+» ←
+   الصلاحيّة **App Manager** (ودرجةُ Developer لا تكفي للرفع).
+   • **Issuer ID** أعلى الصفحة ⇒ السرُّ ٦.
+   • **KEY ID** في صفّ المفتاح ⇒ السرُّ ٥.
+   • و«Download» يعطي `AuthKey_XXXXXXXX.p8`.
+     🔴 **أبل تسمح بتنزيله مرّةً واحدةً فقط** — وفقدانُه يعني إبطالَه وإنشاءَ
+     مفتاحٍ جديد. احفظه أوّلاً في `~/Desktop/TAKI/محلّي/مفاتيح/` ثمّ:
+     `base64 -i ~/Desktop/AuthKey_XXXXXXXX.p8 | tr -d '\n' | pbcopy`
+     ⇒ السرُّ ٧.
+
+8. ومرّةً واحدةً قبل أوّل رفعة: appstoreconnect.apple.com ← Apps ← «+» ←
+   New App بالمعرّف `net.takisa.app`. **لا تُرفع حزمةٌ إلى تطبيقٍ لا وجودَ
+   له**، والخطأُ العائدُ حينها غامضٌ ولا يقول ذلك.
+9. ومن **Membership** انسخ **Team ID** لي أيضاً، فأكتب
+   `apple-app-site-association` بأمرٍ واحد (الروابطُ العميقة).
+
+**ماذا تتوقّع بعد ذلك:** ادفع وسماً `app-v15.81.0` (أو شغّل السيرَ يدوياً
+بـrelease=true). المتوقَّع: السيرُ **أخضر**، وفي آخر سطرٍ منه
+«✅ عقدُ الإصدار (آيفون): موقَّعٌ · مُصدَّر · مُثبَتُ التوقيع · مرفوعٌ»،
+ثمّ تظهر النشرةُ في App Store Connect ← TestFlight ← Builds خلال دقائقَ إلى
+ساعة. وإن نقص سرٌّ واحدٌ فالسيرُ **أحمر** ويسمّي الناقصَ بالاسم — لا أخضرُ
+بلا ملفّ كما كان.
 
 ### ج) اشتراكُ التاجر داخل التطبيق — **قرارُك اتُّخذ ونُفِّذ** (v15.67)
 
@@ -120,7 +189,15 @@ store/assets/                  أيقونةُ أبل ١٠٢٤ (بلا ألفا) 
 وهذا طبيعيٌّ ولا يُصلَح بكتابة سعرنا في التطبيق (الواجهةُ تعرض سعرَ المتجر).
 
 ٢) **أعطِني المعرّفاتَ**، وأربطُها بأمرٍ واحد (`platform_settings.iap_products`).
-   وقبل الربط تردّ الشاشةُ «لا باقاتٌ متاحةٌ في المتجر الآن» بصراحةٍ لا بخطأ.
+   وقبل الربط تقول الشاشةُ **«الباقاتُ غيرُ متاحةٍ للشراء الآن.»** بصراحةٍ لا
+   بخطأ، ويبقى زرُّ «استعادة المشتريات» ظاهراً (يُلزم به البند ٣٫١٫١).
+   🔴 وكان مكتوباً هنا نصٌّ آخر («لا باقاتٌ متاحةٌ في المتجر الآن») وهو نصُّ
+   **فرعٍ ثالثٍ لا يُسلَكُ في هذه الحالة**: بخريطةٍ فارغة تكون الحالةُ
+   `not_mapped`، وكان نصُّها «يمكنك الاشتراك من موقع تاكي على المتصفّح» —
+   أي **إحالةُ شراءٍ خارج التطبيق، ورفضُها بالبند ٣٫١٫١ فوريّ**. فالوثيقةُ
+   وصفت الفرعَ الآمنَ والكودُ سلك الممنوع. أُصلح النصُّ في v15.81، وصار
+   `scripts/check-iap-compliance.js` يُفشل البناءَ على أيّ إحالةٍ كهذه —
+   **وحتى على المقطَّعة** (`'…the web' + 'site…'`)، فالحرفيّاتُ تُدمَج قبل الفحص.
 
 ٣) **عنوانُ الإشعارات** — يُلصق في اللوحتين، وهو في ملفّ مفاتيحك (القسم ٧،
    `IAP_NOTIFY_URL`؛ أنشأتُه على الخادم فلم يمرّ في أي سجلّ):
@@ -128,16 +205,110 @@ store/assets/                  أيقونةُ أبل ١٠٢٤ (بلا ألفا) 
    - قوقل: Play Console ← Monetization setup ← **Real-time developer notifications**
      (تحتاج موضوعَ Pub/Sub يدفع إلى ذلك العنوان)
 
-٤) **ستّةُ أسرارٍ** تُضاف على خادم جدة (أعطني الملفّات وأضعها أنا):
-   `APPLE_IAP_KEY_P8` · `APPLE_IAP_KEY_ID` · `APPLE_IAP_ISSUER_ID` ·
-   `APPLE_BUNDLE_ID` · `GOOGLE_PLAY_SA_JSON` · `GOOGLE_PLAY_PACKAGE`
+٤) **ستّةُ أسرارٍ** على خادم جدة — و**اثنان منها لا يحتاجان حساباً**:
+   • بلا حساب (أضبطهما متى شئت): `APPLE_BUNDLE_ID` و`GOOGLE_PLAY_PACKAGE`،
+     وقيمتُهما `net.takisa.app` — معروفةٌ منذ بُني المشروعان. وكانت الستّةُ
+     مكتوبةً معاً هنا فبقي اثنان معطَّلين بلا سبب.
+   • بحسابك: `APPLE_IAP_KEY_P8` + `APPLE_IAP_KEY_ID` + `APPLE_IAP_ISSUER_ID`
+     (App Store Connect ← Users and Access ← Integrations ← **In-App
+     Purchase**)، و`GOOGLE_PLAY_SA_JSON` (حسابُ خدمةٍ من لوحة Play).
    وبغيابها تردّ الدالّةُ `IAP_APPLE_NOT_CONFIGURED` **ولا تُفعّل شيئاً** —
    تفشل مغلقة، ولا تُفعّل اشتراكاً بالخطأ.
 
-🪤 **وملاحظةٌ للمراجِع تُضاف إلى «Notes for Review»**: «اشتراكُ التاجر يُشترى
-داخل التطبيق بنظام دفع المتجر. وحجوزاتُ المشترين **ليست** محتوىً رقمياً:
-الدفعُ فيها لتاجرٍ محليٍّ عبر بوّابته المرخّصة من البنك المركزي السعودي مقابل
-بضاعةٍ أو خدمةٍ تُستلم في مكانٍ فعليّ — وهو مستثنىً بالبند ٣٫١٫٣(هـ)».
+٥) **مفتاحان في لوحتك أنت، ولا يعمل الشراءُ بلاهما** (وأحدُهما لا شاشةَ له
+   اليوم فأضبطه أنا — مذكورٌ في تقرير v15.81):
+   • **`payment_gateway_enabled` = نعم** (لوحةُ المدير ← الأدوات) **قبل**
+     الرفع للمراجعة. 🔴 وهو مُطفأٌ الآن، وبإطفائه تقول صفحةُ الاشتراك
+     «المنصّةُ مجّانيّةٌ تماماً الآن 🎉» **وتختفي بطاقةُ الاشتراك من لوحة
+     التاجر أصلاً** ⇒ المراجعُ لا يجد الاشتراكَ المُرفَق فيردّ «تعذّر العثور
+     على المشتريات داخل التطبيق». وهذا أوّلُ ما يفشل، قبل أيّ شيءٍ آخر.
+   • **`iap_allow_sandbox` = نعم** نافذةَ المراجعة فقط ثمّ **لا** بعد
+     الموافقة: مراجعُ أبل يشتري دائماً في Sandbox، وبإطفائه تردّ القاعدةُ
+     `sandbox_not_allowed` فينجح الدفعُ ولا يُفعَّل شيء — ويُقرأ ذلك على أنه
+     شراءٌ مكسور.
+
+---
+
+### 🧾 ملاحظةُ المراجِع — **نسخةٌ واحدةٌ صادقة** (تُلصق في «Notes for Review»)
+
+> 🔴 كان في هذا الملفّ **كتلتان** تحملان العنوانَ نفسَه وتتناقضان: إحداهما
+> تقول إن اشتراكَ التاجر يُشترى داخل التطبيق، والأخرى تقول إن المنصّة
+> «**لا تبيع محتوىً رقمياً داخل التطبيق**» — وهي عبارةٌ **كاذبة** مع ثمانيةِ
+> اشتراكاتٍ متجدّدةٍ مرفقةٍ بالنشرة. ولصقُ جملةٍ كاذبةٍ في مراجعة أبل أسوأُ
+> من أيّ تأخير. فأُسقطت الكتلتان وهذه بديلُهما الوحيد.
+>
+> 🪤 وأُسقطت الإحالةُ إلى «البند ٣٫١٫٣(هـ)»: لا يمكن التحقّقُ من داخل هذا
+> المستودع أن هذا هو ترقيمُ البند اليوم (أبل أعادت ترقيمَ أحكام «السلع
+> والخدمات خارج التطبيق»). والوقائعُ تحمل الحجّةَ بلا رقم، ورقمٌ قديمٌ يدعو
+> المراجِعَ إلى تصحيحك في الفقرة التي تحتاج قبولَه فيها أكثرَ من غيرها.
+
+يُلصق **بالإنجليزية** (مراجعةُ أبل تقرأ الإنجليزية):
+
+```
+TAKI is a marketplace that connects shoppers in Saudi Arabia with discounts
+at nearby local stores.
+
+1. Two different payments exist in this app, and only one of them is a purchase.
+• Merchant subscription (digital, in-app): a merchant account can buy an
+  auto-renewable monthly subscription that sets how many store locations it
+  may list. It is sold only through StoreKit in-app purchase. There is no
+  other way to buy it inside the app, and the app contains no button, link,
+  or text directing a merchant to purchase anywhere else.
+• Shopper bookings (not a purchase in this app): a shopper reserves an offer
+  and pays the local store for physical goods or an in-person service,
+  collected at the store or delivered to an address. That payment is taken by
+  the store's own payment gateway, licensed by the Saudi Central Bank,
+  outside the app. TAKI never receives, holds, or processes that money, and
+  takes no commission on it. No digital content is sold to shoppers.
+
+2. Products in this submission: eight auto-renewable monthly subscriptions in
+a single subscription group, so merchants can upgrade and downgrade:
+net.takisa.app.sub.loc1, loc3, loc6, loc10, loc15, loc20, loc25, loc30.
+Price, period, and renewal terms are shown on the purchase screen exactly as
+StoreKit reports them; we display no price of our own beside them. "Restore
+purchases" is available on the subscription screen, including when no
+products load. Terms of Use and Privacy Policy are linked on that same screen.
+
+3. Demo account — this is a MERCHANT account: <email> / <password>
+The subscription screen is closed to shopper accounts, and the server
+endpoint that verifies purchases rejects non-merchant callers, so a shopper
+account cannot reach the in-app purchase at all.
+To reach it: sign in → Merchant dashboard → the subscription card at the top
+→ choose a plan → the StoreKit sheet opens.
+
+4. Permissions. Camera: merchants scan a shopper's booking barcode at pickup.
+Location: only while the app is in use, to show nearby offers and to follow a
+delivery. Both are optional and the app works without them. There is no
+tracking across apps or websites, and no advertising identifier.
+
+5. Account deletion is available in the app (Profile → Delete account) and at
+https://www.takisa.net/delete-account
+
+6. Support: https://www.takisa.net/contact
+```
+
+### 🧑‍💼 حسابُ التجربة — **يجب أن يكون حساب تاجر، ويجب أن يكون جديداً**
+
+كان مكتوباً «حسابُ تجربة: (يُزوَّد عند الرفع)» — وهذا ما يجب أن يُزوَّد:
+
+- 🔴 **تاجرٌ لا مشتري**، لأن بوّابتين مستقلّتين تُغلقان الشراءَ على غيره:
+  صفحةُ الاشتراك تردّ «غيرُ مسموحٍ لك بفتح هذه الصفحة» لمن `userType` ليس
+  `seller`، و`iap-verify` على الخادم تردّ `not_a_merchant` بعد أن تقرأ
+  `user_type` من جدول المستخدمين لا من التوكن. ⇒ **حسابُ مشترٍ يجعل الاشتراكَ
+  المُرفَق غيرَ قابلٍ للوصول**، والنتيجةُ هي الرفضُ المعروف «we were unable
+  to locate the in-app purchases».
+- 🔴 **وحسابٌ مخصَّصٌ جديد، لا أحدُ التاجرين القائمين** (وهما اثنان، قِيس):
+  لوحةُ التاجر تعرض أسماءَ مشترين حقيقيّين وجوّالاتِهم وعناوينَ توصيلِهم
+  ومحادثاتِ طلباتِهم — وتسليمُها لمراجِعٍ **حادثةُ خصوصيّة**، وهو سيُنشئ
+  فيها بياناتَ اختبارٍ أيضاً.
+- ما يُزرع فيه: `user_type='seller'` على بريدٍ نملكه · صفٌّ في
+  `store_profiles` باسمٍ وشعارٍ و`max_branches` · ساعاتُ عملٍ مفتوحةٌ كي
+  يمرّ `store_can_sell()` · عرضان أو ثلاثةٌ منشورةٌ بمخزون · وصفرُ عميلٍ
+  حقيقيّ.
+- ويُستثنى من `purge_expired_accounts` (تجهيلُ ٣٠ يوماً) كي لا يُمحى بين
+  دورتَي مراجعة.
+- والتأكيدُ بالدخول من جهازٍ نظيف: **بطاقةُ الاشتراك ظاهرةٌ من اللوحة** —
+  وهو في الوقت نفسِه إثباتٌ أن `payment_gateway_enabled` فُعِّل فعلاً.
 
 ---
 
@@ -163,12 +334,9 @@ store/assets/                  أيقونةُ أبل ١٠٢٤ (بلا ألفا) 
 الشروط `https://www.takisa.net/terms` · الدعم `https://www.takisa.net/contact` ·
 **حذفُ الحساب** `https://www.takisa.net/delete-account`
 
-**ملاحظةٌ للمراجِع (مهمّة — تُلصق في «Notes for Review»):**
-> التطبيق سوقٌ يربط المشترين بمتاجر محليّة في السعودية. الدفع يتمّ **للتاجر
-> مباشرة** عبر بوّابته المرخّصة من البنك المركزي السعودي؛ المنصّة لا تستلم
-> أموالاً ولا تبيع محتوىً رقمياً داخل التطبيق. إذنُ الكاميرا لمسح باركود
-> الحجز عند الاستلام، وإذنُ الموقع لعرض العروض القريبة ولمتابعة التوصيل
-> أثناء الاستعمال فقط. حسابُ تجربة: (يُزوَّد عند الرفع).
+**ملاحظةُ المراجِع:** نسخةٌ واحدةٌ صادقةٌ في القسم ٣/ج أعلاه — ولا تُكتب
+هنا نسخةٌ ثانية. (كانت هنا كتلةٌ تقول إن المنصّة «لا تبيع محتوىً رقمياً داخل
+التطبيق»، وهي كاذبةٌ مع ثمانيةِ اشتراكاتٍ مرفقةٍ بالنشرة.)
 
 ---
 
@@ -205,8 +373,16 @@ npm run build && node scripts/native-sync.js   # الواجهةُ إلى الم�
 node scripts/set-assetlinks.js <البصمة>        # بعد لوحة Play
 node scripts/set-apple-appsite.js <Team ID>    # بعد حساب أبل
 node scripts/check-iap-compliance.js           # امتثالُ البند ٣٫١٫١ (داخل npm test)
+node scripts/check-release-contract.js         # «أخضر» = قابلٌ للرفع (داخل npm test)
 ```
 
 والبناءُ نفسُه في GitHub ← Actions ← «بناء تطبيق أندرويد» / «بناء تطبيق آيفون»
-(أو بدفع وسمٍ `app-v*`). **بلا أسرارٍ يُبنى بلا توقيع** — وهو ما يُثبت أن
-المشروع سليمٌ قبل أن تدفع شيئاً.
+(أو بدفع وسمٍ `app-v*`).
+
+**بلا أسرارٍ يُبنى بلا توقيع** — وهو ما يُثبت أن المشروع سليمٌ قبل أن تدفع
+شيئاً. 🔴 **لكنّ الطلبَ الصريحَ للإصدار (دفعُ وسمٍ، أو `release=true`) يصير
+أحمرَ إن لم يصل المتجرَ ملفٌّ فعلاً** — وهذا هو ما تغيّر في v15.81. والسطرُ
+الأخيرُ في السير يقول أيّهما جرى:
+- «ℹ️ بناءُ تحقّقٍ فقط — لا عقدَ رفع.» ⇒ جُمِّع، ولا حزمةَ مطلوبة.
+- «✅ عقدُ الإصدار: … مرفوعٌ · والحزمةُ على القرص» ⇒ وصلت المتجرَ.
+- «❌ طُلب إصدارٌ ولم يصل المتجرَ شيء.» ⇒ السيرُ **أحمر**، ويسمّي ما نقص.

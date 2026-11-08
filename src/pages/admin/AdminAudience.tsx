@@ -41,6 +41,7 @@ import SiteTrafficPanel from '../../components/admin/SiteTrafficPanel';
 import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
     AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, admNum,
+    admCount, DAYS, BOOKINGS, CITIES as CITY_F,
 } from '../../components/admin/ui';
 import type { AdmColumn } from '../../components/admin/ui';
 
@@ -93,7 +94,7 @@ const DailyChart: React.FC<{ rows: DailyRow[] }> = ({ rows }) => {
             <svg
                 viewBox={`0 0 ${W} ${H + LAB}`}
                 role="img"
-                aria-label={`أعمدة يومية لعدد من دخل ومن حجز خلال ${n} يوماً`}
+                aria-label={`أعمدة يومية لعدد من دخل ومن حجز خلال ${admCount(n, DAYS, true)}`}
                 style={{ display: 'block', width: '100%', minWidth: Math.min(700, Math.max(300, n * 24)), height: 'auto', maxHeight: 210 }}
             >
                 <line x1={PAD} y1={H} x2={W - PAD} y2={H} stroke="var(--adm-border)" strokeWidth={1} />
@@ -233,7 +234,7 @@ const AdminAudience: React.FC = () => {
 
     const periodLabel = onDate
         ? `يوم ${onDate}`
-        : days === 1 ? 'اليوم' : `آخر ${days} يوماً`;
+        : days === 1 ? 'اليوم' : `آخر ${admCount(days, DAYS, true)}`;
 
     const hoursLabel = hoursOn ? `${hourLabel(hourFrom)} → ${hourLabel(hourTo)}` : 'كل الساعات';
     const filtersOn = !!(onDate || hoursOn || region || city || mall) || days !== 7;
@@ -296,7 +297,7 @@ const AdminAudience: React.FC = () => {
                             variant={!onDate && days === d ? 'primary' : 'secondary'}
                             onClick={() => { setDays(d); setOnDate(''); }}
                         >
-                            {d === 1 ? 'اليوم' : `آخر ${d} يوماً`}
+                            {d === 1 ? 'اليوم' : `آخر ${admCount(d, DAYS, true)}`}
                         </AdmButton>
                     ))}
                     <label
@@ -557,7 +558,7 @@ const AdminAudience: React.FC = () => {
                         title="المدن"
                         icon="🏙"
                         desc="المنتقل بين المدن يُحسب على آخر مدينةٍ عُرف فيها (كان في الدمام وصار في الخبر ← يُحسب على الخبر)."
-                        badge={cities.length ? { text: `${admNum(cities.length)} مدينة`, tone: 'neutral' } : undefined}
+                        badge={cities.length ? { text: admCount(cities.length, CITY_F), tone: 'neutral' } : undefined}
                     >
                         <AdmTable<CityRow>
                             columns={cityColumns}
@@ -627,7 +628,7 @@ const AdminAudience: React.FC = () => {
                                         icon={SRC_META[src].emoji}
                                         label={SRC_META[src].ar}
                                         value={admNum(num(s?.users))}
-                                        scope={`مستخدماً · ${admNum(num(s?.bookings))} حجز`}
+                                        scope={`مستخدماً · ${admCount(num(s?.bookings), BOOKINGS)}`}
                                         title={`أشخاصٌ مختلفون سُجّل لهم نشاطٌ من ${SRC_META[src].ar} داخل الفترة والنطاق المختارين. والحجوزات هنا بلا الملغاة.`}
                                     />
                                 );

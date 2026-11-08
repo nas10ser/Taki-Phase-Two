@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
 import { AdmCard, AdmStat, AdmStatGrid, AdmPill, AdmButton } from './ui';
+import { admCount, SECONDS, MINUTES, HOURS, DAYS } from './ui';
 
 interface Health {
     status: 'ok' | 'warn' | 'crit' | string;
@@ -32,12 +33,12 @@ interface Health {
 /** «منذ كم» بالعربية بلا مكتبة — ورقمُ الدقائق يُصاغ لا يُلصق. */
 const since = (sec: number, isRTL: boolean): string => {
     if (!Number.isFinite(sec) || sec < 0) return isRTL ? '—' : '—';
-    if (sec < 90) return isRTL ? `قبل ${Math.max(1, Math.round(sec))} ثانية` : `${Math.round(sec)}s ago`;
+    if (sec < 90) return isRTL ? `قبل ${admCount(Math.max(1, Math.round(sec)), SECONDS, true)}` : `${Math.round(sec)}s ago`;
     const m = Math.round(sec / 60);
-    if (m < 90) return isRTL ? `قبل ${m} دقيقة` : `${m} min ago`;
+    if (m < 90) return isRTL ? `قبل ${admCount(m, MINUTES, true)}` : `${m} min ago`;
     const h = Math.round(m / 60);
-    if (h < 36) return isRTL ? `قبل ${h} ساعة` : `${h} h ago`;
-    return isRTL ? `قبل ${Math.round(h / 24)} يوماً` : `${Math.round(h / 24)} d ago`;
+    if (h < 36) return isRTL ? `قبل ${admCount(h, HOURS, true)}` : `${h} h ago`;
+    return isRTL ? `قبل ${admCount(Math.round(h / 24), DAYS, true)}` : `${Math.round(h / 24)} d ago`;
 };
 
 export const SystemHealthCard: React.FC = () => {

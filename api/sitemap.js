@@ -35,6 +35,19 @@ const STATIC = [
     ['/delete-account', 'yearly', '0.3'],
 ];
 
+// v15.81 — مفتاحُ نشرِ الكتالوج في الفهرس. قِيس في ٨ نوفمبر ٢٠٢٦: العروضُ
+// الستّة الحيّةُ كلُّها لمتجرٍ واحد هو **حسابُ الأدمن** (بياناتُ تجربة:
+// «Hbdd» · «كوووووووورة» · «مويه»)، والخريطةُ تُسلّمها جوجل بـ`changefreq
+// hourly`. وما يُفهرَس يبقى في الفهرس بعد مسحه — فالضررُ لا يُستردّ.
+// 🔴 ويفشل **مغلقاً**: غيابُ الصفّ أو تعذّرُ قراءته = لا نشر. الصفحاتُ
+//    الثابتة (ومنها القانونيّةُ الستّ) تُنشر دائماً فلا يُحجب ما يبحث عنه
+//    المراجعُ أوّلاً.
+// 🪤 والمفتاحُ في موضعين لا ثلاثة هنا: لا فرعَ تطبيقٍ له ولا قائمةَ جلب
+//    (`platformSettings.ts` للمتصفّح، وهذه دالّةٌ خادميّة تقرأ REST مباشرةً)
+//    — لكنّ **قائمةَ السماح في `platform_settings_select`** لازمةٌ حتماً،
+//    وإلّا عاد `SELECT` بصفر صفوفٍ لا بخطأ (درس v14.92 · v15.25).
+const CATALOGUE_KEY = 'sitemap_catalogue_enabled';
+
 const esc = (s) => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
@@ -76,21 +89,37 @@ module.exports = async (req, res) => {
     let note = '';
     if (base && key) {
         try {
-            const deals = await restGet(base, key,
-                'deals?select=id,updated_at,expiry_date&status=eq.active' +
-                `&order=updated_at.desc&limit=${MAX_DEALS}`);
-            const now = Date.now();
-            for (const d of deals) {
-                // العرض المنتهي زمنياً يبقى منشوراً في القاعدة لكنه لا يفيد
-                // الزائر القادم من البحث — نستثنيه بدل إغراق الفهرس بصفحات ميتة.
-                if (d.expiry_date && new Date(d.expiry_date).getTime() < now) continue;
-                body += urlTag(`${SITE}/deal/${d.id}`, 'daily', '0.8', isoDay(d.updated_at));
-            }
+            const gate = await restGet(base, key,
+                `platform_settings?select=value&key=eq.${CATALOGUE_KEY}&limit=1`);
+            // `=== true` لا `!== false`: صفٌّ غائبٌ أو قيمةٌ غريبة ⇒ لا نشر.
+            const publishCatalogue = Array.isArray(gate) && gate.length === 1 && gate[0].value === true;
 
-            const stores = await restGet(base, key,
-                `sellers_public?select=id&limit=${MAX_STORES}`);
-            for (const s of stores) {
-                body += urlTag(`${SITE}/store/${s.id}`, 'weekly', '0.7');
+            if (!publishCatalogue) {
+                note = `\n<!-- ${CATALOGUE_KEY} ليس true — الصفحات الثابتة فقط -->`;
+            } else {
+                const deals = await restGet(base, key,
+                    'deals?select=id,store_id,updated_at,expiry_date&status=eq.active' +
+                    `&order=updated_at.desc&limit=${MAX_DEALS}`);
+                const now = Date.now();
+                // المتاجرُ التي لها عرضٌ حيٌّ فعلاً — تُشتقّ من نفس النتيجة فلا
+                // استعلامَ ثانٍ. قِيس: اثنان من ثلاثة متاجر بلا أيّ عرضٍ حيّ،
+                // فكانت الخريطةُ تُسلّم جوجل صفحتين تقولان «لا توجد عروض
+                // حالياً» — محتوىً رقيقٌ يُضعف تقييمَ النطاق كلِّه.
+                const liveStores = new Set();
+                for (const d of deals) {
+                    // العرض المنتهي زمنياً يبقى منشوراً في القاعدة لكنه لا يفيد
+                    // الزائر القادم من البحث — نستثنيه بدل إغراق الفهرس بصفحات ميتة.
+                    if (d.expiry_date && new Date(d.expiry_date).getTime() < now) continue;
+                    if (d.store_id) liveStores.add(d.store_id);
+                    body += urlTag(`${SITE}/deal/${d.id}`, 'daily', '0.8', isoDay(d.updated_at));
+                }
+
+                const stores = await restGet(base, key,
+                    `sellers_public?select=id&limit=${MAX_STORES}`);
+                for (const s of stores) {
+                    if (!liveStores.has(s.id)) continue;
+                    body += urlTag(`${SITE}/store/${s.id}`, 'weekly', '0.7');
+                }
             }
         } catch (e) {
             note = `\n<!-- تعذّر جلب المحتوى الديناميكي: ${esc(e.message)} -->`;

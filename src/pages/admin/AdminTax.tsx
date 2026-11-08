@@ -19,7 +19,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { AdmSection } from '../../components/admin/ui';
+import { AdmSection, INVOICES } from '../../components/admin/ui';
+import { arCount } from '../../utils/arPlural';
 import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
 import { ExportButton } from '../../components/admin/ExportButton';
@@ -443,7 +444,7 @@ const AdminTax: React.FC = () => {
             Promise.all(inQ.map(p => fetchInvoiceCustomer(p.merchant_id))),
         ]);
         const html = inQ.map((p, i) => buildInvoiceHtml(p, settings, names[p.merchant_id] || p.merchant_id, i < inQ.length - 1, { qrDataUrl: qrs[i], customer: custs[i] })).join('\n');
-        print(w, `فواتير ${esc(quarter.label)}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${esc(quarter.label)} (${inQ.length} فاتورة)</div>` + html);
+        print(w, `فواتير ${esc(quarter.label)}`, `<div class="sub" style="text-align:center;font-weight:800">📚 كل فواتير العملاء — ${esc(quarter.label)} (${arCount(inQ.length, INVOICES)})</div>` + html);
     };
 
     // زر واحد: تقرير الإقرار الضريبي بصيغة بنود نموذج الهيئة.
@@ -455,10 +456,10 @@ const AdminTax: React.FC = () => {
  <div class="sub">${esc(settings.entity_name)}${settings.cr_number ? ' — سجل/وثيقة: ' + esc(settings.cr_number) : ''}${settings.vat_number ? ' — الرقم الضريبي: ' + esc(settings.vat_number) : ' — (غير مسجّل ضريبياً بعد)'}</div>
  <table>
   <tr><th>البند (مطابق لنموذج إقرار الهيئة)</th><th>المبلغ (ر.س)</th><th>الضريبة (ر.س)</th></tr>
-  <tr><td>١. المبيعات الخاضعة للنسبة الأساسية ١٥٪ (${r.salesCount} فاتورة)</td><td>${r.salesNet.toFixed(2)}</td><td>${r.salesVat.toFixed(2)}</td></tr>
+  <tr><td>١. المبيعات الخاضعة للنسبة الأساسية ١٥٪ (${arCount(r.salesCount, INVOICES)})</td><td>${r.salesNet.toFixed(2)}</td><td>${r.salesVat.toFixed(2)}</td></tr>
   <tr><td>٢. المبيعات الصفرية / المعفاة</td><td>0.00</td><td>—</td></tr>
   <tr><td>٣. إجمالي المبيعات</td><td>${r.salesNet.toFixed(2)}</td><td>${r.salesVat.toFixed(2)}</td></tr>
-  <tr><td>٤. المشتريات الخاضعة للنسبة الأساسية ١٥٪ (${r.purchCount} فاتورة)</td><td>${r.purchNet.toFixed(2)}</td><td>${r.purchVat.toFixed(2)}</td></tr>
+  <tr><td>٤. المشتريات الخاضعة للنسبة الأساسية ١٥٪ (${arCount(r.purchCount, INVOICES)})</td><td>${r.purchNet.toFixed(2)}</td><td>${r.purchVat.toFixed(2)}</td></tr>
   <tr><td>٥. إجمالي ضريبة المخرجات (على مبيعاتك)</td><td>—</td><td>${r.salesVat.toFixed(2)}</td></tr>
   <tr><td>٦. إجمالي ضريبة المدخلات القابلة للخصم (على مشترياتك)</td><td>—</td><td>${r.purchVat.toFixed(2)}</td></tr>
   <tr class="${refundable ? 'ref' : 'tot'}"><td>٧. ${refundable ? '💚 رصيد قابل للاسترداد / الترحيل' : 'صافي الضريبة المستحقة للهيئة'}</td><td>—</td><td>${Math.abs(r.netDue).toFixed(2)}</td></tr>

@@ -17,3 +17,6 @@ export {
     AdmDateRange, RANGE_PRESETS, rangeFromDays, toDateInput,
 } from './AdminData';
 export type { AdmColumn, AdmRange } from './AdminData';
+
+// معدوداتُ اللوحة — مصدرٌ واحد لصيغ الجمع العربي (v15.81)
+export * from './adminForms';

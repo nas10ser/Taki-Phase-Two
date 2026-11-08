@@ -1,5 +1,52 @@
 apply plugin: 'com.android.application'
 
+// ══════════════════════════════════════════════════════════════════════════
+// رقمُ نسخةِ التطبيق — **يُقرأ من المصدر الحيّ، ولا يُكتب رقمٌ في هذا الملفّ**
+// ──────────────────────────────────────────────────────────────────────────
+// 🔴 العيبُ المقيس: كان هنا `versionCode 155800` و`versionName "15.58.0"`
+//    مكتوبين بيدٍ **تحت تعليقٍ يَعِد بسكربتٍ لا وجودَ له**، فتجمّدا عشرين
+//    إصداراً (المنصّةُ على 15.80). والقاعدةُ المذكورةُ كانت صحيحةً تماماً —
+//    لكنها كُتبت ولم تُنفَّذ، وهذا أسوأُ من ألّا تُكتب.
+// 🔴 و`versionCode` عند قوقل **لا يجوز أن ينقص أبداً**، ورقمٌ خاطئٌ في أوّل
+//    رفعةٍ يحرق المدى كلَّه بلا رجعة. فلا يُخمَّن ولا يُنسخ.
+// 🪤 والمصدرُ `CACHE_NAME` في `sw.js` لأنه **مرفوعٌ مع كلّ نشرٍ بحكم قاعدةٍ
+//    يحرسها `check-cache-bump.js`** — أي أنه الرقمُ الحيُّ فعلاً؛ و
+//    `package.json` يُطابقه بحكم `check-versions.js`. فالسلسلةُ مغلقة.
+//    ولذلك يُشترط تطابقُ «كبير.صغير» بينهما هنا أيضاً: لو انفكّ الحرّاسُ
+//    يوماً، لا تُبنى حزمةُ متجرٍ برقمٍ مجهولِ النسب.
+// 🪤 وكلُّ جزءٍ ≤ ٩٩: الصيغةُ تحشو خانتين، و١٠٠ تُزحزح الخانات فينقص الرقمُ
+//    عمّا سبقه — وذاك عطبٌ لا يُصلَح عند قوقل.
+// ══════════════════════════════════════════════════════════════════════════
+// taki-version:begin
+def takiRepoRoot = rootDir.parentFile
+def takiSw = new File(takiRepoRoot, 'sw.js').getText('UTF-8')
+def takiSwM = (takiSw =~ /CACHE_NAME\s*=\s*['"]taki-cache-v(\d+)\.(\d+)['"]/)
+if (!takiSwM.find()) {
+    throw new RuntimeException('❌ تعذّر قراءة CACHE_NAME من sw.js — ولا يُبنى تطبيقٌ برقمٍ مخترع.')
+}
+def takiPkg = new File(takiRepoRoot, 'package.json').getText('UTF-8')
+def takiPkgM = (takiPkg =~ /"version"\s*:\s*"(\d+)\.(\d+)\.(\d+)"/)
+if (!takiPkgM.find()) {
+    throw new RuntimeException('❌ تعذّر قراءة version من package.json بصيغة X.Y.Z.')
+}
+if (takiPkgM.group(1) != takiSwM.group(1) || takiPkgM.group(2) != takiSwM.group(2)) {
+    throw new RuntimeException(
+        '❌ package.json ' + takiPkgM.group(0) + ' لا يطابق CACHE_NAME (' +
+        takiSwM.group(1) + '.' + takiSwM.group(2) + ') — يُصلَح المصدرُ لا هذا الملفّ.')
+}
+def takiParts = [takiPkgM.group(1), takiPkgM.group(2), takiPkgM.group(3)].collect { it as int }
+takiParts.each {
+    if (it > 99) {
+        throw new RuntimeException(
+            '❌ جزءٌ من الإصدار «' + it + '» أكبرُ من ٩٩ — صيغةُ versionCode تحشو خانتين،' +
+            ' فالرقمُ سينقص عمّا سبقه. و`versionCode` لا يجوز أن ينقص عند قوقل.')
+    }
+}
+ext.takiVersionName = takiParts.join('.')
+ext.takiVersionCode = takiParts.collect { String.format('%02d', it) }.join('') as int
+println '→ نسخةُ تطبيق أندرويد: ' + ext.takiVersionName + ' (' + ext.takiVersionCode + ')'
+// taki-version:end
+
 android {
     // ══════════════════════════════════════════════════════════════════════
     // التوقيع: القيمُ من البيئة وحدها (أسرارُ GitHub Actions).
@@ -23,11 +70,11 @@ android {
         applicationId "net.takisa.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // 🪤 الإصدارُ يُشتقّ من `package.json` بسكربتٍ قبل البناء، ولا يُكتب
-        //    يدوياً: رقمان في موضعين ينحرفان، و`versionCode` **لا يجوز أن
-        //    ينقص أبداً** عند قوقل — رقمٌ خاطئٌ مرّةً واحدة يحرق المدى كلَّه.
-        versionCode 155800
-        versionName "15.58.0"
+        // الإصدارُ مُشتقٌّ أعلى هذا الملفّ من `sw.js` و`package.json`.
+        // 🔴 ولا يُكتب رقمٌ هنا بحالٍ — وجودُ رقمٍ حرفيٍّ في هذين السطرين
+        //    يُفشله `scripts/check-release-contract.js` عمداً.
+        versionCode project.ext.takiVersionCode
+        versionName project.ext.takiVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -12,6 +12,10 @@ import { bumpNavDepth } from './utils/navHistory';
 import { supabase } from './services/supabaseClient';
 import { logger } from './utils/logger';
 import InAppBanner from './components/InAppBanner';
+// v15.80 — بوّابةُ الموافقة. **ليست كسولةً عمداً**: مكوّنٌ كسولٌ خارج
+// `Suspense` يرفع استثناءً، ومكوّنٌ مركَّبٌ دائماً يُبطل الحملَ الكسول أصلاً
+// (درس v14.86) — وهذا حارسٌ قانونيٌّ يجب أن يكون جاهزاً في أوّل إطار.
+import ConsentGate from './components/ConsentGate';
 import SeasonFX from './components/SeasonFX';
 import { campaignPublicLive, campaignSellerOpen } from './data/seasons';
 import { isTelegramMiniApp } from './services/telegramMiniApp';
@@ -375,6 +379,11 @@ const App = () => {
             <ScrollManager />
             <VisitTracker />
             <AuthRedirector />
+            {/* v15.80 — طبقةٌ فوق الجميع لا مسارٌ باسم `/consent`: مسارٌ
+                يُتجاوَز بكتابة عنوانٍ آخر، ويُسابق تحويلَ `AuthRedirector`.
+                وموضعُها بعده مباشرةً: داخل `Router` (تحتاج التحويلَ عند
+                الخروج) وداخل `AppProvider` (تقرأ الجلسةَ والمعاينة). */}
+            <ConsentGate />
             <InAppBanner />
             {/* v12.45 — عمق الموسم: عناصر متحركة عبر كامل الصفحة في كل صفحات
                 المتسوّق عندما يكون هناك موسم مفعّل (مخفية داخل /admin). */}

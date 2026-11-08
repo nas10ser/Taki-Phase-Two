@@ -58,19 +58,64 @@ jobs:
       - name: مزامنةُ Capacitor وترقيعُ سياسة التطبيق
         run: node scripts/native-sync.js
 
+      # ── Firebase: ملفُّ الإعداد من سرٍّ، لا من المستودع ──────────────────
+      # 🔴 والمستودعُ **عامّ**: `google-services.json` يحمل معرّفَ مشروعِ
+      #    Firebase ومفتاحَ واجهته، فلا يدخل المستودعَ أبداً — ولذلك أُعيد
+      #    تفعيلُ سطرِه في `android/.gitignore` (كان **مُعلَّقاً**، أي أن
+      #    الملفَّ لم يكن مُستثنى فلو وُضع محلياً لحظةً لبقي في التاريخ أبداً).
+      # 🪤 وغيابُه حالةٌ مشروعةٌ اليوم: الكتلةُ في `app/build.gradle` شرطيّة،
+      #    فالبناءُ ينجح بلا الملفّ — ولا إشعاراتَ FCM وحدها هي التي تتوقّف.
+      - name: ملفُّ إعداد Firebase (إن وُجد سرُّه)
+        id: gservices
+        env:
+          GS: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GS:-}" ]; then
+            echo "ℹ️ لا سرَّ ANDROID_GOOGLE_SERVICES_JSON_B64 — يُبنى بلا FCM (الكتلةُ شرطيّة)."
+            echo "present=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          printf '%s' "$GS" | base64 -d > android/app/google-services.json
+          # 🪤 ويُفحص أنه JSON سليمٌ وأن اسمَ الحزمة هو حزمتُنا: ملفٌّ لمشروعٍ
+          #    آخر يُطبَّق بنجاح ثمّ لا يصل رمزُ جهازٍ أبداً، بلا أيّ خطأ.
+          node -e "
+            const j=require('./android/app/google-services.json');
+            const ok=(j.client||[]).some(c=>c.client_info?.android_client_info?.package_name==='net.takisa.app');
+            if(!ok){console.error('::error title=أندرويد::google-services.json لا يحمل net.takisa.app');process.exit(1)}
+            console.log('✓ google-services.json لمشروع '+j.project_info.project_id+' · الحزمةُ مطابقة');
+          "
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
       # ── التوقيع: لا يُفعَّل إلا بوجود السرّ، ولا يُكتب مفتاحٌ في المستودع ──
       # 🪤 ووجودُ السرّ يُفحص في **خطوةٍ** لا في شرط `if` مباشرةً: سياقُ
       #    `secrets` غيرُ مضمون داخل شروط الخطوات، فشرطٌ يبدو صحيحاً قد
       #    يُقيَّم دائماً خطأً — فيُبنى debug صامتاً حيث يُراد release.
+      # 🪤 وتُفحص **الأربعةُ** لا المفتاحُ وحده: بالقديم كان يكفي
+      #    `ANDROID_KEYSTORE_BASE64` فتبدأ حزمةُ الإصدار ثمّ يفشل gradle على
+      #    كلمةِ مرورٍ فارغةٍ بخطأٍ عن «keystore password was incorrect» —
+      #    رسالةٌ تُوهم أن المفتاحَ خاطئ وهو سليمٌ وسرٌّ آخرُ هو الناقص.
       - name: هل التوقيعُ متاح؟
         id: sign
         env:
-          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS:       ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PW:    ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW:   ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KS" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
-          echo "التوقيعُ متاح: $([ -n "$KS" ] && echo نعم || echo 'لا — تُبنى حزمةُ تجربة')"
+          set -euo pipefail
+          # 🔴 ولا تُطبع قيمةُ سرٍّ أبداً — الأسماءُ الناقصةُ وحدها.
+          miss=""
+          for n in KS KS_PW KEY_ALIAS KEY_PW; do
+            eval "v=\${$n:-}"
+            [ -n "$v" ] || miss="$miss $n"
+          done
+          if [ -z "$miss" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"
+          else echo "ok=false" >> "$GITHUB_OUTPUT"; fi
+          echo "missing=${miss# }" >> "$GITHUB_OUTPUT"
+          echo "الناقصُ من أسرار التوقيع:${miss:- (لا شيء)}"
 
       - name: فكُّ مفتاح التوقيع
+        id: keystore
         if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -80,7 +125,8 @@ jobs:
           echo "✓ مفتاحُ التوقيع ($(wc -c < "$RUNNER_TEMP/taki.keystore") بايت)"
 
       - name: حزمةُ إصدارٍ موقَّعة (.aab)
-        if: steps.sign.outputs.ok == 'true' && (inputs.release || github.event_name == 'push')
+        id: bundle
+        if: steps.keystore.outcome == 'success'
         working-directory: android
         env:
           TAKI_KEYSTORE_PATH: ${{ runner.temp }}/taki.keystore
@@ -90,6 +136,7 @@ jobs:
         run: ./gradlew --no-daemon bundleRelease
 
       - name: حزمةُ تجربةٍ (بلا توقيع)
+        id: debug_apk
         if: steps.sign.outputs.ok != 'true' || !(inputs.release || github.event_name == 'push')
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug
@@ -115,11 +162,47 @@ jobs:
           grep -qE "assets/public/.*\.js" /tmp/list.txt || { echo "❌ لا حزمةَ جافاسكربت"; exit 1; }
           echo "✓ حزمةُ جافاسكربت موجودة"
 
-      - uses: actions/upload-artifact@v4
+      - name: أثرُ الإصدار (.aab)
+        uses: actions/upload-artifact@v4
+        if: steps.bundle.outcome == 'success'
         with:
-          name: taki-android
-          path: |
-            android/app/build/outputs/bundle/release/*.aab
-            android/app/build/outputs/apk/debug/*.apk
+          name: taki-android-release
+          path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
+
+      # 🪤 وأثرُ التجربة باسمٍ **مختلف**: الاسمُ الواحد لحزمتَي إصدارٍ وتجربةٍ
+      #    هو ما جعل `taki-android` (٣١٫٧ م.ب) يُقرأ على أنه نشرةٌ جاهزة وهو
+      #    حزمةُ تصحيحٍ موقَّعةٌ بمفتاح debug — ترفضها قوقل رفضاً فورياً.
+      - name: أثرُ حزمة التجربة (.apk)
+        uses: actions/upload-artifact@v4
+        if: steps.debug_apk.outcome == 'success'
+        with:
+          name: taki-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      # ═══════════════════════════════════════════════════════════════════════
+      # 🔴 عقدُ الإصدار — نفسُ عقد آيفون حرفياً، وبنفس السبب المقيس: دفعُ وسم
+      #    `app-v15.58.4` انتهى أخضرَ وقد خُطّيت حزمةُ الإصدار ورُفعت حزمةُ
+      #    تصحيح. و«أخضر» لا يجوز أن يعني ذلك مرّةً أخرى.
+      # 🪤 ولا خطوةَ رفعٍ إلى Google Play هنا **عمداً**: أوّلُ `.aab` يجب أن
+      #    يُرفع من لوحة Play بيد ناصر (واجهةُ Play لا تُنشئ تطبيقاً، ولا
+      #    تَقبل مساراً لا يحمل نشرةً أولى)، ولا مفتاحَ توقيعٍ بعد. فحين
+      #    يوجد الاثنان تُضاف الخطوةُ وتُضاف `upload_play` إلى هذه القائمة.
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: عقدُ الإصدار — أخضرُ لا يعني قابلاً للرفع
+        if: always()
+        env:
+          PLATFORM:     أندرويد
+          INTENT_INPUT: ${{ inputs.release }}
+          EVENT:        ${{ github.event_name }}
+          SIGN_OK:      ${{ steps.sign.outputs.ok }}
+          SIGN_MISSING: ${{ steps.sign.outputs.missing }}
+          CONTRACT_STEPS: >-
+            keystore=${{ steps.keystore.outcome }}
+            bundle=${{ steps.bundle.outcome }}
+          CONTRACT_ARTIFACT: android/app/build/outputs/bundle/release
+          CONTRACT_ARTIFACT_GLOB: '*.aab'
+        run: bash .github/release-contract.sh

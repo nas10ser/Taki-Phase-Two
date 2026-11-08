@@ -32,6 +32,7 @@ import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { SmartChip } from '../../components/admin/SmartChip';
 import { admNum, toDateInput } from '../../components/admin/ui';
+import { admCount, DAYS, STORES, ACTIVE_M, SHOWN_M } from '../../components/admin/ui';
 import { fieldCss, labelCss, pickCss } from '../../components/admin/sellerStyles';
 import {
     AdmSection, AdmStat, AdmStatGrid, AdmPill,
@@ -130,7 +131,7 @@ const SellerRow = memo<{
                     </div>
                     {expiresAt && daysLeft !== null && (
                         <div className="text-[10px] mt-1 font-bold" style={{ color: toneFg(expiryTone) }}>
-                            {daysLeft > 0 ? `ينتهي خلال ${daysLeft} يوم` : 'منتهي'} ·{' '}
+                            {daysLeft > 0 ? `ينتهي خلال ${admCount(daysLeft, DAYS, true)}` : 'منتهي'} ·{' '}
                             {expiresAt.toLocaleDateString('ar-SA-u-ca-gregory')}
                         </div>
                     )}
@@ -297,7 +298,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         );
         await customAlert(
             (r.failed === 0
-                ? `🆓 الموقع الآن مجاني تماماً.\n${r.ok} متجر تم ضبطه على الباقة المجانية.`
+                ? `🆓 الموقع الآن مجاني تماماً.\n${admCount(r.ok, STORES)} تم ضبطه على الباقة المجانية.`
                 : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
@@ -344,7 +345,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         );
         await customAlert(
             (r.failed === 0
-                ? `💰 الموقع الآن إلزامي.\n${r.ok} متجر يدفع ${admNum(globalAmount)} ر.س/شهر.`
+                ? `💰 الموقع الآن إلزامي.\n${admCount(r.ok, STORES)} يدفع ${admNum(globalAmount)} ر.س/شهر.`
                 : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
@@ -354,7 +355,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• كل تاجر يسجّل حساب جديد من الآن يحصل على ${trialDays} يوم تجريبي مجاناً\n` +
+            `• كل تاجر يسجّل حساب جديد من الآن يحصل على ${admCount(trialDays, DAYS)} تجريبي مجاناً\n` +
             `• بعد انتهاء التجربة → اشتراك ${admNum(globalAmount)} ر.س/شهر\n` +
             '• التجار الحاليون لن يتأثروا (يبقون على باقتهم الحالية)\n\n' +
             'متابعة؟'
@@ -383,7 +384,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             setBusyMode(null);
         }
         await customAlert(
-            `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${trialDays} يوم تجربة، ثم ${admNum(globalAmount)} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
+            `🎁 الوضع مُفعّل.\nالتجار الجدد فقط يحصلون على ${admCount(trialDays, DAYS)} تجربة، ثم ${admNum(globalAmount)} ر.س/شهر.\nالتجار الحاليون لم يتأثروا.`
         );
         onApplied();
     };
@@ -393,7 +394,7 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• منح كل التجار (الحاليين والجدد) ${trialDays} يوم تجربة مجانية تبدأ الآن\n` +
+            `• منح كل التجار (الحاليين والجدد) ${admCount(trialDays, DAYS)} تجربة مجانية تبدأ الآن\n` +
             `• بعد انتهاء التجربة → اشتراك ${admNum(globalAmount)} ر.س/شهر\n\n` +
             'متابعة؟'
         );
@@ -428,11 +429,11 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         }
         const announced = await announceModeChange(
             '🎁 حصل متجرك على فترة تجربة مجانية',
-            `منحناك ${trialDays} يوم تجربة مجانية تبدأ الآن — انشر عروضك بلا رسوم، وبعد انتهائها يصبح الاشتراك ${admNum(globalAmount)} ر.س/شهر.`
+            `منحناك ${admCount(trialDays, DAYS)} تجربة مجانية تبدأ الآن — انشر عروضك بلا رسوم، وبعد انتهائها يصبح الاشتراك ${admNum(globalAmount)} ر.س/شهر.`
         );
         await customAlert(
             (r.failed === 0
-                ? `🎉 تم منح ${r.ok} متجراً ${trialDays} يوم تجربة مجانية، ثم ${admNum(globalAmount)} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
+                ? `🎉 تم منح ${admCount(r.ok, STORES)} ${admCount(trialDays, DAYS)} تجربة مجانية، ثم ${admNum(globalAmount)} ر.س/شهر.\nوالتجار الجدد أيضاً يحصلون على التجربة تلقائياً.`
                 : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
         );
         onApplied();
@@ -506,8 +507,8 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {([
                     { key: 'free', icon: '🆓', tone: 'ok', title: 'مجاني للجميع', desc: 'إيقاف البوابة + تحويل كل التجار للباقة المجانية', run: handleFreeForAll },
-                    { key: 'trial-paid', icon: '🎁', tone: 'warn', title: `${trialDays} يوم تجريبي للجدد فقط`, desc: `التجار الجدد يجرّبون مجاناً ثم ${admNum(globalAmount)} ر.س/شهر`, run: handleTrialThenPaid },
-                    { key: 'trial-all', icon: '🎉', tone: 'info', title: `${trialDays} يوم تجربة للجميع`, desc: <>منح الجدد <b>والحاليين</b> تجربة تبدأ الآن، ثم {admNum(globalAmount)} ر.س/شهر</>, run: handleTrialForAll },
+                    { key: 'trial-paid', icon: '🎁', tone: 'warn', title: `${admCount(trialDays, DAYS)} تجريبي للجدد فقط`, desc: `التجار الجدد يجرّبون مجاناً ثم ${admNum(globalAmount)} ر.س/شهر`, run: handleTrialThenPaid },
+                    { key: 'trial-all', icon: '🎉', tone: 'info', title: `${admCount(trialDays, DAYS)} تجربة للجميع`, desc: <>منح الجدد <b>والحاليين</b> تجربة تبدأ الآن، ثم {admNum(globalAmount)} ر.س/شهر</>, run: handleTrialForAll },
                     { key: 'paid', icon: '💰', tone: 'bad', title: 'إلزامي فوراً', desc: `تفعيل البوابة + إلزام الكل بـ ${admNum(globalAmount)} ر.س/شهر بدون تجربة`, run: handlePaidForAll },
                 ] as const).map((m) => (
                     <button
@@ -697,7 +698,7 @@ const BulkSubscriptionPanel = memo<{
             `• الباقة: ${planLabel}\n` +
             `• المبلغ: ${admNum(finalAmount)} ر.س/شهر${discount > 0 ? ` (خصم ${discount}%)` : ''}\n` +
             `• الانتهاء: ${expiresLabel}\n` +
-            `على ${targetIds.length} متجر. متابعة؟`
+            `على ${admCount(targetIds.length, STORES)}. متابعة؟`
         );
         if (!ok) return;
 
@@ -742,7 +743,7 @@ const BulkSubscriptionPanel = memo<{
 
         await customAlert(
             failCount === 0
-                ? `✅ تم تطبيق الإعدادات على ${okCount} متجر بنجاح.`
+                ? `✅ تم تطبيق الإعدادات على ${admCount(okCount, STORES)} بنجاح.`
                 : `⚠️ نجح: ${okCount} | فشل: ${failCount}. افتح DevTools Console للتفاصيل.`
         );
         if (okCount > 0) {
@@ -892,8 +893,8 @@ const BulkSubscriptionPanel = memo<{
                     <div className="flex flex-wrap gap-2">
                         {([
                             { p: 'free-perpetual', label: '🆓 مجاني دائم' },
-                            { p: 'free-30d', label: '🆓 مجاني 30 يوم' },
-                            { p: 'trial-30d', label: '🎁 تجريبي 30 يوم' },
+                            { p: 'free-30d', label: `🆓 مجاني ${admCount(30, DAYS)}` },
+                            { p: 'trial-30d', label: `🎁 تجريبي ${admCount(30, DAYS)}` },
                             { p: 'premium-half', label: '⭐ مميز -50%' },
                             { p: 'premium-full', label: '⭐ مميز سنة كاملة' },
                         ] as const).map((o) => (
@@ -1052,7 +1053,7 @@ const BulkSubscriptionPanel = memo<{
                         ? `... جاري التطبيق ${progress ? `(${progress.done}/${progress.total})` : ''}`
                         : targetIds.length === 0
                         ? 'اختر متاجر أولاً'
-                        : `⚡ تطبيق على ${targetIds.length} متجر`}
+                        : `⚡ تطبيق على ${admCount(targetIds.length, STORES)}`}
                 </AdmButton>
             </div>
         </div>
@@ -1108,7 +1109,7 @@ const SponsorsBox: React.FC<{
             desc="المتاجر التي تظهر عروضها بإطار ذهبي. «إدارة» تفتح بطاقة اشتراك المتجر نفسه، فالرعاية تُضبط من هناك."
             collapsible
             defaultOpen={false}
-            badge={{ text: `${admNum(activeCount)} نشط`, tone: activeCount > 0 ? 'ok' : 'neutral' }}
+            badge={{ text: admCount(activeCount, ACTIVE_M), tone: activeCount > 0 ? 'ok' : 'neutral' }}
         >
             <div className="space-y-2">
                 <input
@@ -1367,7 +1368,7 @@ const AdminSellers: React.FC = () => {
                 icon="🏪"
                 title="قائمة المتاجر"
                 desc="البحث يسأل الخادم فيصل إلى ما هو خارج الصفحة؛ والمرشّحان أدناه يعملان على المحمّل. اضغط أي متجر لفتح اشتراكه."
-                badge={{ text: `${admNum(filtered.length)} معروض`, tone: 'info' }}
+                badge={{ text: admCount(filtered.length, SHOWN_M), tone: 'info' }}
             >
                 <div className="space-y-3">
                     <input
@@ -1410,7 +1411,7 @@ const AdminSellers: React.FC = () => {
                             <SmartChip active={smartFilter === null}             onClick={() => setSmartFilter(null)}             icon="✓" label="بلا فلتر ذكي" />
                             <SmartChip active={smartFilter === 'pinned'}         onClick={() => setSmartFilter('pinned')}         icon="★" label="المفضّلة" count={pins.list.length} />
                             <SmartChip active={smartFilter === 'expiring_7d'}    onClick={() => setSmartFilter('expiring_7d')}    icon="⏰" label="ينتهي خلال 7 أيام" />
-                            <SmartChip active={smartFilter === 'expiring_30d'}   onClick={() => setSmartFilter('expiring_30d')}   icon="📅" label="ينتهي خلال 30 يوم" />
+                            <SmartChip active={smartFilter === 'expiring_30d'}   onClick={() => setSmartFilter('expiring_30d')}   icon="📅" label={`ينتهي خلال ${admCount(30, DAYS, true)}`} />
                             <SmartChip active={smartFilter === 'no_plan'}        onClick={() => setSmartFilter('no_plan')}        icon="🆓" label="بدون اشتراك" />
                             <SmartChip active={smartFilter === 'high_discount'}  onClick={() => setSmartFilter('high_discount')}  icon="🏷️" label="خصم ≥ 30%" />
                         </div>

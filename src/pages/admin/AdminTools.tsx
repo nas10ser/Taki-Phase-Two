@@ -66,7 +66,7 @@ import StockLinkSwitch from '../../components/admin/StockLinkSwitch';
 import BookingHoldsCard from '../../components/admin/BookingHoldsCard';import CapacityCard from '../../components/admin/CapacityCard';
 import {
     AdmCard, AdmSection, AdmPill, AdmEmpty, AdmSkeleton, AdmError, AdmButton,
-    AdmSwitch as Sw, AdmSettingRow as SettingRow,
+    AdmSwitch as Sw, AdmSettingRow as SettingRow, admCount, SELLERS, BUYERS, MERCHANTS, SECONDS, BANNERS, ACTIVE_M,
 } from '../../components/admin/ui';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -522,7 +522,7 @@ const QuickCampaignBox: React.FC<{ onPosted: () => void; onAdvanced: () => void 
         setBody('');
         await customAlert(
             count > 0
-                ? `📤 تم النشر ووصل الإشعار إلى ${count.toLocaleString('ar-SA')} ${audience === 'seller' ? 'بائع' : audience === 'buyer' ? 'مشترٍ' : 'مستخدم'}.`
+                ? `📤 تم النشر ووصل الإشعار إلى ${admCount(count, audience === 'seller' ? SELLERS : audience === 'buyer' ? BUYERS : USERS)}.`
                 : '📤 تم نشر الحملة. (لا يوجد مستخدمون مطابقون لاستلامها الآن — ستصل لمن يطابق لاحقاً.)'
         );
         onPosted();
@@ -829,7 +829,7 @@ const AdminTools: React.FC = () => {
         });
         setSavingCamp(false);
         if (error) { await customAlert('❌ ' + error.message); return; }
-        await customAlert(`✅ وصل الإشعار إلى ${(data as any)?.notified ?? 0} تاجر.`);
+        await customAlert(`✅ وصل الإشعار إلى ${admCount(Number((data as any)?.notified ?? 0), MERCHANTS)}.`);
     };
 
     // قراءة-تعديل-كتابة تحافظ على سجلّ «أُرسل سابقاً» فلا يتكرّر تذكير الـ٣٠/٧
@@ -856,7 +856,7 @@ const AdminTools: React.FC = () => {
         const err = await writeSetting('banner_autoplay_seconds', n, 'Home banner autoplay interval in seconds (admin-controlled, default 2)');
         setSavingBannerSeconds(false);
         if (err) { await customAlert('❌ ' + err); return; }
-        await customAlert(`✅ تم الحفظ — البانر يتنقل الآن كل ${n} ثانية.`);
+        await customAlert(`✅ تم الحفظ — البانر يتنقل الآن كل ${admCount(n, SECONDS, true)}.`);
     };
 
     const deleteBanner = async (id: string) => {
@@ -887,7 +887,7 @@ const AdminTools: React.FC = () => {
             || (r.value as any)?.error
             || !((r.value as any)?.data?.length)
         ).length;
-        if (failed > 0) await customAlert(`⚠️ تعذّر حفظ ترتيب ${failed} بانر — حدّث الصفحة للتأكد`);
+        if (failed > 0) await customAlert(`⚠️ تعذّر حفظ ترتيب ${admCount(failed, BANNERS, true)} — حدّث الصفحة للتأكد`);
     };
     const onBannerDragStart = (id: string) => { dragId.current = id; };
     const onBannerDrop = (targetId: string) => {
@@ -1038,7 +1038,7 @@ const AdminTools: React.FC = () => {
                 title="البانرات الإعلانية"
                 icon="🖼️"
                 desc="الصور التي تتنقّل أعلى الصفحة الرئيسية. الترتيب هنا هو ترتيب ظهورها عند الزائر."
-                badge={loading ? undefined : { text: `${activeBanners} نشط من ${banners.length}`, tone: activeBanners ? 'ok' : 'neutral' }}
+                badge={loading ? undefined : { text: `${admCount(activeBanners, ACTIVE_M)} من ${banners.length}`, tone: activeBanners ? 'ok' : 'neutral' }}
                 action={canBanners && (
                     <AdmButton variant="primary" size="sm" onClick={() => { setBannerEdit(null); setBannerModalOpen(true); }}>
                         ➕ بانر جديد
