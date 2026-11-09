@@ -35,6 +35,7 @@ import useEscClose from '../hooks/useEscClose';
 import { useBackClose } from '../hooks/useBackClose';
 import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
 import MapAutoResize from './MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
+import { arCount, MINUTES } from '../utils/arPlural';
 
 type LatLng = [number, number];
 
@@ -364,13 +365,13 @@ const DeliveryTrackMap: React.FC<Props> = ({ barcode, isRTL, onClose }) => {
         ? null
         : etaMin < 1
             ? t('أقل من دقيقة', 'less than a minute')
-            : t(`${Math.round(etaMin)} دقيقة`, `${Math.round(etaMin)} min`);
+            : t(arCount(Math.round(etaMin), MINUTES), `${Math.round(etaMin)} min`);
 
     const ageText = ageSec === null
         ? null
         : ageSec < 90
             ? t('قبل لحظات', 'moments ago')
-            : t(`قبل ${Math.round(ageSec / 60)} دقيقة`, `${Math.round(ageSec / 60)} min ago`);
+            : t(`قبل ${arCount(Math.round(ageSec / 60), MINUTES, true)}`, `${Math.round(ageSec / 60)} min ago`);
 
     /** الحالة بلغة المشتري — لا مصطلحات ولا رموز حالة خام. */
     const headline = (): { icon: string; title: string; sub: string; tone: string } => {

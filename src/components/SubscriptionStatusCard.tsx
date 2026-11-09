@@ -5,6 +5,7 @@ import { subscriptionRepository, SubscriptionStatus } from '../repositories/subs
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, packageLabel, branchesShort } from '../data/packages';
 import { createT } from '../utils/helpers';
+import { arCount, DAYS } from '../utils/arPlural';
 
 /**
  * SubscriptionStatusCard (v11.38) — a professional, world-class subscription
@@ -141,7 +142,7 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
                         {expired
                             ? t('جدّد الآن لاستعادة عروضك', 'Renew now to bring your deals back')
                             : daysLeft !== null
-                                ? t(`يتبقّى ${daysLeft} يوم · ينتهي ${fd(sub.expiresAt)}`, `${daysLeft} days left · ends ${fd(sub.expiresAt)}`)
+                                ? t(`يتبقّى ${arCount(daysLeft, DAYS)} · ينتهي ${fd(sub.expiresAt)}`, `${daysLeft} days left · ends ${fd(sub.expiresAt)}`)
                                 : t(`${nf(price)} ر.س/شهر`, `${nf(price)} SAR/month`)}
                     </div>
                 </div>

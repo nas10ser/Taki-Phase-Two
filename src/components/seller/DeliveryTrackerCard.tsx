@@ -32,6 +32,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { GeoError, geoErrorMessage } from '../../utils/helpers';
+import { arCount, SECONDS, MINUTES, HOURS } from '../../utils/arPlural';
 
 type TrackStatus = 'preparing' | 'on_the_way' | 'arrived' | 'delivered' | 'cancelled';
 
@@ -109,11 +110,11 @@ const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFi
 
 /** «قبل كذا» للنبضة الأخيرة — حين ينطفئ `live` يجب أن يعرف التاجر كم مضى. */
 const agoText = (sec: number, isRTL: boolean): string => {
-    if (sec < 60) return isRTL ? `قبل ${Math.max(1, Math.round(sec))} ثانية` : `${Math.max(1, Math.round(sec))}s ago`;
+    if (sec < 60) return isRTL ? `قبل ${arCount(Math.max(1, Math.round(sec)), SECONDS, true)}` : `${Math.max(1, Math.round(sec))}s ago`;
     const m = Math.round(sec / 60);
-    if (m < 60) return isRTL ? `قبل ${m} دقيقة` : `${m}m ago`;
+    if (m < 60) return isRTL ? `قبل ${arCount(m, MINUTES, true)}` : `${m}m ago`;
     const h = Math.round(m / 60);
-    return isRTL ? `قبل ${h} ساعة` : `${h}h ago`;
+    return isRTL ? `قبل ${arCount(h, HOURS, true)}` : `${h}h ago`;
 };
 
 const btn = (bg: string, fg = '#fff'): React.CSSProperties => ({
@@ -471,7 +472,7 @@ const DeliveryTrackerCard: React.FC<Props> = ({ barcode, fulfillment, bookingSta
                     )}
                     {eta != null && (
                         <div style={{ background: 'var(--gray-100)', padding: '6px 11px', borderRadius: 10, fontWeight: 800, fontSize: '0.79rem', color: 'var(--text-primary)' }}>
-                            ⏱ {isRTL ? `تقريباً ${Math.max(1, Math.round(eta))} دقيقة` : `about ${Math.max(1, Math.round(eta))} min`}
+                            ⏱ {isRTL ? `تقريباً ${arCount(Math.max(1, Math.round(eta)), MINUTES)}` : `about ${Math.max(1, Math.round(eta))} min`}
                         </div>
                     )}
                     {track && !track.live && track.ageSec != null && (

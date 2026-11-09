@@ -11,6 +11,8 @@
  *   day key = JS getDay() (0=Sun..6=Sat); shift = ["HH:MM","HH:MM"] (open < close).
  */
 
+import { arCount, HOURS, MINUTES } from './arPlural';
+
 export type Shift = [string, string];
 export interface WorkingHours {
     enabled: boolean;
@@ -90,13 +92,13 @@ export function fmtClock(hhmm: string, isRTL = true): string {
     return `${h12}:${String(mm).padStart(2, '0')} ${suffix}`;
 }
 
-/** "ساعة و20 دقيقة" / "40 دقيقة" / "1h 20m". */
+/** "ساعة واحدة و20 دقيقة" / "40 دقيقة" / "1h 20m" — والصيغُ من `arPlural`. */
 export function fmtDuration(min: number, isRTL = true): string {
     const h = Math.floor(min / 60); const m = min % 60;
     if (isRTL) {
-        if (h <= 0) return `${m} دقيقة`;
-        if (m === 0) return h === 1 ? 'ساعة' : h === 2 ? 'ساعتين' : `${h} ساعات`;
-        return `${h === 1 ? 'ساعة' : h === 2 ? 'ساعتين' : `${h} ساعات`} و${m} دقيقة`;
+        if (h <= 0) return arCount(m, MINUTES);
+        if (m === 0) return arCount(h, HOURS);
+        return `${arCount(h, HOURS)} و${arCount(m, MINUTES)}`;
     }
     if (h <= 0) return `${m}m`;
     return m === 0 ? `${h}h` : `${h}h ${m}m`;

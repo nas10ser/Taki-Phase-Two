@@ -22,6 +22,7 @@ import { supabase } from '../../services/supabaseClient';
 import { logger } from '../../utils/logger';
 import { describeNote, describeQueueReason, NOTE_COLOR } from '../../data/stockNotes';
 import { PROVIDER_SYSTEMS } from '../../data/stockProviders';
+import { arCount, MINUTES } from '../../utils/arPlural';
 
 export interface ConnectIntegration {
     id: string;
@@ -151,7 +152,7 @@ export const StockConnectPanel: React.FC<{
             {oauthProvider && mins !== null && (
                 <div style={{ fontSize: '0.73rem', lineHeight: 1.9, color: 'var(--text-secondary)', marginTop: 6 }}>
                     ⏱ {isRTL
-                        ? `المزامنةُ قريبةٌ من الفوريّة لا فوريّة: أيُّ حركةٍ عندك تُقرأ خلال ثوانٍ، ومسحٌ كاملٌ كلَّ ${mins} دقيقة على أيّ حال — لأن سلّة وزد لا ترسلان حدثاً لتغيّر المخزون نفسه.`
+                        ? `المزامنةُ قريبةٌ من الفوريّة لا فوريّة: أيُّ حركةٍ عندك تُقرأ خلال ثوانٍ، ومسحٌ كاملٌ كلَّ ${arCount(mins, MINUTES, true)} على أيّ حال — لأن سلّة وزد لا ترسلان حدثاً لتغيّر المخزون نفسه.`
                         : `Sync is near-instant, not instant: any movement is read within seconds, and a full sweep runs every ${mins} minutes regardless — because Salla and Zid send no event for a stock change itself.`}
                     {integ.last_sync_at && (<><br />
                         {t('آخرُ قراءةٍ ناجحة: ', 'Last successful read: ')}

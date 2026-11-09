@@ -191,8 +191,19 @@ const HAND_MADE = [
     'server/lib/holds.js',
 ];
 
-/** لوحةُ الإدارة كلّها — مشتقّةً من الشجرة، فلا ملفَّ جديدٍ يولد خارج الحارس. */
-const PANEL = walk(root, ['src/pages/admin', 'src/components/admin'], /\.tsx?$/);
+/**
+ * 🔴 **كلُّ `src/` — لا لوحةُ الإدارة وحدها** (وُسِّع ٩ نوفمبر ٢٠٢٦).
+ *    كان المدى `src/pages/admin` و`src/components/admin`، فمرّ الحارسُ أخضرَ
+ *    و٢٦ عبارةَ معدودٍ مخالفةً للنحو **في الشاشات التي يراها المشترون**:
+ *    «خلال ٣ يوم» عند استعادة الحساب · «≈ ٥ دقيقة» في التوصيل · «١ / ١ صور»
+ *    في الكاميرا · «٢ ساعة» و«٣٠ يوم» في حقول التاجر. ومداً ضيّقاً يُنتج
+ *    «أخضرَ» لا يصف إلا ما ينظر إليه.
+ * 🪤 ويُستثنى `src/utils/arPlural.ts` نفسُه: صيغُه **هي** الصواب، فالحارسُ
+ *    كان يتّهم كتالوجَه هو — نفسُ فخّ «الحارس يقرأ تعليقَه».
+ */
+const PANEL = walk(root, ['src'], /\.tsx?$/)
+    .filter((f) => !/^src\/utils\/arPlural\.ts$/.test(f)
+        && !/^src\/components\/admin\/ui\/adminForms\.ts$/.test(f));
 const EXPR = '\\$\\{[^}]*\\}';
 const LIT = '[0-9]+(?:\\.[0-9]+)?|[٠-٩]+';
 const NUM = `(?:${EXPR}|${LIT})`;
@@ -255,8 +266,19 @@ for (const src of [verSrc, ts]) {
 if (Object.keys(CATALOGUE).length < 20) {
     fail(`كتالوجُ المعدودات قُرئ بـ${Object.keys(CATALOGUE).length} صيغةً فقط — المسحُ شبه فارغ، فالفحصُ لا ينظر.`);
 }
-if (PANEL.length < 40) {
-    fail(`مدى اللوحة ${PANEL.length} ملفّاً — أقلُّ من المتوقَّع بكثير، فالحارسُ لا يرى اللوحة.`);
+// 🪤 والأرضيّةُ أسماءُ أسطحٍ مقيسةٍ مع العدد: عددٌ وحده يمرّ لو تغيّر المدى
+//    إلى شجرةٍ أخرى بنفس الحجم، وقد وقع مثلُه في حارسٍ آخر.
+const MUST_SEE = [
+    'src/pages/admin/AdminAnalytics.tsx',       // اللوحة
+    'src/context/AppContext.tsx',               // قلبُ التطبيق — كان خارج المدى
+    'src/pages/SellerDashboard.tsx',            // شاشاتُ التاجر — كانت خارج المدى
+    'src/components/DeliveryTrackMap.tsx',      // شاشةُ المشتري — كانت خارج المدى
+];
+for (const m of MUST_SEE) {
+    if (!PANEL.includes(m)) fail(`المدى لا يحوي «${m}» — سطحٌ مقيسٌ لهذا العيب، فغيابُه عطبٌ في الكاشف لا سلامةٌ في الكود.`);
+}
+if (PANEL.length < 150) {
+    fail(`المدى ${PANEL.length} ملفّاً — أقلُّ من المتوقَّع بكثير، فالحارسُ لا يرى الواجهة.`);
 }
 
 /**
@@ -299,7 +321,7 @@ for (const rel of PANEL) {
     bare.split('\n').forEach((line, i) => {
         const at = `${rel}:${i + 1}`;
         for (const m of line.matchAll(PANEL_EXPR)) {
-            panelHits.push(`${at} — «${m[1].slice(0, 32)} ${m[2]}» عبارةٌ مبنيّةٌ بيدها؛ تُصاغ بـ\`admCount(n, <الصيغة>)\`.`);
+            panelHits.push(`${at} — «${m[1].slice(0, 32)} ${m[2]}» عبارةٌ مبنيّةٌ بيدها؛ تُصاغ بـ\`arCount(n, <الصيغة>)\` (وفي اللوحة \`admCount\`).`);
         }
         for (const m of line.matchAll(PANEL_TERNARY)) {
             panelHits.push(`${at} — «${m[0].slice(0, 60)}» معدودٌ داخل شرطٍ بعد عدد؛ تُختار الصيغةُ لا الكلمة.`);
@@ -315,10 +337,10 @@ for (const rel of PANEL) {
     });
 }
 if (panelHits.length) {
-    fail(`لوحةُ الإدارة: ${panelHits.length} عبارةَ معدودٍ مصنوعةً بيدها أو مخالفةً لنحوها:\n     `
+    fail(`الواجهة: ${panelHits.length} عبارةَ معدودٍ مصنوعةً بيدها أو مخالفةً لنحوها:\n     `
         + panelHits.slice(0, 25).join('\n     ')
         + (panelHits.length > 25 ? `\n     … و${panelHits.length - 25} غيرها.` : '')
-        + '\n\n   الكتالوجُ وغلافُه `admCount` في `src/components/admin/ui/adminForms.ts`.');
+        + '\n\n   الصيغُ المشتركة في `src/utils/arPlural.ts`، وصيغُ اللوحة وغلافُها `admCount` في `src/components/admin/ui/adminForms.ts`.');
 }
 
 // ── ٦) لا نصَّ عددٍ مثبَّتاً في سلاسل البوت ────────────────────────────────
@@ -375,5 +397,5 @@ if (offenders.length) {
 //    الأرقامُ التي تُصدّق خضرةَ حارسٍ هي أرقامُ مداه لا أرقامُ مقارناته.
 console.log(`✅ الجمع العربي: ${checked} مقارنةً للمخرجات · خوارزميّةُ \`arCount\` متطابقةٌ نصّاً `
     + `· «يوم» في القاعدة = «يوم» في الواجهة · سلاسل البوت بلا عددٍ مثبَّت\n`
-    + `   المدى: ${HAND_MADE.length} ملفَّ مهلة + ${PANEL.length} ملفَّ لوحة، `
+    + `   المدى: ${HAND_MADE.length} ملفَّ مهلة + ${PANEL.length} ملفَّ واجهة، `
     + `بكتالوج ${Object.keys(CATALOGUE).length} صيغةٍ و${COUNTED.size} معدوداً`);

@@ -69,6 +69,56 @@ export const MESSAGES: ArForms = {
     one: 'رسالة واحدة', two: 'رسالتان', twoGen: 'رسالتين', few: 'رسائل', many: 'رسالة',
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// صيغٌ مشتركة — يستعملها الموقعُ ولوحةُ الإدارة معاً
+// ═══════════════════════════════════════════════════════════════════════════
+// 🪤 وموضعُها **هنا** لا في `adminForms.ts`: ذاك ملفُّ لوحةٍ يُحمَّل كسولاً،
+//    فاستيرادُ صيغةٍ منه في صفحةِ مشترٍ يسحب اللوحةَ كلَّها إلى حزمة الدخول.
+//    و`adminForms.ts` يُعيد تصديرَها فلا تنكسر إحالةٌ قائمة ولا تُنشأ نسخةٌ ثانية.
+// 🪤 و«المفردُ المنصوب» في `many` ليس زينةً: «١١ يوماً» صوابٌ و«١١ يوم» خطأ.
+
+export const DAYS: ArForms = {
+    one: 'يوم واحد', two: 'يومان', twoGen: 'يومين', few: 'أيام', many: 'يوماً',
+};
+
+export const SECONDS: ArForms = {
+    one: 'ثانية واحدة', two: 'ثانيتان', twoGen: 'ثانيتين', few: 'ثوانٍ', many: 'ثانية',
+};
+
+export const PIECES: ArForms = {
+    one: 'قطعة واحدة', two: 'قطعتان', twoGen: 'قطعتين', few: 'قطع', many: 'قطعة',
+};
+
+export const DEALS: ArForms = {
+    one: 'عرض واحد', two: 'عرضان', twoGen: 'عرضين', few: 'عروض', many: 'عرضاً',
+};
+
+/** 🪤 «عرض حصري» صفةٌ تتبع المعدود: «عرضان حصريّان» لا «عرضان حصري». */
+export const EXCLUSIVE_DEALS: ArForms = {
+    one: 'عرض حصري واحد', two: 'عرضان حصريّان', twoGen: 'عرضين حصريّين',
+    few: 'عروض حصريّة', many: 'عرضاً حصرياً',
+};
+
+export const PHOTOS: ArForms = {
+    one: 'صورة واحدة', two: 'صورتان', twoGen: 'صورتين', few: 'صور', many: 'صورة',
+};
+
+export const FILES: ArForms = {
+    one: 'ملف واحد', two: 'ملفّان', twoGen: 'ملفّين', few: 'ملفّات', many: 'ملفّاً',
+};
+
+export const POINTS: ArForms = {
+    one: 'نقطة واحدة', two: 'نقطتان', twoGen: 'نقطتين', few: 'نقاط', many: 'نقطة',
+};
+
+export const SECTIONS: ArForms = {
+    one: 'قسم واحد', two: 'قسمان', twoGen: 'قسمين', few: 'أقسام', many: 'قسماً',
+};
+
+export const TIMES: ArForms = {
+    one: 'مرّة واحدة', two: 'مرّتان', twoGen: 'مرّتين', few: 'مرّات', many: 'مرّة',
+};
+
 /** «٣ رسائل» / «رسالة واحدة» — يطابق `taki_ar_messages()` في القاعدة. */
 export const arMessages = (n: number): string => arCount(n, MESSAGES);
 

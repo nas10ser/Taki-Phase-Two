@@ -4,6 +4,7 @@ import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation, f
 import { readRememberedFix, rememberFix, forgetFix, isFreshFix } from '../utils/geoMemory';
 import { PlatformSettings, PLATFORM_SETTING_KEYS, defaultPlatformSettings, applyPlatformSetting, applySeasonSkin } from './platformSettings';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
+import { arCount, DAYS, PIECES, MINUTES } from '../utils/arPlural';
 import { storageService } from '../services/storageService';
 import { dealRepository, DEALS_PAGE_SIZE, type DealCursor } from '../repositories/dealRepository';
 import { userRepository, mapUserRowToProfile } from '../repositories/userRepository';
@@ -277,8 +278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Tracks deals the seller (or any local action) just wrote, so the
     // realtime echo can't clobber the optimistic status with a stale
     // packet — the recurring "pause flips back to active" bug. Each entry
-    // is a per-deal timestamp; entries older than the guard window are
-    // ignored.
+    // is a per-deal timestamp; older entries are ignored.
     const recentLocalDealWritesRef = useRef<Map<string, number>>(new Map());
     const LOCAL_WRITE_GUARD_MS = 5000;
     const markLocalDealWrite = useCallback((dealId: string) => {
@@ -1074,7 +1074,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                                 if (row?.deleted_at) {
                                     const daysLeft = Number(row.days_left) || 0;
                                     const wantsRestore = await customConfirmRef.current(
-                                        `هذا الحساب محذوف وسيُمحى نهائياً خلال ${daysLeft} يوم. هل تريد استرجاعه الآن؟`
+                                        `هذا الحساب محذوف وسيُمحى نهائياً خلال ${arCount(daysLeft, DAYS, true)}. هل تريد استرجاعه الآن؟`
                                     );
                                     if (wantsRestore) {
                                         const { data: restored, error: restoreErr } = await supabase.rpc('restore_my_account');
@@ -2540,10 +2540,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (limitCode) {
                 const n = limitCode[2];
                 const ar = limitCode[1] === 'MAX_QTY'
-                    ? `⛔ الحد الأقصى ${n} قطعة في الطلب الواحد لهذا العرض — قلّل الكمية وأعد المحاولة.`
+                    ? `⛔ الحد الأقصى ${arCount(Number(n), PIECES)} في الطلب الواحد لهذا العرض — قلّل الكمية وأعد المحاولة.`
                     : limitCode[1] === 'REBOOK_LIMIT'
                         ? `⛔ وصلت للحد المسموح (${n}) من الحجوزات على هذا العرض.`
-                        : `⏳ لا يمكنك إعادة الحجز على هذا العرض إلا بعد ${n} دقيقة.`;
+                        : `⏳ لا يمكنك إعادة الحجز على هذا العرض إلا بعد ${arCount(Number(n), MINUTES, true)}.`;
                 const en = limitCode[1] === 'MAX_QTY'
                     ? `⛔ Max ${n} per order for this deal — lower the quantity and try again.`
                     : limitCode[1] === 'REBOOK_LIMIT'

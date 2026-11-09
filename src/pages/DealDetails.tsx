@@ -22,6 +22,7 @@ import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration
 import { thumbUrl, imgFallback, hideBrokenImg, heroUrl, heroSrcSet, HERO_SIZES } from '../utils/thumb';
 import ImageZoomViewer from '../components/ImageZoomViewer';
 import { holdLabel } from '../utils/bookingHold';
+import { arCount, MINUTES } from '../utils/arPlural';
 import { useStoreHold } from '../hooks/useStoreHold';
 import StorePolicies from '../components/StorePolicies';
 import { applyPageSeo, applyJsonLd, dealJsonLd, breadcrumbJsonLd } from '../utils/seo';
@@ -42,8 +43,7 @@ const StatusTracker = ({ status, isRTL }: { status: string, isRTL: boolean }) =>
 
     // A cancelled order is terminal: fill the whole rail and paint it RED
     // with ✕ marks instead of a green ✓ sitting on "Confirmed" (Nasser:
-    // "when cancelled the green bar should turn red with an X at Received
-    // — that looks better").
+    // "when cancelled the green bar turns red with an X at Received".
     const isCancelled = status === 'cancelled';
     const currentIndex = isCancelled ? steps.length - 1 : getStatusIndex(status);
     const lineColor = isCancelled ? '#ef4444' : 'var(--primary)';
@@ -3016,7 +3016,7 @@ const DealDetails: React.FC = () => {
                                                     dlvFee > 0
                                                         ? (isRTL ? `الرسوم ${dlvFee} ر.س` : `fee ${dlvFee} SAR`)
                                                         : (isRTL ? 'مجاناً' : 'free'),
-                                                    dlvQuote?.eta_min ? (isRTL ? `≈ ${dlvQuote.eta_min} دقيقة` : `≈ ${dlvQuote.eta_min} min`) : '',
+                                                    dlvQuote?.eta_min ? (isRTL ? `≈ ${arCount(dlvQuote.eta_min, MINUTES)}` : `≈ ${dlvQuote.eta_min} min`) : '',
                                                 ].filter(Boolean).join(' · ')
                                                 : (dlvBlockReason || ''),
                                             // أثناء إعادة التسعير (تبديل فرع) نُقفل الخيار لا نُلغي الاختيار:
@@ -3154,7 +3154,7 @@ const DealDetails: React.FC = () => {
                                                             rowFee > 0
                                                                 ? (isRTL ? `الرسوم ${rowFee} ر.س` : `fee ${rowFee} SAR`)
                                                                 : (isRTL ? 'توصيل مجاني' : 'free delivery'),
-                                                            q?.eta_min ? (isRTL ? `≈ ${q.eta_min} دقيقة` : `≈ ${q.eta_min} min`) : '',
+                                                            q?.eta_min ? (isRTL ? `≈ ${arCount(q.eta_min, MINUTES)}` : `≈ ${q.eta_min} min`) : '',
                                                         ].filter(Boolean).join(' · ')
                                                         : q?.reason === 'no_zones'
                                                             ? (isRTL ? '🚫 هذا الفرع لا يوصّل حالياً' : '🚫 this branch does not deliver yet')

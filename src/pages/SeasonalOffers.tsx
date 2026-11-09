@@ -9,6 +9,7 @@ import { useDealBrowse } from '../hooks/useDealBrowse';
 import { useDealRail } from '../hooks/useDealRail';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import { smartBack } from '../utils/navHistory';
+import { arCount, EXCLUSIVE_DEALS } from '../utils/arPlural';
 
 /**
  * v12.48 — صفحة عروض الموسم الحصرية (أعيد بناؤها من placeholder «قريباً»).
@@ -213,7 +214,7 @@ const SeasonalOffers: React.FC = () => {
                     <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0 12px' }}>
                             <h2 style={{ fontSize: '1.02rem', fontWeight: 900, color: 'var(--text-primary)' }}>
-                                {isRTL ? `${seasonTotal.toLocaleString('en-US')}${seasonCapped ? '+' : ''} عرض حصري 🎯` : `${seasonTotal.toLocaleString('en-US')}${seasonCapped ? '+' : ''} exclusive deals 🎯`}
+                                {isRTL ? `${seasonCapped ? 'أكثر من ' : ''}${arCount(seasonTotal, EXCLUSIVE_DEALS, seasonCapped, (x) => x.toLocaleString('en-US'))} 🎯` : `${seasonTotal.toLocaleString('en-US')}${seasonCapped ? '+' : ''} exclusive deals 🎯`}
                             </h2>
                         </div>
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>

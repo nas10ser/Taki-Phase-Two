@@ -18,7 +18,7 @@
  */
 import { arCount } from '../../../utils/arPlural';
 import type { ArForms } from '../../../utils/arPlural';
-import { HOURS, MINUTES } from '../../../utils/arPlural';
+import { HOURS, MINUTES, DAYS, SECONDS, PIECES, DEALS } from '../../../utils/arPlural';
 import { admNum } from './AdminKit';
 
 export type { ArForms };
@@ -39,15 +39,9 @@ export const admCount = (n: number, f: ArForms, genitive = false): string =>
 // ═══════════════════════════════════════════════════════════════════════════
 // الزمن — ويُعاد تصديرُ ساعةٍ ودقيقةٍ من المحرّك، فلا نسخةَ ثانية
 // ═══════════════════════════════════════════════════════════════════════════
-export { HOURS, MINUTES };
+export { HOURS, MINUTES, DAYS, SECONDS, PIECES, DEALS };
 
-export const DAYS: ArForms = {
-    one: 'يوم واحد', two: 'يومان', twoGen: 'يومين', few: 'أيام', many: 'يوماً',
-};
 
-export const SECONDS: ArForms = {
-    one: 'ثانية واحدة', two: 'ثانيتان', twoGen: 'ثانيتين', few: 'ثوانٍ', many: 'ثانية',
-};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الناس والمتاجر
@@ -129,9 +123,6 @@ export const SUSPENDED_STORES: ArForms = {
 // ═══════════════════════════════════════════════════════════════════════════
 // العروض والحجوزات والمال
 // ═══════════════════════════════════════════════════════════════════════════
-export const DEALS: ArForms = {
-    one: 'عرض واحد', two: 'عرضان', twoGen: 'عرضين', few: 'عروض', many: 'عرضاً',
-};
 
 export const LIVE_DEALS: ArForms = {
     one: 'عرض حيّ واحد', two: 'عرضان حيّان', twoGen: 'عرضين حيّين',
@@ -166,9 +157,6 @@ export const CANCELLED: ArForms = {
     one: 'ملغى واحد', two: 'ملغيان', twoGen: 'ملغيين', few: 'ملغاة', many: 'ملغى',
 };
 
-export const PIECES: ArForms = {
-    one: 'قطعة واحدة', two: 'قطعتان', twoGen: 'قطعتين', few: 'قطع', many: 'قطعة',
-};
 
 export const VIEWS: ArForms = {
     one: 'مشاهدة واحدة', two: 'مشاهدتان', twoGen: 'مشاهدتين', few: 'مشاهدات', many: 'مشاهدة',

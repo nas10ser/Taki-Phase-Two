@@ -33,6 +33,7 @@ import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStor
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
 import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
+import { arCount, PHOTOS, FILES, DAYS, SECTIONS, PIECES, TIMES, MINUTES } from '../utils/arPlural';
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
@@ -474,8 +475,7 @@ const SellerDashboard: React.FC = () => {
     // store says the seller is subscribed.
     //
     // It's also a reusable callback that re-runs on focus / tab visibility and a
-    // realtime change to this seller's rows, so an activation appears without a
-    // full PWA reinstall.
+    // realtime change to this seller's rows, so activation needs no reinstall.
     const checkSub = useCallback(async () => {
         const { supabase } = await import('../services/supabaseClient');
         const { data } = await supabase.from('platform_settings').select('value').eq('key', 'payment_gateway_enabled').maybeSingle();
@@ -1669,8 +1669,8 @@ const SellerDashboard: React.FC = () => {
             const sizeFails = rejected.filter((f) => f.reason === 'size').length;
             const typeFails = rejected.filter((f) => f.reason === 'type').length;
             const lines: string[] = [];
-            if (sizeFails) lines.push(isRTL ? `⚠️ ${sizeFails} صورة أكبر من 8MB` : `⚠️ ${sizeFails} image(s) exceed 8MB`);
-            if (typeFails) lines.push(isRTL ? `⚠️ ${typeFails} ملف ليس صورة` : `⚠️ ${typeFails} file(s) not an image`);
+            if (sizeFails) lines.push(isRTL ? `⚠️ ${arCount(sizeFails, PHOTOS)} أكبر من 8MB` : `⚠️ ${sizeFails} image(s) exceed 8MB`);
+            if (typeFails) lines.push(isRTL ? `⚠️ ${arCount(typeFails, FILES)} بغير صيغة صورة` : `⚠️ ${typeFails} file(s) not an image`);
             customAlert(lines.join('\n'));
         }
         if (accepted.length === 0) return;
@@ -3199,7 +3199,7 @@ const SellerDashboard: React.FC = () => {
                                     </div>
                                     <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.5 }}>
                                         {isRTL
-                                            ? `لتجديد هذا العرض اختر موقعاً نشطاً (🔒) من قائمة «مواقعك» بالأسفل (${activeLocationKeys.size}/${MAX_LOCATIONS} مستخدم)، ثم احفظ.`
+                                            ? `لتجديد هذا العرض اختر موقعاً نشطاً (🔒) من قائمة «مواقعك» بالأسفل (${activeLocationKeys.size}/${MAX_LOCATIONS} مستخدمة)، ثم احفظ.`
                                             : `To renew this deal, pick an active (🔒) location from the "Your locations" list below (${activeLocationKeys.size}/${MAX_LOCATIONS} used), then save.`}
                                     </div>
                                 </div>
@@ -3972,7 +3972,7 @@ const SellerDashboard: React.FC = () => {
                                                     {isRTL
                                                         ? (inWindow
                                                             ? `سيظهر العرض في "العروض القادمة" مقفلاً بعدّاد، ويفتح للحجز خلال ${days > 0 ? days + 'ي ' : ''}${hours}س`
-                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${days - 7} يوماً للظهور).`)
+                                                            : `العرض محفوظ ومجدول. سيظهر للمشترين قبل أسبوع من البدء (يبقى ${arCount(days - 7, DAYS)} للظهور).`)
                                                         : (inWindow
                                                             ? `Will appear in Coming Soon (locked, with countdown) — opens for booking in ${days > 0 ? days + 'd ' : ''}${hours}h`
                                                             : `Saved & scheduled. Visible to buyers 7 days before launch (${days - 7} days until visible).`)}
@@ -4004,14 +4004,14 @@ const SellerDashboard: React.FC = () => {
                             {expiryType === 'hours' && (
                                 <div style={{ flex: 1 }}>
                                     <label style={labelStyle}>{isRTL ? 'مدة الصلاحية (بالساعات)' : 'Validity (Hours)'}</label>
-                                    <input type="tel" style={fieldInputStyle} value={expiryHours} onChange={e => setExpiryHours(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} placeholder={isRTL ? 'مثال: 2 ساعة' : 'e.g. 2 hours'} />
+                                    <input type="tel" style={fieldInputStyle} value={expiryHours} onChange={e => setExpiryHours(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} placeholder={isRTL ? 'مثال: ساعتان' : 'e.g. 2 hours'} />
                                 </div>
                             )}
 
                             {expiryType === 'duration' && (
                                 <div style={{ flex: 1 }}>
                                     <label style={labelStyle}>{isRTL ? 'مدة الصلاحية (بالأيام)' : 'Validity (Days)'} {isUnlimited && <span style={{color:'var(--danger)'}}>*</span>}</label>
-                                    <input type="tel" style={fieldInputStyle} value={days} onChange={e => setDays(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} placeholder={isRTL ? 'مثال: 30 يوم' : 'e.g. 30 days'} />
+                                    <input type="tel" style={fieldInputStyle} value={days} onChange={e => setDays(normalizeArabicNumerals(e.target.value).replace(/\D/g, ''))} placeholder={isRTL ? 'مثال: 30 يوماً' : 'e.g. 30 days'} />
                                 </div>
                             )}
 
@@ -4290,7 +4290,7 @@ const SellerDashboard: React.FC = () => {
                                 <span style={{ ...labelStyle, display: 'inline' }}>{isRTL ? '🧩 إضافات المنتج (اختياري)' : '🧩 Product add-ons (optional)'}</span>
                                 {optionGroups.length > 0 && (
                                     <span style={{ marginInlineStart: 8, background: 'rgba(16,185,129,0.14)', color: '#10b981', fontSize: '0.75rem', fontWeight: 900, padding: '3px 10px', borderRadius: 999, border: '1.5px solid rgba(16,185,129,0.5)' }}>
-                                        ✅ {isRTL ? `${optionGroups.length} قسم مضاف` : `${optionGroups.length} added`}
+                                        ✅ {isRTL ? arCount(optionGroups.length, SECTIONS) : `${optionGroups.length} added`}
                                     </span>
                                 )}
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: 8, lineHeight: 1.6 }}>
@@ -4425,8 +4425,8 @@ const SellerDashboard: React.FC = () => {
                                 : m >= 60 ? (isRTL ? 'ساعة' : '1h')
                                 : (isRTL ? '٣٠ دقيقة' : '30m');
                             const parts: string[] = [];
-                            if (maxPerBooking !== '' && Number(maxPerBooking) > 0) parts.push(isRTL ? `${maxPerBooking} قطعة كحد أقصى للحجز` : `max ${maxPerBooking}/booking`);
-                            if (maxBookingsPerBuyer !== '' && Number(maxBookingsPerBuyer) > 0) parts.push(isRTL ? `${maxBookingsPerBuyer} ${Number(maxBookingsPerBuyer) === 1 ? 'مرة' : 'مرات'} لكل عميل` : `${maxBookingsPerBuyer}×/buyer`);
+                            if (maxPerBooking !== '' && Number(maxPerBooking) > 0) parts.push(isRTL ? `${arCount(Number(maxPerBooking), PIECES)} كحد أقصى للحجز` : `max ${maxPerBooking}/booking`);
+                            if (maxBookingsPerBuyer !== '' && Number(maxBookingsPerBuyer) > 0) parts.push(isRTL ? `${arCount(Number(maxBookingsPerBuyer), TIMES)} لكل عميل` : `${maxBookingsPerBuyer}×/buyer`);
                             if (Number(rebookCooldownMinutes) > 0) parts.push(isRTL ? `انتظار ${cdLabel(Number(rebookCooldownMinutes))} بين الحجوزات` : `${cdLabel(Number(rebookCooldownMinutes))} cooldown`);
                             return (
                         <details style={{
@@ -5104,7 +5104,7 @@ const SellerDashboard: React.FC = () => {
                                         🕒 {isRTL ? 'وقت التجهيز / الوصول:' : 'Prep / ETA:'}{' '}
                                         {order.prepTime === 'arrival'
                                             ? (isRTL ? 'عند الوصول' : 'On Arrival')
-                                            : `${order.prepTime} ${isRTL ? 'دقيقة' : 'min'}`}
+                                            : isRTL ? arCount(Number(order.prepTime), MINUTES) : `${order.prepTime} min`}
                                     </div>
                                 )}
                                 {order.notes && (

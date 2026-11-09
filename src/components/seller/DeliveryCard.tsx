@@ -52,6 +52,7 @@ import { supabase } from '../../services/supabaseClient';
 import { useApp } from '../../context/AppContext';
 import NumericField from '../NumericField';
 import { getCurrentPositionSafe, geoErrorMessage } from '../../utils/helpers';
+import { arCount, POINTS } from '../../utils/arPlural';
 import { TAKI_TILE_URL, TAKI_TILE_ATTRIBUTION, TAKI_TILE_MAX_ZOOM } from '../../utils/leafletSetup';   // v14.63 — تنسيق ليفلت وصور الدبّوس والبلاطات: مصدر واحد
 import MapAutoResize from '../MapAutoResize';   // v14.63 — إعادة قياس الخريطة عند تغيّر حجم حاويتها
 import { errMsg } from './deliveryErrors';
@@ -478,8 +479,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                 .order('created_at', { ascending: true }),
         ]);
         if (br.error) onAlert(`❌ ${t('تعذّر تحميل الفروع', 'Could not load branches')}: ${br.error.message}`);
-        // فشل قراءة الموقع الأساسي يعني دبّوساً غائباً ورسماً في غير محلّه —
-        // يُقال صراحةً لا يُبتلع.
+        // فشل قراءة الموقع الأساسي = دبّوسٌ غائبٌ ورسمٌ في غير محلّه: يُقال لا يُبتلع.
         if (me.error) onAlert(`❌ ${t('تعذّر تحميل موقع المتجر الأساسي', 'Could not load the main store location')}: ${me.error.message}`);
         const list: BranchOpt[] = [{
             id: PRIMARY,
@@ -1651,7 +1651,7 @@ const DeliveryCard: React.FC<Props> = ({ userId, isRTL, onAlert }) => {
                                         {g.list.map((z, i) => {
                                             const kindLabel = z.kind === 'circle'
                                                 ? t(`دائرة ${z.radius_km} كم`, `Circle ${z.radius_km} km`)
-                                                : z.kind === 'rect' ? t('مستطيل', 'Rectangle') : t(`مضلّع (${zonePts(z).length} نقطة)`, `Polygon (${zonePts(z).length} pts)`);
+                                                : z.kind === 'rect' ? t('مستطيل', 'Rectangle') : t(`مضلّع (${arCount(zonePts(z).length, POINTS)})`, `Polygon (${zonePts(z).length} pts)`);
                                             const isEd = z.id === editingId;
                                             return (
                                                 <div key={z.id} style={{

@@ -37,6 +37,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../services/supabaseClient';
+import { arCount, SECONDS } from '../utils/arPlural';
 import { normalizeArabicNumerals } from '../utils/helpers';
 import TurnstileWidget from './TurnstileWidget';
 import PasswordField, { pwIsStrong, pwChecks } from './PasswordField';
@@ -92,7 +93,7 @@ const AccountSettingsCard: React.FC = () => {
         if (Date.now() < cooldownUntil) {
             const secs = Math.ceil((cooldownUntil - Date.now()) / 1000);
             throw new Error(isRTL
-                ? `محاولات كثيرة خاطئة — انتظر ${secs} ثانية ثم أعد المحاولة.`
+                ? `محاولات كثيرة خاطئة — انتظر ${arCount(secs, SECONDS)} ثم أعد المحاولة.`
                 : `Too many failed attempts — wait ${secs}s and try again.`);
         }
         if (!password) {

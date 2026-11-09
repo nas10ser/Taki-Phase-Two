@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Deal, Booking, CATEGORIES, Category } from '../../data/mock';
+import { arCount, DAYS } from '../../utils/arPlural';
 
 /**
  * SellerAnalytics (v12.00) — a modern, self-contained analytics suite for the
@@ -206,7 +207,7 @@ const SellerAnalytics: React.FC<Props> = ({ myDeals, myOrders, isRTL }) => {
                                 background: range === r ? 'var(--primary)' : 'transparent',
                                 color: range === r ? '#fff' : 'var(--text-secondary)',
                             }}>
-                            {t(`آخر ${r} يوم`, `${r}d`)}
+                            {t(`آخر ${arCount(r, DAYS)}`, `${r}d`)}
                         </button>
                     ))}
                 </div>

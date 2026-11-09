@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ImageCropEditor from './ImageCropEditor';
+import { arCount, PHOTOS } from '../utils/arPlural';
 
 /**
  * In-app camera with an inline per-shot crop loop.
@@ -245,7 +246,7 @@ const CameraCapture: React.FC<Props> = ({
                     <div style={{ fontSize: '3rem', marginBottom: 10 }}>✅</div>
                     <div style={{ fontWeight: 900, fontSize: '1.15rem', marginBottom: 6 }}>
                         {isRTL
-                            ? `تمت إضافة ${count} ${count === 1 ? 'صورة' : 'صور'}`
+                            ? `تمت إضافة ${arCount(count, PHOTOS)}`
                             : `${count} photo${count === 1 ? '' : 's'} added`}
                     </div>
                     <div style={{ opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>
@@ -338,7 +339,7 @@ const CameraCapture: React.FC<Props> = ({
                     ✕
                 </button>
                 <span style={{ fontWeight: 900, fontSize: '0.95rem' }}>
-                    {isRTL ? `${count} / ${cap} صور` : `${count} / ${cap}`}
+                    {`${count} / ${cap}`}
                 </span>
                 <button
                     type="button"

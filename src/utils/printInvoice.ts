@@ -15,6 +15,7 @@ import { KSA_VAT_RATE, fmtSAR } from './vat';
 import { qrFromTlv, isValidSaudiVat } from './zatcaQr';
 import { esc } from './invoice';
 import { supabase } from '../services/supabaseClient';
+import { arCount, MINUTES } from './arPlural';
 
 export interface InvoiceLineItem {
     label: string;
@@ -205,7 +206,7 @@ const buildHtml = (d: InvoiceData): string => {
     const prepMinutes = String(d.prepTime ?? '').replace(/[^\d]/g, '');
     const prep = d.prepTime === 'arrival'
         ? (rtl ? 'عند الوصول' : 'On arrival')
-        : (prepMinutes ? `${prepMinutes} ${rtl ? 'دقيقة' : 'min'}` : '');
+        : (prepMinutes ? (rtl ? arCount(Number(prepMinutes), MINUTES) : `${prepMinutes} min`) : '');
     const delivery = d.fulfillment === 'delivery';
     const addr = d.deliveryAddress || null;
 
