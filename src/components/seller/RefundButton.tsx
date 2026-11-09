@@ -267,8 +267,8 @@ export const RefundButton: React.FC<{
                 </div>
                 <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
                     {isRTL
-                        ? 'بدأ الطلب ' + when(exec.claimedAt, isRTL) + '. حدّث الصفحة بعد قليل لترى النتيجة — ولا تُعِد الضغط حتى لا يلتبس عليك الأمر (القاعدة تمنع الردّ مرّتين).'
-                        : 'Started ' + when(exec.claimedAt, isRTL) + '. Refresh shortly to see the result — the database prevents a double refund.'}
+                        ? 'بدأ الطلب ' + when(exec.claimedAt, isRTL) + '. حدّث الصفحة بعد قليل لترى النتيجة — ولا تُعِد الضغط حتى لا يلتبس عليك الأمر (النظام يمنع الردّ مرّتين).'
+                        : 'Started ' + when(exec.claimedAt, isRTL) + '. Refresh shortly to see the result — the system prevents a double refund.'}
                 </div>
             </div>
         );

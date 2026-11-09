@@ -24,7 +24,7 @@ import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt, openOrdersFloor 
 import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
-import { publishErrorMessage } from '../utils/publishError';
+import { publishErrorMessage, saveErrorMessage } from '../utils/publishError';
 
 interface StoreProfile {
     phone?: string;
@@ -1958,7 +1958,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const isTransientLock = /lock.*auth-token|stole it|NavigatorLock/i.test(msg);
             // v14.95 — سببُ الرفض بعبارةٍ فيها **الخطوة التالية**: حدّ المواقع (نفس النصّ
             // حرفاً بحرف)، و«المتجر غير موثّق» (P0024) الذي كان يصل جملةً عمياء.
-            const known = publishErrorMessage(`${error?.code || ''} ${msg}`, language === 'ar');
+            const known = publishErrorMessage(`${error?.code || ''} ${msg} ${error?.hint || ''}`, language === 'ar');
             if (known) { customAlert(known); return; }
 
             if (isTransientLock) {
@@ -1969,18 +1969,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     console.error('❌ Deal save retry failed:', retryErr);
                     customAlert(
                         language === 'ar'
-                            ? '⚠️ تعذّر حفظ العرض في قاعدة البيانات. حاول مرة أخرى بعد قليل.'
-                            : '⚠️ Could not save deal to database. Try again shortly.'
+                            ? '⚠️ لم يُحفظ العرض — حاول مرّةً أخرى بعد قليل.'
+                            : '⚠️ The deal was not saved — please try again shortly.'
                     );
                     return;
                 }
             } else {
                 console.error('❌ Failed to save deal to database:', error);
-                customAlert(
-                    language === 'ar'
-                        ? `⚠️ تعذّر حفظ العرض في قاعدة البيانات.${msg ? `\n${msg}` : ''}`
-                        : `⚠️ Could not save deal to database.${msg ? `\n${msg}` : ''}`
-                );
+                // 🔴 v15.84 (أمرُ ناصر): لا «قاعدة بيانات» في نصٍّ يراه التاجر.
+                customAlert(saveErrorMessage(error, language === 'ar'));
                 return;
             }
         }
@@ -2041,18 +2038,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 if (goUpgrade) window.location.assign('/subscription');
                 return false;
             }
+            // 🔴 v15.84 (لقطةُ ناصر): كان هنا «تعذّر حفظ التغيير في قاعدة
+            //    البيانات.» ثمّ السببُ بين قوسين — والسببُ وحده هو المفيد.
+            //    و«تعديل» لم تكن تنادي `publishErrorMessage` خلافاً لـ«إضافة»،
+            //    فكان التاجرُ يرى نصّ الحارس خاماً بدل العبارة ذات الخطوة.
             customAlert(
-                language === 'ar'
-                    ? (isLocationCap
+                isLocationCap
+                    ? (language === 'ar'
                         ? capMsgAr
-                        : isTransientLock
+                        : '⚠️ You have reached your package location limit. Remove extra branches from the deal and save.')
+                    : isTransientLock
+                    ? (language === 'ar'
                         ? '⚠️ المزامنة تأخرت — حاول مرة أخرى بعد ثوانٍ.'
-                        : `⚠️ تعذّر حفظ التغيير في قاعدة البيانات.${msg ? `\n(${msg})` : ''}`)
-                    : (isLocationCap
-                        ? '⚠️ You have reached your package location limit. Remove extra branches from the deal and save.'
-                        : isTransientLock
-                        ? '⚠️ Sync delayed — try again in a few seconds.'
-                        : `⚠️ Could not save change to database.${msg ? `\n(${msg})` : ''}`)
+                        : '⚠️ Sync delayed — try again in a few seconds.')
+                    : saveErrorMessage(error, language === 'ar')
             );
             return false;
         }

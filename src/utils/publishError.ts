@@ -58,4 +58,42 @@ export function publishErrorMessage(msg: string, isRTL: boolean): string | null 
     return null;
 }
 
+/**
+ * saveErrorMessage — ما يُعرض للتاجر حين يرفض الخادمُ حفظاً (v15.84)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 **أمرُ ناصر (٩ نوفمبر ٢٠٢٦): «قاعدة البيانات» تُحذف من كلّ ما يراه
+ *    المستخدم.** كان التاجر يرى: «⚠️ تعذّر حفظ التغيير في قاعدة البيانات.»
+ *    ثمّ بين قوسين الجملةَ الوحيدة المفيدة. والجملةُ الأولى لا تقول له شيئاً
+ *    يفعله، و«قاعدة البيانات» ليست من شأنه أصلاً.
+ *
+ * 🔴 **ولا يكفي حذفُ السطر**: لو حُذف وحده لصار التنبيهُ فارغاً حين لا يحمل
+ *    الخطأُ نصّاً (شبكةٌ مقطوعة · رفضٌ بلا رسالة)، و«زرٌّ صامت» أسوأ من
+ *    مصطلحٍ ثقيل. فالترتيبُ ثلاثُ درجات:
+ *      ١) سببٌ معروف  ⇒ `publishErrorMessage` (فيه **الخطوة التالية**).
+ *      ٢) رسالةٌ عربيّة من حرّاسنا ⇒ تُعرض كما هي، فهي مكتوبةٌ للتاجر أصلاً.
+ *      ٣) غيرُ ذلك (إنجليزيٌّ تقنيّ أو فارغ) ⇒ جملةٌ بشريّةٌ بلا مصطلحات.
+ *
+ * 🪤 و`hint` تُقرأ مع `message`: PostgREST **لا يُمرّر إلا `P0001`**، وكلُّ
+ *    رمزٍ آخر عندنا يسافر داخل `HINT`. فقراءةُ الرسالة وحدها تُضيّع السبب.
+ */
+export function saveErrorMessage(err: any, isRTL: boolean): string {
+    const code = String((err && err.code) || '');
+    const msg  = String((err && err.message) || '');
+    const hint = String((err && err.hint) || '');
+
+    const known = publishErrorMessage(`${code} ${msg} ${hint}`, isRTL);
+    if (known) return known;
+
+    // رسائلُ حرّاسنا مكتوبةٌ بالعربيّة للتاجر — تُعرض وحدها بلا إطارٍ تقنيّ.
+    const human = [msg, hint].map((x) => x.trim()).find((x) => /[\u0600-\u06FF]/.test(x));
+    if (human) {
+        // 🪤 ولا تُضاعَف العلامة: نصُّ القاعدة قد يبدأ برمزٍ أصلاً («🪪» · «⚠️»).
+        return /^[A-Za-z\u0600-\u06FF0-9(]/.test(human) ? `⚠️ ${human}` : human;
+    }
+
+    return isRTL
+        ? '⚠️ لم يُحفظ التغيير — حاول مرّةً أخرى بعد قليل.'
+        : '⚠️ The change was not saved — please try again shortly.';
+}
+
 export default publishErrorMessage;

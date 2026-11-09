@@ -120,7 +120,7 @@ export const branchRepository = {
             .update({ show_on_store_page: show }).eq('id', id).select('id');
         if (!error) {
             if (!data || data.length === 0) {
-                return { ok: false, error: 'لم يُحفَظ التغيير في قاعدة البيانات (لا صلاحية على هذا الفرع). حدّث الصفحة وحاول مجدداً.' };
+                return { ok: false, error: 'لم يُحفَظ التغيير — لا صلاحية لك على هذا الفرع. حدّث الصفحة وحاول مجدداً.' };
             }
             return { ok: true };
         }

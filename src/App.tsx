@@ -17,6 +17,9 @@ import InAppBanner from './components/InAppBanner';
 // (درس v14.86) — وهذا حارسٌ قانونيٌّ يجب أن يكون جاهزاً في أوّل إطار.
 import ConsentGate from './components/ConsentGate';
 import SeasonFX from './components/SeasonFX';
+// 🔴 v15.84 — التذييلُ **ساكنٌ لا كسول**: حزمتُه ٢٫٤ ك.ب، وكسلُه كان يعني
+//    حدَّ تعليقٍ ثانياً يُحلّ قبل الصفحة أحياناً. وساكناً يُرسَم في نفس اللقطة.
+import SiteFooter from './components/SiteFooter';
 import { campaignPublicLive, campaignSellerOpen } from './data/seasons';
 import { isTelegramMiniApp } from './services/telegramMiniApp';
 
@@ -252,7 +255,6 @@ const SeasonalGate: React.FC = () => {
 const UpdateBanner = lazy(() => import('./components/UpdateBanner'));
 // v12.35 — mobile-browser «ثبّت التطبيق» recommendation (non-blocking).
 const InstallPrompt = lazy(() => import('./components/InstallPrompt'));
-const SiteFooter    = lazy(() => import('./components/SiteFooter'));
 
 // v12.98 — «استعادة موضع التمرير» بمستوى المواقع العالمية (بلاغ ناصر: زر الرجوع كان
 // يرمي المتسوّق لأعلى الرئيسية بدل إعادته لمكانه). القاعدة الطبيعية للمتصفحات:
@@ -444,11 +446,21 @@ const App = () => {
                             Now any unknown route renders NotFound. */}
                         <Route component={NotFound} />
                     </Switch>
+                    {/* v15.74 — تذييلٌ عامّ: لم يكن للوثائق القانونيّة طريقٌ
+                        ثابتٌ من أيّ صفحة، ومراجعُ المتجر والجهةُ الرقابيّة
+                        يبحثان عنه أوّلاً. ويُخفي نفسَه في /admin و/seller.
+
+                        🔴 v15.84 (بلاغُ ناصر) — **وموضعُه داخل حدّ التعليق
+                        لا بعده.** كان خارجَه بحدٍّ خاصٍّ به، فيُرسم بينما
+                        حزمةُ الصفحة ما زالت تُحمَّل: قِيس على الإنتاج عند
+                        ٢٤٨ م.ث أن الشاشة لا تحمل غير **نصّ التذييل وحده**
+                        (١٩٧ محرفاً) فوق الدوّارة، ثم قفز التذييلُ ٤٢٠٠٠
+                        بكسل لأسفل عند وصول الصفحة عند ١٤٠٦ م.ث.
+                        وهو نفسُ عيب «ماني مسجّل»: سطحٌ يُعلن حالةً مستقرّة
+                        قبل أن تُعرف. وداخلَ الحدّ يُرسمان معاً أو لا يُرسم
+                        أيٌّ منهما. */}
+                    <SiteFooter />
                 </Suspense>
-                {/* v15.74 — تذييلٌ عامّ: لم يكن للوثائق القانونيّة طريقٌ ثابتٌ
-                    من أيّ صفحة، ومراجعُ المتجر والجهةُ الرقابيّة يبحثان عنه
-                    أوّلاً. ويُخفي نفسَه في /admin و/seller. */}
-                <Suspense fallback={null}><SiteFooter /></Suspense>
             </div>
         </Router>
     );
