@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { refundRepository, mapRefundRow, BookingRefund } from '../../repositories/refundRepository';
 import RefundButton from './RefundButton';
+import { reasonText } from '../../data/refundReasons';
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
 
@@ -101,7 +102,7 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
             ...(typeof restock === 'boolean' ? { restock } : {}),
         });
         setBusy(false);
-        if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
+        if (!res.ok) { await customAlert('⚠️ ' + reasonText(res.error, isRTL)); return; }
         await reload(true); await onChanged?.();
         await customAlert(isRTL
             ? `✅ سُجِّل الردّ. إشعار دائن: ${res.creditNoteNo}${res.orderCancelled ? '\nوأُلغي الطلب وعادت الكمّية للبيع.' : (restock ? '\nوعادت كمّيته إلى مخزونك كما أجبت.' : '\nولم تعُد كمّيته إلى المخزون كما أجبت.')}`
@@ -142,7 +143,7 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
                             setBusy(true);
                             const res = await refundRepository.resolve(order.barcode, 'open', { note: String(note || '') });
                             setBusy(false);
-                            if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
+                            if (!res.ok) { await customAlert('⚠️ ' + reasonText(res.error, isRTL)); return; }
                             await reload(true); await onChanged?.();
                         }}>
                         {isRTL ? '❌ أقرّ الإلغاء وسجّل الدَّين' : '❌ Approve cancelling & record the debt'}
@@ -183,7 +184,7 @@ const RefundRequestPanel: React.FC<RefundPanelProps> = ({ order, isRTL, onChange
                             setBusy(true);
                             const res = await refundRepository.resolve(order.barcode, 'decline', { note: String(note || '') });
                             setBusy(false);
-                            if (!res.ok) { await customAlert('⚠️ ' + (res.error || '')); return; }
+                            if (!res.ok) { await customAlert('⚠️ ' + reasonText(res.error, isRTL)); return; }
                             await reload(true); await onChanged?.();
                         }}>
                         {isRTL ? '↩️ اعتذار وفق السياسة' : '↩️ Decline per policy'}

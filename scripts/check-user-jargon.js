@@ -42,8 +42,14 @@ const isExempt = (rel) => /(^|\/)admin\//.test(rel)
     || rel.startsWith('src/pages/legal/')
     || rel === SELF;
 
-/** «قاعدة البيانات» بأيّ حركات، و«database» الإنجليزيّة. */
-const DB_AR = /قاعد[ً-ْ]?ة[ً-ْ]?\s+ال[ً-ْ]?بيانات/;
+/**
+ * مفرداتُ «الخادم» التي لا تعني شيئاً للمستخدم.
+ * 🔴 و«قاعدة البيانات» وحدها لا تكفي — نقضٌ خصميّ (٩ نوفمبر): الجملةُ نفسُها
+ *    بصيغةٍ أقصر «لم يُحفَظ التغيير **في القاعدة**» كانت **تُفلت بكلمةٍ واحدة**
+ *    في `branchRepository.setCard`، وهي تصل التاجرَ من `StoreDetails`.
+ *    فالمفرداتُ كلُّها: قاعدة البيانات · القاعدة · الـDB · السيرفر · database.
+ */
+const DB_AR = /قاعد[ً-ْ]?ة[ً-ْ]?\s+ال[ً-ْ]?بيانات|ال[ً-ْ]?قاعدة|الـ\s?DB\b|السيرفر/;
 const DB_EN = /\bdatabase\b/i;
 /** فعلُ فشلٍ أو حفظ — فالمخالفةُ هي **رسالةُ الفشل** لا ذكرُ الكلمة مطلقاً. */
 const FAIL_AR = /تعذّر|تعذر|لم\s+يُ?حفظ|لم\s+يُحفَظ|فشل|خطأ|تعطّل/;
@@ -145,10 +151,80 @@ if (fs.existsSync(CTX)) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// إحصاءٌ لا يزيد: التنبيهاتُ التي تحقن نصَّ الخطأ الخام
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 كشف تدقيقٌ خصميّ (٩ نوفمبر) **٢٣ موضعاً** تُلصق `error.message` أو
+//    `res.error` داخل تنبيهٍ للمستخدم، فيصله رمزٌ لاتينيٌّ أو جملةُ بوستجرس
+//    إنجليزيّة. أُصلح منها ما يُقاس بلا كسرِ مسارٍ لا أستطيع تجربته، وبقي
+//    الباقي — ومسارا التسجيل والاسترداد لا يُجرَّبان بلا حسابٍ حقيقيّ.
+// 🪤 فالحارسُ هنا **سقفٌ ينزل ولا يرتفع** (نمطُ `file-size-ledger`): يمنع
+//    ظهورَ موضعٍ جديد، ويُجبر على تحديث الرقم كلَّما نقص. ومنعٌ شاملٌ اليوم
+//    كان سيُسقط البناءَ على عملٍ لم يُنجَز بعد، فيُرفع الحارسُ أو يُلتفَّ
+//    عليه — وذاك أسوأُ من رقمٍ صادقٍ ينزل.
+const RAW_CALL = /(customAlert|customConfirm|setErr|setError|setMsg)\s*\(/;
+const RAW_INTERP = /\$\{[^}]*\b(error|err|res|e)\??\.(message|error|detail|code)\b|\+\s*\(?\s*(error|err|res)\??\.(message|error)/;
+const RAW_CENSUS = 17;   // ⬇️ يُخفَّض فقط. آخرُ قياس: ٩ نوفمبر ٢٠٢٦ (v15.85)
+let rawHits = 0;
+const rawWhere = [];
+for (const rel of walk(ROOT, ['src'], /\.tsx?$/)) {
+    if (isExempt(rel)) continue;
+    const lines = strip(fs.readFileSync(path.join(ROOT, rel), 'utf8')).split('\n');
+    lines.forEach((line, i) => {
+        if (/\b(console|logger)\s*\./.test(line)) return;
+        if (!RAW_CALL.test(line)) return;
+        const win = lines.slice(Math.max(0, i - 1), i + 4).join('\n');
+        if (!RAW_INTERP.test(win)) return;
+        rawHits++;
+        rawWhere.push(`${rel}:${i + 1}`);
+    });
+}
+if (rawHits > RAW_CENSUS) {
+    errors.push(
+        `تنبيهاتٌ تحقن نصَّ الخطأ الخام: ${rawHits} والسقفُ ${RAW_CENSUS}.\n`
+        + `     ${rawWhere.slice(0, 6).join(' · ')}${rawWhere.length > 6 ? ' …' : ''}\n`
+        + '     لا يُضاف موضعٌ جديد: استعمل `saveErrorMessage` أو `reasonText`.'
+    );
+} else if (rawHits < RAW_CENSUS) {
+    errors.push(
+        `تنبيهاتُ النصّ الخام نزلت إلى ${rawHits} (السقفُ المسجَّل ${RAW_CENSUS}).\n`
+        + '     حدّث `RAW_CENSUS` إلى الرقم الجديد — فسقفٌ أعلى من الواقع يسمح برجوعٍ صامت.'
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ولا يُقال للمستخدم «نجح» وقد فشل
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 كشف التدقيقُ أنّ `addDeal` كانت `Promise<void>`، و`updateDeal` تُرجع
+//    بوليان **تُهمَله الشاشة** — فيظهر «✅ تم الحفظ بنجاح» **فوق نافذة الرفض
+//    نفسِها**، ويظنّ التاجرُ عرضَه منشوراً وهو غيرُ محفوظ. وهذا أخطرُ من أيّ
+//    مصطلحٍ: المصطلحُ يُربك، و«نجح» الكاذبةُ تُضلّل.
+// 🪤 وهو نفسُ فخّ `useBooking` المسجَّل (v14.80): غلافٌ يبتلع الوعد فينتظر
+//    المنادي `undefined` ويمضي.
+{
+    const ctxSrc = fs.existsSync(CTX) ? strip(fs.readFileSync(CTX, 'utf8')) : '';
+    for (const fn of ['addDeal', 'updateDeal']) {
+        const re = new RegExp(`${fn}:\\s*\\(deal: Deal\\) => Promise<boolean>`);
+        if (ctxSrc && !re.test(ctxSrc)) {
+            errors.push(`src/context/AppContext.tsx — \`${fn}\` لا تُعلن \`Promise<boolean>\`؛ فالمنادي لا يستطيع أن يعرف أن الحفظ رُفض.`);
+        }
+    }
+    const SD = path.join(ROOT, 'src/pages/SellerDashboard.tsx');
+    if (fs.existsSync(SD)) {
+        const sd = strip(fs.readFileSync(SD, 'utf8'));
+        if (!/const\s+saved\s*=/.test(sd) || !/if\s*\(!saved\)\s*return;/.test(sd)) {
+            errors.push(
+                'src/pages/SellerDashboard.tsx — نتيجةُ الحفظ لا تُقرأ قبل «✅ تم الحفظ بنجاح».\n'
+                + '     يلزم `const saved = …` ثمّ `if (!saved) return;` قبل `setSubmitted(true)`.'
+            );
+        }
+    }
+}
+
 if (errors.length) {
     console.error('\n❌ البناء متوقّف: مصطلحاتٌ في وجه المستخدم');
     for (const e of errors) console.error('   • ' + e);
     console.error('');
     process.exit(1);
 }
-console.log(`✅ لغةُ المستخدم: ${scanned} ملفّاً · صفرُ رسالةِ فشلٍ تذكر قاعدة البيانات · و\`saveErrorMessage\` لا تُرجع فارغاً في ٨ حالات`);
+console.log(`✅ لغةُ المستخدم: ${scanned} ملفّاً · صفرُ رسالةِ فشلٍ تذكر الخادم · ${rawHits}/${RAW_CENSUS} تنبيهاً بنصٍّ خام · و\`saveErrorMessage\` لا تُرجع فارغاً في ٨ حالات`);

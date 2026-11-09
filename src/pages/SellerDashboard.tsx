@@ -25,6 +25,7 @@ const SellerAnalytics = React.lazy(() => import('../components/seller/SellerAnal
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { isDealSoldOut } from '../utils/dealAvailability'; import { SoldOutButton } from '../components/seller/SoldOutButton';   // v15.07 — سطرٌ واحد: الملفّ عند سقف السقّافة تماماً
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
+import { reasonText } from '../data/refundReasons';
 import { useApp } from '../context/AppContext';
 import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import { useBooking } from '../hooks/useBooking';
@@ -607,8 +608,7 @@ const SellerDashboard: React.FC = () => {
     // it routes here as /seller?tab=orders&barcode=XXX. Once the orders
     // tab is rendered AND the booking has loaded, scroll the matching
     // card into view and flash a highlight ring so the seller sees which
-    // order the alert was about. The highlight clears after 3s so it
-    // doesn't permanently mark the row.
+    // order the alert was about. The highlight clears after 3s so it doesn't permanently mark the row.
     React.useEffect(() => {
         const params = new URLSearchParams(location.search);
         const barcode = params.get('barcode');
@@ -1549,8 +1549,8 @@ const SellerDashboard: React.FC = () => {
     // back if the DB delete fails.
     const handleRemoveBranch = async (branchId: string, label: string) => {
         const ok = await customConfirm(isRTL
-            ? `حذف "${label}" من اللوكيشنات المحفوظة؟ هذا يحذفه من الـDB ولا يؤثر على عروضك النشطة.`
-            : `Remove "${label}" from your saved locations? This deletes it from the DB and does not affect any active deal.`);
+            ? `حذف «${label}» من مواقعك المحفوظة؟\n\nلن يظهر بعدها عند إضافة عرض، وعروضك النشطة تبقى كما هي.`
+            : `Remove “${label}” from your saved locations?\n\nIt will no longer appear when you add a deal, and your active deals stay as they are.`);
         if (!ok) return;
         try {
             await removeBranch(branchId);
@@ -1591,7 +1591,7 @@ const SellerDashboard: React.FC = () => {
         if (res.ok) {
             await customAlert(isRTL ? `✅ صار اسم الفرع: «${name}»` : `✅ Branch renamed: “${name}”`);
         } else {
-            await customAlert(`❌ ${res.error || (isRTL ? 'تعذّرت إعادة التسمية. حاول مرة أخرى.' : 'Rename failed. Try again.')}`);
+            await customAlert(`❌ ${reasonText(res.error, isRTL)}`);
         }
     };
 
@@ -2660,14 +2660,14 @@ const SellerDashboard: React.FC = () => {
             // forever — the exact symptom Nasser hit. On timeout we surface
             // a retry toast and reset the spinner so the form is usable.
             try {
-                if (editingDealId) {
-                    await withTimeout(updateDeal(newDeal), 40000);
-                    if (!stayOnForm) {
-                        setEditingDealId(null);
-                    }
-                } else {
-                    await withTimeout(addDeal(newDeal), 40000);
-                }
+                // 🔴 v15.85 — تُقرأ النتيجة: كانت تُهمَل فيظهر «✅ تم الحفظ بنجاح»
+                //    فوق نافذةِ الرفض نفسها، ويبقى العرضُ غيرَ محفوظ. و`finally`
+                //    يُطفئ دوّارةَ الحفظ، فالعودةُ هنا لا تترك الزرَّ معلّقاً.
+                const saved = editingDealId
+                    ? await withTimeout(updateDeal(newDeal), 40000)
+                    : await withTimeout(addDeal(newDeal), 40000);
+                if (!saved) return;
+                if (editingDealId && !stayOnForm) setEditingDealId(null);
                 // Auto-save this deal's location as a re-usable branch so it
                 // shows up in the "📍 لوكيشن سابق" chip picker next time.
                 // Skipped if a branch already exists at the same locKey

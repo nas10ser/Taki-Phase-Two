@@ -21,6 +21,9 @@
  */
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
+// 🔴 v15.85 — الكتالوجُ خرج إلى `data/refundReasons` ليستعمله `RefundPanel` أيضاً
+//    (كان يطبع الرمزَ الخام: «⚠️ NO_REQUEST» على مسار المال).
+import { REFUND_REASONS as REASON } from '../../data/refundReasons';
 import { refundRepository, RefundExec } from '../../repositories/refundRepository';
 
 const money = (n: number) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n);
@@ -40,23 +43,6 @@ const when = (iso: string | null, isRTL: boolean): string => {
  * لا بجملةٍ عامّة: «تعذّر الاتصال» عن بوّابةٍ قالت «المبلغ مستردّ من قبل»
  * تترك التاجر يعيد المحاولة إلى الأبد (درس «الرابط المعطوب لا يُخطئ»).
  */
-const REASON: Record<string, { ar: string; en: string }> = {
-    GATEWAY_UNAVAILABLE: { ar: 'بوّابة الدفع غير مفعّلة أو مفاتيحها ناقصة — افتح «💳 بوابة الدفع» وتحقّق منها.', en: 'Your payment gateway is not active or its keys are missing — open «Payment gateway» and check.' },
-    // 🪤 الرمزُ الذي تُرسله دالّةُ الحافة هو `REFUND_NOT_SUPPORTED` — وكان
-    //    المفتاح هنا `REFUND_UNSUPPORTED`، فلا يُطابق أبداً وتضيع أنفعُ رسالة.
-    REFUND_NOT_SUPPORTED: { ar: 'مزوّد الدفع لديك لا يدعم الردّ الآلي — ردّ المبلغ من لوحة مزوّدك ثمّ سجّله هنا بزرّ «تأكيد ردّ المبلغ».', en: 'Your provider does not support automated refunds — refund from their dashboard, then record it here.' },
-    PROVIDER_CHANGED: { ar: 'بدّلتَ مزوّد الدفع بعد هذا الطلب، ومفاتيحك الجديدة لا تعرف تلك العملية — ردّ المبلغ من لوحة مزوّدك السابق ثمّ سجّله هنا.', en: 'You changed payment providers after this order, so your new keys do not know that transaction — refund from your previous provider, then record it here.' },
-    NOT_YOUR_ORDER: { ar: 'هذا الطلب ليس على متجرك.', en: 'This order does not belong to your store.' },
-    BOOKING_NOT_FOUND: { ar: 'لم يُعثر على هذا الطلب.', en: 'This order was not found.' },
-    ALREADY_REFUNDED: { ar: 'هذا الطلب مستردّ من قبل — لا يُردّ مرّتين.', en: 'This order was already refunded — it cannot be refunded twice.' },
-    ALREADY_CLAIMING: { ar: 'هناك نداءُ ردٍّ جارٍ على هذا الطلب الآن. انتظر نتيجته قبل إعادة المحاولة.', en: 'A refund call is already in flight for this order. Wait for its result.' },
-    NOT_PAID: { ar: 'هذا الطلب غير مدفوع إلكترونياً — لا مبلغ يُردّ.', en: 'This order was not paid online — there is nothing to refund.' },
-    NO_PAYMENT_REF: { ar: 'لا يحمل هذا الطلب مرجع دفعٍ من المزوّد، فلا شيء يُردّ عليه آلياً.', en: 'This order carries no provider payment reference, so it cannot be refunded automatically.' },
-    NOT_MERCHANT: { ar: 'هذا الطلب ليس على متجرك.', en: 'This order does not belong to your store.' },
-    ZERO_AMOUNT: { ar: 'مبلغ الطلب صفر — لا شيء يُردّ.', en: 'The order amount is zero — nothing to refund.' },
-    RATE_LIMITED: { ar: 'محاولات كثيرة في وقت قصير — انتظر دقيقة ثمّ أعِد المحاولة.', en: 'Too many attempts — wait a minute and try again.' },
-    NETWORK: { ar: 'تعذّر الوصول للخادم. الطلب **لم يُنفَّذ**؛ تحقّق من اتصالك وأعِد المحاولة.', en: 'Could not reach the server. The refund was NOT executed; check your connection and retry.' },
-};
 
 export const RefundButton: React.FC<{
     order: any;

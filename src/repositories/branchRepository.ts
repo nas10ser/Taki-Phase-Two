@@ -1,4 +1,5 @@
 import { supabase } from '../services/supabaseClient';
+import { saveErrorMessage } from '../utils/publishError';
 
 export interface StoreBranch {
     id: string;
@@ -126,7 +127,8 @@ export const branchRepository = {
         }
         const m = /BRANCH_DISPLAY_CAP:(\d+)/.exec(error.message || '');
         if (m) return { ok: false, cap: Number(m[1]), error: `باقتك تسمح بعرض ${m[1]} موقع على صفحتك. أخفِ موقعاً آخر أولاً أو رقِّ باقتك.` };
-        return { ok: false, error: error.message };
+        // 🪤 ولا يُعاد نصُّ الخادم خاماً: قد يكون جملةً إنجليزيّةً عن سياسة صفوف.
+        return { ok: false, error: saveErrorMessage(error, true) };
     },
 
     /**
@@ -204,10 +206,10 @@ export const branchRepository = {
             if (/BRANCH_NAME_DUP/i.test(error.message || '')) {
                 return { ok: false, error: 'لديك موقعٌ آخر بهذا الاسم. اختر اسماً يميّزه (واكتب عنوانه) ليفرّق المشتري بينهما.' };
             }
-            return { ok: false, error: error.message };
+            return { ok: false, error: saveErrorMessage(error, true) };
         }
         if (!data || data.length === 0) {
-            return { ok: false, error: 'لم يُحفَظ التغيير في القاعدة (لا صلاحية على هذا الموقع). حدّث الصفحة وحاول مجدداً.' };
+            return { ok: false, error: 'لم يُحفَظ التغيير — لا صلاحية لك على هذا الموقع. حدّث الصفحة وحاول مجدداً.' };
         }
         return { ok: true };
     },

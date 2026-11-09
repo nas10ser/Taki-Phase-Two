@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
 import { logger } from '../../utils/logger';
+import { saveErrorMessage } from '../../utils/publishError';
 
 export const InstantRefundToggle: React.FC = () => {
     const { user, language, customAlert, customConfirm } = useApp();
@@ -60,7 +61,7 @@ export const InstantRefundToggle: React.FC = () => {
 
         // 🪤 كتابةٌ ترفضها RLS تعود `error=null` وصفر صفوف — فلا يُقال «حُفظ»
         //    إلا بدليلٍ من الردّ نفسه.
-        if (error) { await customAlert('❌ ' + error.message); return; }
+        if (error) { await customAlert(saveErrorMessage(error, isRTL)); return; }
         if (!(data as any)?.ok) {
             await customAlert(t('❌ لم يُحفظ التغيير — حدّث الصفحة وحاول مجدداً.',
                                 '❌ Not saved — refresh and try again.'));

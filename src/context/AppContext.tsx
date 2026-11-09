@@ -84,7 +84,7 @@ interface AppContextType {
      *  redirect logic instead of `!user` so refreshed protected routes
      *  don't bounce logged-in users to home before hydration. */
     isAuthReady: boolean;
-    addDeal: (deal: Deal) => Promise<void>;
+    addDeal: (deal: Deal) => Promise<boolean>;   // 🔴 v15.85 — كانت void فكان البانر الأخضر يظهر مع الرفض
     updateDeal: (deal: Deal) => Promise<boolean>;
     deleteDeal: (id: string) => Promise<void>;
     user: any;
@@ -1924,7 +1924,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setBookings([]);
     }, []);
 
-    const addDeal = useCallback(async (deal: Deal) => {
+    const addDeal = useCallback(async (deal: Deal): Promise<boolean> => {
         logger.log('🛒 Adding deal:', deal.itemName, 'by user:', user?.id);
         const dealWithTime = {
             ...deal,
@@ -1959,7 +1959,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             // v14.95 — سببُ الرفض بعبارةٍ فيها **الخطوة التالية**: حدّ المواقع (نفس النصّ
             // حرفاً بحرف)، و«المتجر غير موثّق» (P0024) الذي كان يصل جملةً عمياء.
             const known = publishErrorMessage(`${error?.code || ''} ${msg} ${error?.hint || ''}`, language === 'ar');
-            if (known) { customAlert(known); return; }
+            if (known) { customAlert(known); return false; }
 
             if (isTransientLock) {
                 try {
@@ -1972,13 +1972,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             ? '⚠️ لم يُحفظ العرض — حاول مرّةً أخرى بعد قليل.'
                             : '⚠️ The deal was not saved — please try again shortly.'
                     );
-                    return;
+                    return false;
                 }
             } else {
                 console.error('❌ Failed to save deal to database:', error);
                 // 🔴 v15.84 (أمرُ ناصر): لا «قاعدة بيانات» في نصٍّ يراه التاجر.
                 customAlert(saveErrorMessage(error, language === 'ar'));
-                return;
+                return false;
             }
         }
 
@@ -1990,6 +1990,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return [dealWithTime, ...filtered];
         });
         logger.log('✅ Deal saved to database');
+        return true;
 
         // Follower / Smart Alert notifications are fanned out 100% server-side
         // by tr_deal_smart_notifications. The server fires on INSERT — no
@@ -2091,9 +2092,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (removedDeal) {
                 setDeals(prev => [removedDeal!, ...prev]);
             }
-            customAlert(language === 'ar'
-                ? `⚠️ فشل حذف العرض من السيرفر: ${error?.message || 'خطأ غير معروف'}`
-                : `⚠️ Failed to delete deal from server: ${error?.message || 'Unknown error'}`);
+            // 🔴 v15.85 — كان «فشل حذف العرض من السيرفر: <نصٌّ إنجليزيّ خام>».
+            customAlert(saveErrorMessage(error, language === 'ar'));
         }
     }, [customAlert, language]);
 

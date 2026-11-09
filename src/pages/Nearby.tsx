@@ -207,6 +207,10 @@ const Nearby: React.FC = () => {
     const {
         deals: nearbyDeals, total: nearbyTotal, totalCapped: nearbyCapped,
         hasMore: nearbyHasMore, loadingMore: nearbyLoadingMore, loadMore: nearbyLoadMore,
+        // 🔴 v15.85 (صنفُ بلاغ ناصر) — `loading` كان مُصدَّراً من الخطّاف ولا
+        //    تقرؤه الصفحة، فتُعلن «لا توجد عروض في هذا النطاق» **قبل أن يردّ
+        //    الخادم**. و«لا نعرف بعد» ليست «لا يوجد».
+        loading: nearbyLoading,
     } = useNearbyDeals({
         lat: userLat,
         lng: userLng,
@@ -599,7 +603,7 @@ const Nearby: React.FC = () => {
                     </div>
                 )}
                 <h2 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 16, color: 'var(--text-primary)' }}>
-                    {isRTL ? `النتائج القريبة (${nearbyTotal.toLocaleString('en-US')}${nearbyCapped ? '+' : ''})` : `Nearby Results (${nearbyTotal.toLocaleString('en-US')}${nearbyCapped ? '+' : ''})`}
+                    {(() => { const n = nearbyLoading ? '…' : `${nearbyTotal.toLocaleString('en-US')}${nearbyCapped ? '+' : ''}`; return isRTL ? `النتائج القريبة (${n})` : `Nearby Results (${n})`; })()}
                 </h2>
                 {nearbyDeals.length > 0 ? nearbyDeals.map(deal => {
                     // v12.91 — اسم الفرع للعرض متعدد المواقع، وإلا اسم موقع العرض المعروف.
@@ -730,7 +734,11 @@ const Nearby: React.FC = () => {
                             </div>
                         </div>
                     );
-                }) : (
+                }) : nearbyLoading ? (
+                    Array.from({ length: 6 }).map((_, i) => (
+                        <div key={`sk-${i}`} className="taki-skeleton" style={{ height: 112, borderRadius: 18, marginBottom: 12 }} />
+                    ))
+                ) : (
                     /* v14.63 — كانت تتّهم «النطاق» دائماً، حتى حين يكون السبب
                        فئةً أو مدينةً اختارها المستخدم. و«المفتوحة الآن» مفعّل
                        افتراضياً، فبعد إغلاق المحلات تفرغ القائمة والنطاق بريء.

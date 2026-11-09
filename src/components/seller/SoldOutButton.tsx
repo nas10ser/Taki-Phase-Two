@@ -16,6 +16,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
+import { saveErrorMessage } from '../../utils/publishError';
 
 export const SoldOutButton: React.FC<{ dealId: string; soldOut?: boolean; onDone?: () => void }> =
 ({ dealId, soldOut, onDone }) => {
@@ -34,7 +35,7 @@ export const SoldOutButton: React.FC<{ dealId: string; soldOut?: boolean; onDone
         });
         setBusy(false);
         // 🪤 كتابةٌ ترفضها RLS تعود `error=null` — فلا يُقال «تمّ» إلا بدليل.
-        if (error) { await customAlert('❌ ' + error.message); return; }
+        if (error) { await customAlert(saveErrorMessage(error, isRTL)); return; }
         if (!(data as any)?.ok) {
             await customAlert(t('❌ لم يُحفظ — حدّث الصفحة وحاول مجدداً.', '❌ Not saved — refresh and retry.'));
             return;

@@ -15,6 +15,7 @@ import { refundRepository } from '../../repositories/refundRepository';
 import { notifySetupGapsChanged } from './SetupPath';
 import { InstantRefundToggle } from './InstantRefundToggle';
 import { HoldHoursCard } from './HoldHoursCard';
+import { reasonText } from '../../data/refundReasons';
 
 const MAX = 1500;
 
@@ -184,7 +185,7 @@ export const StorePoliciesCard: React.FC = () => {
                                 setBusy(true);
                                 const res = await refundRepository.savePolicies(policy, terms);
                                 setBusy(false);
-                                if (!res.ok) { await customAlert('❌ ' + (res.error || '')); return; }
+                                if (!res.ok) { await customAlert('❌ ' + reasonText(res.error, isRTL)); return; }
                                 setSaved({ p: policy.trim(), t: terms.trim() });
                                 notifySetupGapsChanged();
                                 await customAlert(isRTL

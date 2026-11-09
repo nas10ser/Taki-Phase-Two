@@ -55,6 +55,27 @@ export function publishErrorMessage(msg: string, isRTL: boolean): string | null 
             : '🪪 The registration number cannot be typed in by hand — it is set only by an approved verification request, because it is printed on your customers’ invoices.\n\nSend it from “My account → Merchant dashboard → Store verification”.';
     }
 
+    // ── SUBSCRIPTION_REQUIRED — دائمٌ لا عابر، و«حاول بعد قليل» نصيحةٌ لا تنجح ─
+    if (/SUBSCRIPTION_REQUIRED/i.test(raw)) {
+        return isRTL
+            ? '🔒 اشتراكك منتهي — لا يمكن نشر عرضٍ أو تعديله قبل تجديده.\n\nافتح «حسابي ← الاشتراك» وجدّد باقتك، ثم احفظ مرّةً أخرى.'
+            : '🔒 Your subscription has expired — deals cannot be published or edited until it is renewed.\n\nOpen “My account → Subscription”, renew, then save again.';
+    }
+
+    // ── P0018 — حسابٌ موقوف. ⛔ لا ⚠️: وقفٌ تامٌّ لا عطلٌ يُعاد معه ───────────
+    if (/\bP0018\b/.test(raw) || /حسابك موقوف/.test(n)) {
+        return isRTL
+            ? '⛔ حسابك موقوف، فلا يمكن نشر العروض ولا تعديلها.\n\nراسل إدارة تاكي من «حسابي ← الدعم» لمعرفة السبب وطلب المراجعة.'
+            : '⛔ Your account is suspended, so deals cannot be published or edited.\n\nContact TAKI support from “My account → Support” to ask for a review.';
+    }
+
+    // ── 42501 — رفضُ صلاحيّة. دائمٌ كذلك: الجلسةُ لم تعد تخصّ هذا المتجر ────
+    if (/\b42501\b/.test(raw) || /row-level security/i.test(raw)) {
+        return isRTL
+            ? '⚠️ لم يُحفظ — الجلسة لم تَعُد صالحة لهذا المتجر.\n\nاخرج من حسابك ثم ادخل مرّةً أخرى، وأعِد الحفظ.'
+            : '⚠️ Not saved — this session is no longer valid for this store.\n\nSign out, sign back in, and save again.';
+    }
+
     return null;
 }
 
@@ -85,7 +106,18 @@ export function saveErrorMessage(err: any, isRTL: boolean): string {
     if (known) return known;
 
     // رسائلُ حرّاسنا مكتوبةٌ بالعربيّة للتاجر — تُعرض وحدها بلا إطارٍ تقنيّ.
-    const human = [msg, hint].map((x) => x.trim()).find((x) => /[\u0600-\u06FF]/.test(x));
+    // 🔴 و«فيها حرفٌ عربيّ» **ليست** القاعدة (صُحّح في نفس اليوم بعد قياس):
+    //    رسالةُ بوستجرس الإنجليزيّة قد تضمّ قيمةَ المستخدم كما كتبها، فـ
+    //    `invalid input syntax for type numeric: "٥٠"` كانت تُعرض وكأنها
+    //    نصيحتُنا. والأسوأ أن كتلة `\u0600-\u06FF` **تشمل الأرقام العربيّة**
+    //    (٠-٩ عند U+0660)، فرقمٌ واحدٌ كان يكفي لتمريرها.
+    //    ⇒ المعيار: حروفٌ عربيّةٌ **صِرفة** (بلا أرقام)، و**أكثر** من اللاتينيّة.
+    const arabicWins = (x: string): boolean => {
+        const ar = (x.match(/[\u0621-\u064A]/g) || []).length;
+        const la = (x.match(/[A-Za-z]/g) || []).length;
+        return ar >= 8 && ar > la;
+    };
+    const human = [msg, hint].map((x) => x.trim()).find(arabicWins);
     if (human) {
         // 🪤 ولا تُضاعَف العلامة: نصُّ القاعدة قد يبدأ برمزٍ أصلاً («🪪» · «⚠️»).
         return /^[A-Za-z\u0600-\u06FF0-9(]/.test(human) ? `⚠️ ${human}` : human;

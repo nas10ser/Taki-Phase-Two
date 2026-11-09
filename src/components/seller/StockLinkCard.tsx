@@ -27,6 +27,8 @@ import {
 } from '../../data/stockProviders';
 import { describeNote, NOTE_COLOR } from '../../data/stockNotes';
 import StockConnectPanel from './StockConnectPanel';
+import { saveErrorMessage } from '../../utils/publishError';
+import { reasonText } from '../../data/refundReasons';
 
 interface Integration {
     id: string; provider: string; segment: string | null; label: string | null;
@@ -162,9 +164,9 @@ export const StockLinkCard: React.FC = () => {
     // 🪤 كتابةٌ ترفضها RLS تعود `error=null` — فلا يُقال «تمّ» إلا بدليلٍ من الردّ.
     const call = async (fn: string, args: Record<string, unknown>): Promise<any | null> => {
         const { data, error } = await supabase.rpc(fn, args);
-        if (error) { await customAlert('❌ ' + error.message); return null; }
+        if (error) { await customAlert(saveErrorMessage(error, isRTL)); return null; }
         if (!(data as any)?.ok) {
-            await customAlert('❌ ' + ((data as any)?.error || t('لم يُحفظ — حدّث الصفحة وحاول مجدداً.', 'Not saved — refresh and retry.')));
+            await customAlert('❌ ' + reasonText((data as any)?.error, isRTL));
             return null;
         }
         return data;
