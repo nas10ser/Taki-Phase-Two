@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { hasStoredSession } from '../services/supabaseClient';
 import { goRegister } from '../utils/returnTo';
 import SearchInput from './SearchInput';
 import { useHistory, useLocation } from 'react-router-dom';
@@ -14,7 +15,12 @@ interface NavbarProps {
 const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
     const history = useHistory();
     const location = useLocation();
-    const { language, user, topLocation, geoVersion } = useApp();
+    const { language, user, topLocation, geoVersion, isAuthReady } = useApp();
+    // الجوابُ يُقرأ مرّةً واحدةً عند أوّل رسم: `localStorage` لا يتغيّر تحتنا
+    // أثناء استعادة الجلسة، وقراءتُه في كلّ رسمٍ عملٌ بلا فائدة.
+    const storedSession = useRef<boolean | null>(null);
+    if (storedSession.current === null) storedSession.current = hasStoredSession();
+    const resumingSession = !isAuthReady && storedSession.current;
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     const isRTL = language === 'ar';
@@ -97,7 +103,16 @@ const Navbar: React.FC<NavbarProps> = ({ searchQuery, onSearchChange }) => {
                     </div>
 
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        {!user ? (
+                        {/* 🔴 ثلاثُ حالاتٍ لا اثنتان (v15.82 — بلاغُ ناصر):
+                            «غيرُ مسجّل» و«لا نعرف بعد» ليستا شيئاً واحداً. وكان
+                            الشرطُ `!user` وحده، فأوّلُ رسمٍ — قبل حسم الجلسة —
+                            يُعلن «تسجيل» لمستخدمٍ **مسجَّل**، ثمّ يتراجع بعد
+                            ثوانٍ. والحالةُ الوسطى تُرسم بشكل الصورة نفسِه فلا
+                            يقفز شيءٌ عند الحسم. */}
+                        {!user && resumingSession ? (
+                            <div aria-hidden="true" className="animate-pulse"
+                                style={{ width: 44, height: 44, borderRadius: 14, background: 'rgba(80, 80, 95, 0.2)', border: '2px solid rgba(80, 80, 95, 0.3)' }} />
+                        ) : !user ? (
                             <button onClick={() => goRegister(history)}
                                 style={{ padding: '8px 18px', borderRadius: 12, background: 'var(--card-bg)', color: 'var(--primary)', fontWeight: 800, fontSize: '0.85rem', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                                 {isRTL ? 'تسجيل' : 'Login'}
