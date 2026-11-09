@@ -151,7 +151,7 @@ check('ومسارٌ خارج القائمة يوقف العودة',
 //    والأسرار هنا، لا في `src`.
 const ALLOWED = [
     'admin-impersonate', 'bot-chat-attachment', 'bot-upload-image',
-    'iap-notify', 'iap-verify', 'merchant-pay', 'send-push',
+    'iap-notify', 'iap-verify', 'merchant-pay', 'phone-login', 'send-push',
     'stock-oauth', 'stock-webhook', 'telegram-auth',
 ];
 const FN_DIR = path.join(ROOT, 'supabase/functions');

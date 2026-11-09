@@ -396,6 +396,42 @@ export const authService = {
             // البديل تسلسلي: نحسم البريد أولاً (الـRPC يغطّي كل صيغ الجوال
             // وبيانات الحساب)، ثم ننفق الرمز في نداء واحد فقط. تكلفتُه دورةُ
             // شبكة إضافية، وثمنُ السباق كان دخولاً متقطّعاً بلا سبب ظاهر.
+            // ═══ v15.86 — المسارُ الخادميّ أوّلاً: البريدُ يُحسم عند الخادم ═══
+            // 🔴 كان المتصفّحُ يسأل `find_email_by_phone` **قبل** كلمة المرور،
+            //    وهي ممنوحةٌ لـ`anon` — فمن يعرف رقمَ جوّالِ عميلٍ يعرف بريدَه.
+            //    الآن يرسل الرقمَ والكلمةَ والكابتشا إلى `phone-login`، فلا يعود
+            //    إليه بريدٌ إلّا داخل جلسةٍ صحيحة.
+            // 🪤 ولا يرتدّ إلى المسار القديم إلّا حين **لم يُستهلك رمزُ الكابتشا**
+            //    (٥xx أو انقطاعُ شبكة). فالرمزُ يُستعمل مرّةً واحدة، وارتدادٌ بعد
+            //    ٤٠٠ كان سيُنتج «كابتشا خاطئة» على كلّ محاولةٍ ثانية.
+            try {
+                const r = await supabase.functions
+                    .invoke('phone-login', { body: { phone: normalizedPhone, password, captchaToken } });
+                // 🪤 **`invoke` لا يُعيد جسمَ الردّ عند ٤٠٠/٤٢٩** — يضعه في
+                //    `error.context` (وهو `Response`). فقراءةُ `data` وحدها
+                //    كانت تجعل كلَّ رفضٍ يبدو «خطأً مجهولاً» فيرتدّ إلى المسار
+                //    القديم برمزِ كابتشا **مستهلَك** ⇒ فشلٌ مزدوجٌ دائم.
+                let srv: any = r.data;
+                const fErr: any = r.error;
+                if (!srv && fErr?.context && typeof fErr.context.json === 'function') {
+                    try { srv = await fErr.context.json(); } catch { /* جسمٌ غيرُ json */ }
+                }
+                const sess = (srv as any)?.session;
+                if ((srv as any)?.ok && sess?.access_token && sess?.refresh_token) {
+                    const { data, error } = await supabase.auth.setSession({
+                        access_token: sess.access_token, refresh_token: sess.refresh_token,
+                    });
+                    if (!error && data?.user) return { data, error: null } as any;
+                }
+                const code = String((srv as any)?.error || '');
+                if (code === 'rate_limited') return { error: { message: String((srv as any)?.message || 'محاولات كثيرة — أعد المحاولة بعد قليل.') } } as any;
+                if (code === 'captcha_failed') return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
+                if (code === 'invalid_credentials') return { error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } } as any;
+                // ما بقي (٥xx · `gate_failed` · `auth_unavailable` · خطأُ شبكة)
+                // يعني أن الرمزَ لم يُنفَق ⇒ يُكمل المسارُ القديم أدناه.
+                if (!fErr && code && code !== 'not_configured') { /* رمزٌ مجهول: نرتدّ أيضاً */ }
+            } catch { /* شبكةٌ أو دالّةٌ غائبة ⇒ المسارُ القديم */ }
+
             let targetEmail: string | null = null;
             try {
                 const { data: rpcEmail } = await supabase.rpc('find_email_by_phone', { input_phone: normalizedPhone });
