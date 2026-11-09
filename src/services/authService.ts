@@ -404,7 +404,15 @@ export const authService = {
             // 🪤 ولا يرتدّ إلى المسار القديم إلّا حين **لم يُستهلك رمزُ الكابتشا**
             //    (٥xx أو انقطاعُ شبكة). فالرمزُ يُستعمل مرّةً واحدة، وارتدادٌ بعد
             //    ٤٠٠ كان سيُنتج «كابتشا خاطئة» على كلّ محاولةٍ ثانية.
-            try {
+            // 🪤 **شبكةُ أمانٍ ضدّ قفلٍ لا أستطيع قياسَه**: لو رُفض رمزُ الكابتشا
+            //    عبر الوسيط لسببٍ لم يُقَس، لكان المستخدمُ يُرفَض كلَّ مرّة.
+            //    فأوّلُ فشلِ كابتشا يُطفئ المسارَ الجديد **لبقيّة الجلسة**،
+            //    فتمضي المحاولةُ التالية في المسار القديم المُثبَت. أسوأُ ما
+            //    يقع عندها محاولةٌ واحدةٌ ضائعة، لا بابٌ مغلق.
+            const SRV_OFF = 'taki-phone-login-srv-off';
+            let useServer = true;
+            try { useServer = sessionStorage.getItem(SRV_OFF) !== '1'; } catch { /* وضعٌ خاصّ */ }
+            if (useServer) try {
                 const r = await supabase.functions
                     .invoke('phone-login', { body: { phone: normalizedPhone, password, captchaToken } });
                 // 🪤 **`invoke` لا يُعيد جسمَ الردّ عند ٤٠٠/٤٢٩** — يضعه في
@@ -425,11 +433,13 @@ export const authService = {
                 }
                 const code = String((srv as any)?.error || '');
                 if (code === 'rate_limited') return { error: { message: String((srv as any)?.message || 'محاولات كثيرة — أعد المحاولة بعد قليل.') } } as any;
-                if (code === 'captcha_failed') return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
+                if (code === 'captcha_failed') {
+                    try { sessionStorage.setItem(SRV_OFF, '1'); } catch { /* وضعٌ خاصّ */ }
+                    return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
+                }
                 if (code === 'invalid_credentials') return { error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } } as any;
                 // ما بقي (٥xx · `gate_failed` · `auth_unavailable` · خطأُ شبكة)
                 // يعني أن الرمزَ لم يُنفَق ⇒ يُكمل المسارُ القديم أدناه.
-                if (!fErr && code && code !== 'not_configured') { /* رمزٌ مجهول: نرتدّ أيضاً */ }
             } catch { /* شبكةٌ أو دالّةٌ غائبة ⇒ المسارُ القديم */ }
 
             let targetEmail: string | null = null;
