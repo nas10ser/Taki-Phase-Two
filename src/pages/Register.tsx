@@ -42,8 +42,7 @@ const Register: React.FC = () => {
                 }
             }
             // No success branch — Supabase redirects the browser to the
-            // provider, then back to / with an access_token hash. The
-            // AuthRedirector handles the rest.
+            // provider, then back to / with an access_token hash. The AuthRedirector handles the rest.
         } catch (e: any) {
             await customAlert(language === 'ar'
                 ? `⚠️ حدث خطأ: ${e?.message || 'حاول مرة أخرى'}`
@@ -90,8 +89,7 @@ const Register: React.FC = () => {
         }
     }, [customAlert, language]);
 
-    // UI Flow States
-    // v13.99 — 'reset' = شاشة تعيين كلمة مرور جديدة. كانت ناقصة تماماً: رابط
+    // UI Flow States v13.99 — 'reset' = شاشة تعيين كلمة مرور جديدة. كانت ناقصة تماماً: رابط
     // الاستعادة يُدخل المستخدم للموقع بجلسة استعادة **ولا يطلب منه كلمة مرور
     // جديدة إطلاقاً**، والرمز ذو الستّ خانات في البريد لم يكن له مكان يُدخل فيه.
     // v14.03 — الوضع الابتدائي يُحسم **عند أول تركيب** من الحالة المخزَّنة، لا
@@ -188,8 +186,7 @@ const Register: React.FC = () => {
     // Force the page background to match the register gradient. Otherwise
     // iOS Safari's rubber-band overscroll exposes the light --body-bg
     // (#f1f5f9) below the navy container, producing a jarring white strip
-    // on every pull. Restore on unmount so the rest of the app keeps its
-    // normal --body-bg.
+    // on every pull. Restore on unmount so the rest of the app keeps its normal --body-bg.
     React.useEffect(() => {
         const prevHtmlBg = document.documentElement.style.background;
         const prevBodyBg = document.body.style.background;
@@ -206,12 +203,10 @@ const Register: React.FC = () => {
     //    وكابتشا GoTrue تحرس `/token` منذ v13.96 — فكلُّ نداءٍ منه يعود
     //    `captcha_failed`. أي أنه **ميّتٌ منذ إصدارين عشرَ**، وثمنُه ليس صفراً:
     //    ٢٠ محاولةَ دخولٍ فاشلةً في الدقيقة من عنوان المستخدم، تصل ٢٠٠ في
-    //    العشر دقائق التي تنتظرها هذه الشاشة — فتستهلك حدَّ محاولاته عند
-    //    GoTrue قبل أن يدخل دخولَه الحقيقيّ.
+    // العشر دقائق التي تنتظرها هذه الشاشة — فتستهلك حدَّ محاولاته عند GoTrue قبل أن يدخل دخولَه الحقيقيّ.
     //    والمستخدمُ يؤكّد اليومَ برابط البريد أو برمز الستّة أرقام، وكلاهما قائم.
 
-    // Password Validation Standards
-    // v14.01 — مصدر واحد للشروط: نفس دالة PasswordField المطابقة للخادم.
+    // Password Validation Standards v14.01 — مصدر واحد للشروط: نفس دالة PasswordField المطابقة للخادم.
     // كانت هنا نسخة ثانية من التعبير النمطي، ونسختان تتباعدان مع أول تعديل.
     const pwCriteria = pwChecks(password);
     const strengthScore = Object.values(pwCriteria).filter(Boolean).length;
@@ -522,6 +517,9 @@ const Register: React.FC = () => {
         const timeoutHandle = setTimeout(() => {
             timedOut = true;
             setLoading(false);
+            // 🔴 v15.89 — تُجدَّد الكابتشا: الطلبُ المعلّق قد يكون أنفق الرمز،
+            //    فالمحاولةُ التالية تفشل بسبب مهلتِنا لا بسبب المستخدم.
+            renewCaptcha();
             customAlert(t(
                 '⚠️ الشبكة بطيئة جداً. تأكد من الإنترنت وحاول مرة أخرى.',
                 '⚠️ Network is too slow. Check your internet and try again.'
@@ -530,7 +528,9 @@ const Register: React.FC = () => {
 
         try {
             const result = await authService.signInWithPassword(normalizedIdentifier, password, type, captchaToken);
-            if (timedOut) return;
+            // 🔴 v15.89 — ونجاحٌ متأخّرٌ **لا يُرمى**: الجلسةُ أُثبتت، وتركُه على
+            //    شاشة الدخول وهو داخلٌ هو عينُ «ماني مسجّل». الفشلُ وحده يُهمَل.
+            if (timedOut && (result?.error || !result?.data?.user)) return;
             const error = result?.error;
 
             // ALWAYS clear the loading state before awaiting any modal — that
