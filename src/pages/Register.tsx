@@ -201,26 +201,14 @@ const Register: React.FC = () => {
         };
     }, []);
 
-    // 🌟 SMART POLLING (Cross-Device Auto-Login) 🌟
-    React.useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
-        if (mode === 'verify' && email && password) {
-            interval = setInterval(async () => {
-                try {
-                    const response = await authService.signInWithPassword(email, password, 'email');
-                    const data = response.data;
-                    if (data && data.user) {
-                        clearInterval(interval);
-                    }
-                } catch (e) {
-                    // silently fail
-                }
-            }, 3000);
-        }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [mode, email, password]);
+    // 🔴 v15.89 — حُذف «الدخولُ التلقائيّ عبر الأجهزة»: كان `setInterval` كلَّ
+    //    ٣ ثوانٍ ينادي `signInWithPassword(…, 'email')` **بلا رمز كابتشا**،
+    //    وكابتشا GoTrue تحرس `/token` منذ v13.96 — فكلُّ نداءٍ منه يعود
+    //    `captcha_failed`. أي أنه **ميّتٌ منذ إصدارين عشرَ**، وثمنُه ليس صفراً:
+    //    ٢٠ محاولةَ دخولٍ فاشلةً في الدقيقة من عنوان المستخدم، تصل ٢٠٠ في
+    //    العشر دقائق التي تنتظرها هذه الشاشة — فتستهلك حدَّ محاولاته عند
+    //    GoTrue قبل أن يدخل دخولَه الحقيقيّ.
+    //    والمستخدمُ يؤكّد اليومَ برابط البريد أو برمز الستّة أرقام، وكلاهما قائم.
 
     // Password Validation Standards
     // v14.01 — مصدر واحد للشروط: نفس دالة PasswordField المطابقة للخادم.

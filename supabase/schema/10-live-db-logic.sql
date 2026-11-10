@@ -4,7 +4,7 @@ DO
 -- @@VOLATILE الخادم: محلّي-داخل-الحاوية
 -- القاعدة: postgres
 -- النسخة: PostgreSQL 17.6
--- @@VOLATILE وُلِّدت: 2026-11-09 00:17 (توقيت الرياض)
+-- @@VOLATILE وُلِّدت: 2026-11-10 22:08 (توقيت الرياض)
 -- 🪤 مولَّدٌ آلياً بـscripts/export-db-logic.sh — لا يُحرَّر بيد.
 --    وهو لقطةٌ للمقارنة والتعافي، وليس ملفَّ هجرة: لا تُشغّله.
 
@@ -21300,6 +21300,59 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_phone_login_gate(p_phone text) DEFINER owner=supabase_admin search_path=search_path=public, auth anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_phone_login_gate(p_phone text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'auth'
+AS $function$
+DECLARE
+    v_email text;
+BEGIN
+    -- 🪤 المنحُ هو البوّابة (service_role وحده أدناه)، وهذا حزامٌ ثانٍ:
+    --    `session_user` لا يغيّره `SET ROLE` ولا `SECURITY DEFINER`.
+    IF NOT public.taki_is_system_caller() THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+
+    -- حرّاسُ المعدّل كلُّها داخلها (دلوُ العنوان ودلوُ الرقم)، وهي ترفع استثناءً
+    -- عند التجاوز فيصل إلى دالّة الحافة كما هو.
+    v_email := public.find_email_by_phone(p_phone);
+
+    RETURN jsonb_build_object('email', v_email);
+END
+$function$
+;
+
+
+-- ═══ FUNCTION taki_phone_login_mark(p_kind text) DEFINER owner=supabase_admin search_path=search_path=public anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_phone_login_mark(p_kind text DEFAULT 'ok'::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+    IF NOT public.taki_is_system_caller() THEN
+        RAISE EXCEPTION 'forbidden' USING ERRCODE = '42501';
+    END IF;
+    IF p_kind = 'captcha' THEN
+        UPDATE public.phone_login_health
+           SET captcha_fail = captcha_fail + 1, last_captcha_fail = now()
+         WHERE only_row;
+    ELSE
+        UPDATE public.phone_login_health
+           SET ok_count = ok_count + 1,
+               first_ok = COALESCE(first_ok, now()),
+               last_ok  = now()
+         WHERE only_row;
+    END IF;
+END
+$function$
+;
+
+
 -- ═══ FUNCTION taki_process_booking_expiry() DEFINER owner=postgres search_path=search_path=public anon=no ═══
 CREATE OR REPLACE FUNCTION public.taki_process_booking_expiry()
  RETURNS void
@@ -27220,6 +27273,7 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- order_invoices rls=true forced=false policies=1
 -- payment_attempts rls=true forced=false policies=2
 -- pending_warnings rls=true forced=false policies=0
+-- phone_login_health rls=true forced=false policies=0
 -- pinned_stores rls=true forced=false policies=4
 -- platform_payment_log rls=true forced=false policies=1
 -- platform_settings rls=true forced=false policies=2

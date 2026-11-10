@@ -78,9 +78,15 @@ Deno.serve(async (req: Request) => {
   try {
     const { data, error } = await admin.rpc("taki_phone_login_gate", { p_phone: phone });
     if (error) {
-      // رسالةُ حدّ المحاولات عربيّةٌ مكتوبةٌ للمستخدم — تُمرَّر كما هي.
+      // 🪤 يُعرَف حدُّ المحاولات **برمزه** لا بنصّه: `taki_rate_check` ترفع
+      //    `P0001` وتحمل `P0011` في `HINT` (رمزٌ واحدٌ يعبر PostgREST، والباقي
+      //    يسافر في HINT). ومطابقةُ النصّ العربيّ تنكسر بأوّل تعديلِ صياغة —
+      //    وهو عينُ الفخّ المسجَّل في هذا المشروع.
       const msg = String(error.message || "");
-      if (/محاولات كثيرة|rate/i.test(msg)) return json({ ok: false, error: "rate_limited", message: msg }, 429);
+      const hint = String((error as { hint?: string }).hint || "");
+      if (hint.includes("P0011") || /محاولات كثيرة/.test(msg)) {
+        return json({ ok: false, error: "rate_limited", message: msg }, 429);
+      }
       return json({ ok: false, error: "gate_failed" }, 503);   // ⇒ ارتدادٌ للمسار القديم
     }
     const e = (data as any)?.email;
@@ -135,8 +141,10 @@ Deno.serve(async (req: Request) => {
     return json({ ok: true, session: gotrueBody }, 200);
   }
 
-  // 🪤 و٥xx من GoTrue ليست «كلمةً خاطئة»: تُعاد ٥٠٣ ليرتدّ المتصفّحُ ولا
-  //    يُقال للمستخدم «بياناتك خاطئة» وهي صحيحة.
+  // 🪤 و٥xx من GoTrue ليست «كلمةً خاطئة» — ولا هي سببٌ للارتداد: الطلبُ بلغ
+  //    GoTrue فقد يكون رمزُ الكابتشا **أُنفق**، والارتدادُ حينها فشلٌ ثانٍ
+  //    مؤكَّد. فالرمزُ `auth_unavailable` يقوله المتصفّحُ للمستخدم ولا يرتدّ،
+  //    بخلاف `auth_unreachable` أعلاه (لم يبلغ GoTrue ⇒ الرمزُ سليم).
   if (gotrueStatus >= 500) return json({ ok: false, error: "auth_unavailable" }, 503);
 
   return json(DENIED, 400);

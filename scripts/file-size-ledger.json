@@ -1,8 +1,8 @@
 {
   "src/components/seller/DeliveryCard.tsx": 1734,
-  "src/context/AppContext.tsx": 3943,
+  "src/context/AppContext.tsx": 3942,
   "src/pages/DealDetails.tsx": 3504,
-  "src/pages/Register.tsx": 1696,
+  "src/pages/Register.tsx": 1684,
   "src/pages/SellerDashboard.tsx": 5569,
   "src/pages/admin/AdminAnalyst.tsx": 1591,
   "src/pages/admin/AdminTools.tsx": 1569,

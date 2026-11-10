@@ -430,16 +430,29 @@ export const authService = {
                         access_token: sess.access_token, refresh_token: sess.refresh_token,
                     });
                     if (!error && data?.user) return { data, error: null } as any;
+                    // 🔴 الجلسةُ صحيحةٌ وصلت، وفشل تثبيتُها محلياً (تخزينٌ ممنوع
+                    //    مثلاً). الرمزُ **أُنفق**، فالارتدادُ فشلٌ ثانٍ مؤكَّد.
+                    return { error: { message: 'تم التحقّق لكن تعذّر حفظ الجلسة على هذا المتصفّح. جرّب نافذةً عادية (لا خفيّة) أو متصفّحاً آخر.' } } as any;
                 }
                 const code = String((srv as any)?.error || '');
                 if (code === 'rate_limited') return { error: { message: String((srv as any)?.message || 'محاولات كثيرة — أعد المحاولة بعد قليل.') } } as any;
                 if (code === 'captcha_failed') {
-                    try { sessionStorage.setItem(SRV_OFF, '1'); } catch { /* وضعٌ خاصّ */ }
+                    // 🪤 ولا يُشعَل المفتاحُ إلّا إن **أُرسل رمزٌ ورُفض**: الرفضُ
+                    //    لغياب الرمز أصلاً لا يقول شيئاً عن الوسيط، وإطفاءُ
+                    //    المسار الجديد عنده يُنزله بلا سبب لبقيّة الجلسة.
+                    if (captchaToken) { try { sessionStorage.setItem(SRV_OFF, '1'); } catch { /* وضعٌ خاصّ */ } }
                     return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
                 }
-                if (code === 'invalid_credentials') return { error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } } as any;
-                // ما بقي (٥xx · `gate_failed` · `auth_unavailable` · خطأُ شبكة)
-                // يعني أن الرمزَ لم يُنفَق ⇒ يُكمل المسارُ القديم أدناه.
+                // 🪤 والتلميحُ **ثابتٌ للجميع** فلا يكشف وجودَ حساب: حساباتُ
+                //    الإدارة لا تُحَلّ بالجوّال أصلاً (بالتصميم منذ v12.39)،
+                //    وكان المسارُ القديم يقول ذلك صراحةً — وهو تسريبٌ. فالعبارةُ
+                //    الواحدةُ تُنقذ الأدمن ولا تُفرّق بين رقمٍ مسجَّلٍ وغيره.
+                if (code === 'invalid_credentials') return { error: { message: 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.\n\n(وإن كان حسابك إدارياً فادخل بالبريد الإلكتروني.)' } } as any;
+                // 🪤 `auth_unavailable` = ردٌّ ٥xx من قوقل‑تروو **بعد** أن رأى
+                //    الرمز، فقد يكون أُنفق ⇒ لا يُرتدّ، ويُقال للمستخدم الحقيقة.
+                if (code === 'auth_unavailable') return { error: { message: 'خدمةُ الدخول غير متاحة الآن. حاول بعد دقيقة.' } } as any;
+                // وما بقي (`gate_failed` · `auth_unreachable` · خطأُ شبكة) يعني
+                // أن الطلبَ لم يبلغ قوقل‑تروو ⇒ الرمزُ لم يُنفَق ⇒ المسارُ القديم.
             } catch { /* شبكةٌ أو دالّةٌ غائبة ⇒ المسارُ القديم */ }
 
             let targetEmail: string | null = null;
