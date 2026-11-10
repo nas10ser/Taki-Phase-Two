@@ -121,12 +121,17 @@ Deno.serve(async (req: Request) => {
   // ── ٣) الكابتشا تُفرَّق عمداً: الواجهةُ تحتاج تجديدَ الرمز (يُستهلك مرّة) ─
   const code = String(gotrueBody?.error_code || "");
   if (code === "captcha_failed") {
+    // 🔴 v15.88 — تُسجَّل بلا أيّ بيانٍ شخصيّ. المفصلُ الوحيدُ غيرُ المقيس في
+    //    هذا المسار هو قَبولُ Cloudflare لرمزٍ مرّ عبر الوسيط؛ وهذا العدّادُ
+    //    يجعل الجوابَ مقروءاً من القاعدة بعد أوّل ساعةٍ من الاستعمال بدل
+    //    انتظارِ بلاغٍ من مستخدم.
+    try { await admin.rpc("taki_phone_login_mark", { p_kind: "captcha" }); } catch { /* لا يُفشل ردّاً */ }
     return json({ ok: false, error: "captcha_failed", message: String(gotrueBody?.msg || "") }, 400);
   }
 
   if (gotrueStatus === 200 && gotrueBody?.access_token && gotrueBody?.refresh_token && email) {
     // علامةٌ بلا أيّ بيانٍ شخصيّ: عدّادٌ يُثبت أن المسار عمل فعلاً.
-    try { await admin.rpc("taki_phone_login_mark"); } catch { /* لا يُفشل دخولاً ناجحاً */ }
+    try { await admin.rpc("taki_phone_login_mark", { p_kind: "ok" }); } catch { /* لا يُفشل دخولاً ناجحاً */ }
     return json({ ok: true, session: gotrueBody }, 200);
   }
 
