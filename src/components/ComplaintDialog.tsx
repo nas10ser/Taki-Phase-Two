@@ -5,9 +5,6 @@ import { complaintRepository, ComplaintCategory } from '../repositories/complain
 import { useEscClose } from '../hooks/useEscClose';
 // v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
 import { useBackClose } from '../hooks/useBackClose';
-// 🪤 الرقم لا يُصاغ يدوياً: «6 ساعة» خطأ نحويّ، و«1 hours» مثله.
-//    هذا الملفّ هو المكان الوحيد الذي يتحوّل فيه رقمُ ساعاتٍ إلى نصّ.
-import { holdLabelGen } from '../utils/bookingHold';
 
 /**
  * نموذج الشكوى (v14.92).
@@ -35,8 +32,7 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
     // v14.63 — Escape يُغلق الحوار
     useEscClose(true, onClose);
     useBackClose(true, onClose);
-    const { user, customAlert, platformSettings } = useApp();
-    const complainEmail = platformSettings.contactEmails.complain;
+    const { user, customAlert } = useApp();
     const [cat, setCat] = useState<ComplaintCategory>('app_issue');
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
@@ -44,7 +40,6 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
     const [files, setFiles] = useState<File[]>([]);
     const [fileErr, setFileErr] = useState('');
     const pickRef = useRef<HTMLInputElement>(null);
-    const slaHours = Number(platformSettings?.complaintsSlaHours) || 24;
 
     const addFiles = (list: FileList | null) => {
         if (!list?.length) return;
@@ -107,9 +102,9 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
             const sent = files.length - failed;
             customAlert(isRTL
                 ? `✅ وصلت شكواك.${files.length ? ` (${sent} من ${files.length} مرفقاً)` : ''}\n`
-                  + `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً — وتتابعها من «حسابي ← شكواي».`
+                  + `يصلك الردّ إشعاراً — وتتابعها من «حسابي ← شكواي».`
                 + (failed ? `\n⚠️ تعذّر رفع ${failed} مرفقاً — أرسلها في ردٍّ لاحق.` : '')
-                : `✅ Your complaint was received. We reply within ${holdLabelGen(slaHours, false)}; you'll get a notification, and you can follow it in Account → My complaints.`);
+                : `✅ Your complaint was received. You'll get a notification with the reply, and you can follow it in Account → My complaints.`);
         } else {
             // v13.15 — رسالة حدّ الطلبات (⏳ بلاغات كثيرة…) تُعرض كما هي من القاعدة
             customAlert(res.msg || (isRTL
@@ -261,30 +256,6 @@ const ComplaintDialog: React.FC<Props> = ({ isRTL, onClose }) => {
                         </div>
                     )}
                 </div>
-
-                <p style={{ marginTop: 14, marginBottom: 0, fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-secondary, #666)', lineHeight: 1.8 }}>
-                    {isRTL
-                        ? `نردّ خلال ${holdLabelGen(slaHours, true)}، ويصلك الردّ إشعاراً. وتتابع شكواك من «حسابي ← شكواي».`
-                        : `We reply within ${holdLabelGen(slaHours, false)} and notify you. Follow it in Account → My complaints.`}
-                </p>
-
-                {/* 🪤 وعنوانُ الشكاوى **هنا وحده** — أمرُ ناصر: «ضع فقط info في
-                    الفوتر، والشكوى خلّها لما يرفع شكوى». والسببُ سليم: عنوانٌ
-                    في تذييل كلّ صفحةٍ يُحوِّل الشكاوى من قناةٍ لها سجلٌّ ومهلةُ
-                    ردٍّ وإشعارٌ إلى بريدٍ بلا تتبُّعٍ ولا مهلة — فيخسر المشتكي
-                    ويخسر السجلّ. وهو بديلٌ **لمن تعذّر عليه الإرسال من هنا**
-                    لا طريقٌ موازٍ يُسحب إليه الناس.
-                    🪤 ولا يُعرض إن لم يُؤكَّد صندوقُه (فارغٌ ⇒ تُخفى الفقرة). */}
-                {complainEmail && (
-                    <p style={{ marginTop: 10, marginBottom: 0, fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary, #666)', lineHeight: 1.8 }}>
-                        {isRTL ? 'وإن تعذّر الإرسال من هنا، راسلنا على ' : 'If sending fails here, email us at '}
-                        <a href={`mailto:${complainEmail}`} style={{ color: 'var(--primary)', fontWeight: 800 }}>
-                            {complainEmail}
-                        </a>
-                        {isRTL ? ' — والإرسالُ من هذه الشاشة أفضل: يُسجَّل بردوده ومهلته.'
-                               : ' — though sending from here is better: it is logged with its replies and deadline.'}
-                    </p>
-                )}
 
                 <button type="button" onClick={submit} disabled={busy}
                     style={{

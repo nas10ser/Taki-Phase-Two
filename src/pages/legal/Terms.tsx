@@ -634,7 +634,7 @@ const Terms: React.FC = () => {
                     'يَحقّ للإدارة، وَفق سلطتها التَقديرية، إيقاف أيّ مُستخدم يَثبت تَلاعبه بنظام التقييمات (تَقييمات وَهمية، تَواطؤ مع آخرين، إدخال معلومات كاذبة)، ومنعه من استخدام المنصّة.',
                     'يُمنع المُستخدمون من تَعليقات الإعلان في الردود، أو السبّ والشتم، أو البخس بدون مُبرّر، أو إضافة محتوى لا يَتعلّق بالعرض. وتُحذف هذه التعليقات وقد يُعلَّق حساب المُخالف.',
                     'لكلّ مشترٍ تَقييم واحد لكلّ متجر، ويَحقّ له تَعديله أو حذفه في أيّ وقت، وللتاجر حقّ الردّ عليه علناً.',
-                    'تصويت «أصالة المنتج» متاح فقط لمن أتمّ حجزاً فعلياً، ويُعبّر عن رأي صاحبه وحده، ويُعرض مجموعه للعموم — وتَسري عليه نفس أحكام التقييمات أعلاه.',
+                    'تصويت «عرض حقيقي / عرض شكلي» — وهو تَقييم لمصداقية التخفيض لا اتّهام للمتجر — متاح فقط لمن أتمّ حجزاً فعلياً، ويُعبّر عن رأي صاحبه وحده، ويُعرض مجموعه للعموم، وتَسري عليه نفس أحكام التقييمات أعلاه.',
                 ] : [
                     'The user agrees that ratings and reviews are public — whether positive or negative — as expressions of the views of their authors.',
                     'TAKI bears no responsibility for the content of ratings, and is not bound to delete or amend any rating at the request of its subject.',
@@ -642,7 +642,7 @@ const Terms: React.FC = () => {
                     'The administration may, at its discretion, suspend any user proven to be manipulating the ratings system (fake ratings, collusion with others, false information) and bar them from the platform.',
                     'Users are prohibited from advertising in replies, from abuse and insults, from baseless disparagement, or from adding content unrelated to the offer. Such comments are removed and the offender\'s account may be suspended.',
                     'Each buyer has one rating per store, which they may edit or delete at any time, and the merchant has the right to reply to it publicly.',
-                    'The «product authenticity» vote is available only to buyers who have completed a real booking; it expresses the voter\'s own opinion alone, its tally is displayed publicly, and the same rating provisions above apply to it.',
+                    'The «real / cosmetic offer» vote — a rating of the discount\'s credibility, not an accusation against the store — is available only to buyers who have completed a real booking; it expresses the voter\'s own opinion alone, its tally is displayed publicly, and the same rating provisions above apply to it.',
                 ]} />
             </Section>
 

@@ -132,7 +132,10 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'هل يتم سحب أي مبلغ من بطاقتي عند الحجز؟',
-        a: <p><strong>لا أبداً</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء تلقائياً. الدفع الافتراضي يتمّ بينك وبين التاجر في موقعه عند الاستلام، وبعض التجار يتيحون <strong>اختيارياً</strong> زرّ «ادفع الآن» للدفع الإلكتروني المسبق عبر بوابة الدفع المرخصة الخاصّة بهم.</p>,
+        a: <>
+            <p><strong>لا شيء يُسحب بمجرّد الحجز</strong>. الحجز التزام مبدئيّ فقط — لا يحجز أيّ مبلغ على بطاقتك، ولا يستلم منك أيّ شيء تلقائياً، والدفع الافتراضي يتمّ بينك وبين التاجر في موقعه عند الاستلام.</p>
+            <p><strong>لكن إن اخترتَ بنفسك «ادفع الآن»</strong> (بطاقة أو Apple Pay) عبر بوابة الدفع المرخصة الخاصّة بالتاجر، فالمبلغ <strong>يُخصم فوراً ويذهب إلى حساب التاجر مباشرةً</strong> — لا إلى تاكي. واسترجاعه بعد ذلك يخضع <strong>لسياسة ذلك التاجر المُعلَنة وحدها، وقد تكون «لا استرداد»</strong>. فاقرأ سياسة التاجر المعروضة في صفحة العرض قبل أن تدفع.</p>
+        </>,
     },
     // v12.81 — أسئلة الدفع الإلكتروني المباشر المعتمدة (الدرع القانوني)
     {
@@ -145,11 +148,11 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'دفعت إلكترونياً — ممن أطلب الاسترداد؟',
-        a: <p><strong>من التاجر مباشرة</strong> عبر بوابة الدفع الخاصّة به ووفق سياسته المُعلَنة — المنصّة لا تملك الوصول للأموال ولا صلاحية ردّها. تواصل مع التاجر عبر شات الحجز أوّلاً، وإن لم يستجب ارفع شكوى عبر «📣 الشكاوى».</p>,
+        a: <p><strong>من التاجر مباشرة</strong> عبر بوابة الدفع الخاصّة به ووفق سياسته المُعلَنة — المنصّة لا تملك الوصول للأموال ولا صلاحية ردّها. تواصل مع التاجر عبر شات الحجز.</p>,
     },
     {
         q: 'كم مدّة صلاحية الحجز؟',
-        a: <p><strong>المهلة يحدّدها المتجر</strong>، وتظهر لك على صفحة العرض وفي ورقة الحجز قبل التأكيد. وافتراض تاكي لمتجرٍ لم يحدّدها: <strong><HoldHours kind="pickup" /> لطلب الاستلام من المتجر، و<HoldHours kind="delivery" /> لطلب التوصيل</strong> — من لحظة التأكيد. وتغييرُ المتجر لمهلته لا يمسّ حجزاً قائماً. وإن انتهت المهلة دون استلام يُلغى الحجز تلقائياً وتعود الكمّية للبيع، دون أيّ التزام عليك. وفي التوصيل <strong>تتوقّف المهلة تماماً بمجرّد أن ينطلق المندوب</strong>، <strong>والطلب المدفوع إلكترونياً لا يُلغى تلقائياً أبداً</strong>. تظهر لك المهلة المتبقّية في صفحة «حجوزاتي».</p>,
+        a: <p><strong>المهلة يحدّدها المتجر</strong>، وتظهر لك على صفحة العرض وفي ورقة الحجز قبل التأكيد. وافتراض تاكي لمتجرٍ لم يحدّدها: <strong><HoldHours kind="pickup" /> لطلب الاستلام من المتجر، و<HoldHours kind="delivery" /> لطلب التوصيل</strong> — من لحظة التأكيد. وتغييرُ المتجر لمهلته لا يمسّ حجزاً قائماً. وإن انتهت المهلة دون استلام يُلغى الحجز تلقائياً وتعود الكمّية للبيع، دون أيّ التزام عليك. <strong>والطلب المدفوع إلكترونياً لا يُلغى تلقائياً أبداً</strong>. تظهر لك المهلة المتبقّية في صفحة «حجوزاتي».</p>,
     },
     {
         q: 'لماذا لا أستطيع الحجز أحياناً؟',
@@ -162,7 +165,11 @@ const buyerFAQ_AR: QA[] = [
     },
     {
         q: 'هل يمكنني إلغاء الحجز؟',
-        a: <p>نعم، في أيّ وقت قبل انتهاء صلاحيّة العرض، من صفحة «حجوزاتي» بضغطة واحدة، بدون أيّ غرامة من المنصّة. لكن تجنّب الحجز المتكرّر بدون نيّة الحضور — قد يُقيَّد حسابك إن أُسيء الاستخدام.</p>,
+        a: <>
+            <p><strong>إن كان الدفع عند الاستلام</strong> فنعم — في أيّ وقت قبل انتهاء صلاحيّة العرض، من صفحة «حجوزاتي» بضغطة واحدة، بدون أيّ غرامة من المنصّة.</p>
+            <p><strong>أمّا إن كنتَ قد دفعتَ إلكترونياً</strong> فالإلغاء وحده لا يُعيد المال: يتحوّل طلبك إلى <strong>طلب استرداد</strong> يبتّ فيه التاجر <strong>وفق سياسته المُعلَنة</strong> — لأن المبلغ في حسابه هو لا في حساب تاكي.</p>
+            <p>ولتجنّب الحجز المتكرّر بدون نيّة الحضور — قد يُقيَّد حسابك إن أُسيء الاستخدام.</p>
+        </>,
     },
     {
         q: 'ماذا لو لم أحضر في الوقت المحدّد؟',
@@ -181,8 +188,8 @@ const buyerFAQ_AR: QA[] = [
         a: <p>بعد إتمام الحجز، يظهر لك خيار تقييم المتجر بنجوم وإضافة تعليق. لك <strong>تقييم واحد لكلّ متجر</strong>، ويمكنك <strong>تعديله أو حذفه</strong> في أيّ وقت، وللتاجر حقّ الردّ عليه. التقييم الصادق يُساعد المشترين الآخرين ويُحفّز التجار على تحسين خدماتهم. تجنّب التقييمات الكيدية أو غير الصادقة لأنّها قد تتعرّض للحذف.</p>,
     },
     {
-        q: 'ما تصويت «أصالة المنتج»؟',
-        a: <p>بعد استلام طلبك فعلياً، يمكنك التصويت على أصالة المنتج (🔵 أصلي / 🟡 غير أصلي). التصويت متاح <strong>فقط لمن أتمّ حجزاً حقيقياً</strong> — فلا يستطيع أحد التلاعب به — ويظهر مجموعه للمشترين في صفحة العرض، ويمكنك تعديل تصويتك لاحقاً.</p>,
+        q: 'ما تصويت «عرض حقيقي / عرض شكلي»؟',
+        a: <p>بعد استلام طلبك فعلياً، يمكنك التصويت على <strong>مصداقية العرض نفسه</strong>: 🔵 <strong>عرض حقيقي</strong> = خصم فعلي على السعر، و🟡 <strong>عرض شكلي</strong> = التخفيض غير فعلي (نفس السعر، أو السعر الأصلي مرفوع). وهو تقييم لمصداقية العرض وحده — <strong>وليس اتهاماً للمتجر</strong>. التصويت متاح <strong>فقط لمن أتمّ حجزاً حقيقياً</strong> — فلا يستطيع أحد التلاعب به — ويظهر مجموعه للمشترين في صفحة العرض، ويمكنك تعديل تصويتك لاحقاً.</p>,
     },
     {
         q: 'ما المسابقات والسحوبات في TAKI؟',
@@ -255,7 +262,10 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'Is any amount charged to my card on booking?',
-        a: <p><strong>Never.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you automatically. By default you pay the merchant at their location on receipt, and some merchants optionally offer a «Pay now» button for advance online payment through their own licensed gateway.</p>,
+        a: <>
+            <p><strong>Nothing is charged by booking alone.</strong> The booking is a preliminary commitment only — no amount is held on your card, and nothing is collected from you automatically; by default you pay the merchant at their location on receipt.</p>
+            <p><strong>But if you yourself choose «Pay now»</strong> (card or Apple Pay) through the merchant's own licensed gateway, the amount is <strong>charged immediately and goes straight to the merchant's account</strong> — not to TAKI. Getting it back is then governed <strong>solely by that merchant's published policy, which may be «no refunds»</strong>. Read the merchant's policy shown on the offer page before you pay.</p>
+        </>,
     },
     {
         q: 'Who am I paying when I choose «online payment»?',
@@ -267,11 +277,11 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'I paid online — who do I ask for a refund?',
-        a: <p><strong>The merchant, directly</strong>, through their own payment gateway and under their published policy — the platform has no access to the funds and no authority to return them. Contact the merchant via the booking chat first; if they do not respond, file a complaint through «📣 Complaints».</p>,
+        a: <p><strong>The merchant, directly</strong>, through their own payment gateway and under their published policy — the platform has no access to the funds and no authority to return them. Contact the merchant via the booking chat.</p>,
     },
     {
         q: 'How long does a booking stay valid?',
-        a: <p><strong>The window is set by the store</strong> and is shown on the offer page and in the booking sheet before you confirm. The TAKI default, for a store that has not set one: <strong><HoldHours kind="pickup" /> for store pickup, <HoldHours kind="delivery" /> for delivery</strong> — from the moment of confirmation. A store changing its window never affects an existing booking. If the window passes without pickup, the booking is cancelled automatically and the quantity returns to sale, at no obligation to you. For delivery the <strong>clock stops the moment the courier departs</strong>, and <strong>a card-paid order is never auto-cancelled</strong>. The remaining time is shown on your «My Bookings» page.</p>,
+        a: <p><strong>The window is set by the store</strong> and is shown on the offer page and in the booking sheet before you confirm. The TAKI default, for a store that has not set one: <strong><HoldHours kind="pickup" /> for store pickup, <HoldHours kind="delivery" /> for delivery</strong> — from the moment of confirmation. A store changing its window never affects an existing booking. If the window passes without pickup, the booking is cancelled automatically and the quantity returns to sale, at no obligation to you. <strong>A card-paid order is never auto-cancelled.</strong> The remaining time is shown on your «My Bookings» page.</p>,
     },
     {
         q: 'Why am I sometimes unable to book?',
@@ -284,7 +294,11 @@ const buyerFAQ_EN: QA[] = [
     },
     {
         q: 'Can I cancel a booking?',
-        a: <p>Yes, at any time before the offer expires, from the «My Bookings» page in a single tap, with no penalty from the platform. But avoid repeated bookings without intent to attend — your account may be restricted if the feature is misused.</p>,
+        a: <>
+            <p><strong>If you pay on receipt</strong>, yes — at any time before the offer expires, from the «My Bookings» page in a single tap, with no penalty from the platform.</p>
+            <p><strong>If you already paid online</strong>, cancelling alone does not return the money: your order becomes a <strong>refund request</strong> decided by the merchant <strong>under their published policy</strong> — because the amount sits in their account, not TAKI's.</p>
+            <p>Avoid repeated bookings without intent to attend — your account may be restricted if the feature is misused.</p>
+        </>,
     },
     {
         q: 'What if I do not attend on time?',
@@ -303,8 +317,8 @@ const buyerFAQ_EN: QA[] = [
         a: <p>After completing a booking, you will see an option to rate the store in stars and add a comment. You have <strong>one rating per store</strong>, which you can <strong>edit or delete</strong> at any time, and the merchant may reply to it. An honest review helps other buyers and motivates merchants to improve. Avoid malicious or untruthful ratings — they may be removed.</p>,
     },
     {
-        q: 'What is the «product authenticity» vote?',
-        a: <p>After actually collecting your order, you can vote on the product's authenticity (🔵 genuine / 🟡 not genuine). The vote is available <strong>only to buyers who completed a real booking</strong> — so it cannot be gamed — its tally is shown to buyers on the offer page, and you can change your vote later.</p>,
+        q: 'What is the «real / cosmetic offer» vote?',
+        a: <p>After actually collecting your order, you can vote on <strong>the credibility of the offer itself</strong>: 🔵 <strong>Real offer</strong> = a genuine price cut, 🟡 <strong>Cosmetic offer</strong> = no real cut (same price, or an inflated original price). It rates the offer's credibility only — <strong>it is not an accusation against the store</strong>. The vote is available <strong>only to buyers who completed a real booking</strong> — so it cannot be gamed — its tally is shown to buyers on the offer page, and you can change your vote later.</p>,
     },
     {
         q: 'What are TAKI contests and draws?',
@@ -375,7 +389,7 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'هل التسجيل كتاجر مدفوع؟',
-        a: <p>يَحصل كلّ تاجر جديد على <strong>فترة تجريبية مجانية</strong> (تُحدِّد المنصّة مدّتها وقد تتغيّر من وقت لآخر) يَستخدم خلالها ميزات لوحة التاجر دون دفع. بعد انتهائها، يَلزم تَفعيل اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. تتعدّد الباقات <strong>بحسب عدد المواقع (اللوكيشنات)</strong> التي يحتاجها متجرك، وتُعرض أسعارها وتفاصيلها <strong>داخل التطبيق وقت الاشتراك وقد تتغيّر</strong> (لا سعر ثابت مُعلَن مسبقاً). النموذج العامّ: «اشترك ويتجدّد تلقائياً، وأوقف التجديد متى تشاء واستفد حتى نهاية المدّة المدفوعة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
+        a: <p><strong>نعم</strong> — يَلزم اشتراك مدفوع لمتابعة النشر واستقبال الحجوزات. تتعدّد الباقات <strong>بحسب عدد المواقع (اللوكيشنات)</strong> التي يحتاجها متجرك، وتُعرض أسعارها وتفاصيلها <strong>داخل التطبيق وقت الاشتراك وقد تتغيّر</strong> (لا سعر ثابت مُعلَن مسبقاً). وإن أتاحت المنصّة عرضاً تعريفياً أو مدّةَ تجربة فتُعلَن داخل التطبيق وقتها، ولا تلتزم بها المنصّة دائماً. النموذج العامّ: «اشترك ويتجدّد تلقائياً، وأوقف التجديد متى تشاء واستفد حتى نهاية المدّة المدفوعة» (راجع <a href="/refund" className="text-emerald-600 font-bold underline">سياسة الاسترداد</a>).</p>,
     },
     {
         q: 'كم سعر الاشتراك؟ وهل هو ثابت؟',
@@ -425,7 +439,10 @@ const merchantFAQ_AR: QA[] = [
     },
     {
         q: 'ماذا أفعل إذا لم يحضر المشتري؟',
-        a: <p>يحقّ لك إلغاء الحجز من «لوحة التاجر» بعد انتهاء مدّة صلاحيّته. لا توجد عقوبة عليك من المنصّة. تكرار عدم الحضور من نفس المشتري يُسجَّل تلقائياً في النظام وقد يؤدّي إلى تقييد حسابه.</p>,
+        a: <>
+            <p>يحقّ لك إلغاء الحجز من «لوحة التاجر» بعد انتهاء مدّة صلاحيّته. لا توجد عقوبة عليك من المنصّة. تكرار عدم الحضور من نفس المشتري يُسجَّل تلقائياً في النظام وقد يؤدّي إلى تقييد حسابه.</p>
+            <p><strong>وإن كان الطلب مدفوعاً إلكترونياً</strong> فالإلغاء لا يَردّ المال من تلقاء نفسه: المبلغ وصل <strong>حسابك أنت</strong> عبر بوابتك، ويتحوّل الطلب إلى <strong>طلب استرداد</strong> تبتّ فيه <strong>وفق سياستك المُعلَنة</strong> — فاحرص أن تكون سياسة الاسترداد في ملفّ متجرك واضحة قبل أن تقبل الدفع الإلكتروني.</p>
+        </>,
     },
     {
         q: 'هل يمكنني إدارة فروع متعدّدة؟',
@@ -486,7 +503,7 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'Is merchant registration paid?',
-        a: <p>Every new merchant gets a <strong>free trial period</strong> (its length is set by the platform and may change from time to time) during which the merchant-dashboard features are available at no charge. Once it ends, a paid subscription is required to continue publishing and receiving bookings. There are <strong>several packages that differ by the number of locations</strong> your store needs, and their prices and details are shown <strong>inside the app at the time of subscription and may change</strong> (no fixed price announced in advance). The general model is: «Subscribe and it auto-renews; turn off renewal anytime and benefit until the end of the paid period» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
+        a: <p><strong>Yes</strong> — a paid subscription is required to continue publishing and receiving bookings. There are <strong>several packages that differ by the number of locations</strong> your store needs, and their prices and details are shown <strong>inside the app at the time of subscription and may change</strong> (no fixed price announced in advance). If the platform offers an introductory deal or a trial period it is announced inside the app at that time; the platform does not commit to one permanently. The general model is: «Subscribe and it auto-renews; turn off renewal anytime and benefit until the end of the paid period» (see the <a href="/refund" className="text-emerald-600 font-bold underline">Refund Policy</a>).</p>,
     },
     {
         q: 'How much is the subscription? Is it fixed?',
@@ -537,7 +554,10 @@ const merchantFAQ_EN: QA[] = [
     },
     {
         q: 'What do I do if the buyer does not attend?',
-        a: <p>You may cancel the booking from the «Merchant Dashboard» once it has expired. There is no penalty from the platform. Repeated no-shows from the same buyer are recorded automatically by the system and may result in restrictions on their account.</p>,
+        a: <>
+            <p>You may cancel the booking from the «Merchant Dashboard» once it has expired. There is no penalty from the platform. Repeated no-shows from the same buyer are recorded automatically by the system and may result in restrictions on their account.</p>
+            <p><strong>If the order was paid online</strong>, cancelling does not return the money by itself: the amount reached <strong>your own account</strong> through your gateway, and the order becomes a <strong>refund request</strong> you decide <strong>under your published policy</strong> — so make sure your store's refund policy is clear before you accept online payment.</p>
+        </>,
     },
     {
         q: 'Can I manage multiple branches?',
