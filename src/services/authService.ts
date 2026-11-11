@@ -518,6 +518,84 @@ export const authService = {
         return result;
     },
 
+    /**
+     * استعادةُ كلمة المرور **بالجوّال** — والخادمُ يُرسل الرسالة (v15.91).
+     * 🔴 كان المتصفّحُ يسأل `find_email_by_phone` فيصله البريدُ كاملاً ثمّ
+     *    تُقنّعه الشاشةُ للعرض — والتقنيعُ في الشاشة لا يمنع من ينادي الدالّة
+     *    مباشرةً. الآن لا يعود إلّا البريدُ **مُقنَّعاً**، وهو ما كان يُعرض.
+     * 🪤 و`stop:false` تعني **لم يُنفَق رمزُ الكابتشا** (٥xx أو شبكة) فيُكمل
+     *    المنادي بالمسار القديم بـ`email`. وما عداه يُحسم هنا.
+     */
+    recoverByPhone: async (digits: string, captchaToken?: string, redirectTo?: string): Promise<{
+        stop: boolean; ar: string; en: string; email?: string; masked?: string;
+    }> => {
+        const NOT_FOUND = {
+            stop: true,
+            ar: 'لم نجد حساباً بهذا الرقم يمكن استعادته. اكتب بريدك الإلكتروني في الخانة أعلاه.',
+            en: 'No recoverable account for this number. Enter your email address in the field above.',
+        };
+        let srv: any = null;
+        try {
+            const r = await supabase.functions.invoke('phone-login', { body: {
+                action: 'recover', phone: digits, captchaToken, redirectTo,
+            } });
+            srv = r.data;
+            const fe: any = r.error;
+            if (!srv && fe?.context?.json) { try { srv = await fe.context.json(); } catch { /* ليس json */ } }
+        } catch { /* شبكةٌ ⇒ ارتداد */ }
+        if (srv?.ok === true && srv?.found === false) return NOT_FOUND;
+        if (srv?.ok === true && srv?.masked) {
+            return { stop: true, masked: String(srv.masked),
+                ar: `سنرسل رمز الاستعادة إلى بريدك: ${srv.masked}`,
+                en: `We'll send the reset code to your email: ${srv.masked}` };
+        }
+        if (String(srv?.error || '') === 'captcha_failed') {
+            return { stop: true, ar: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.', en: 'Verification failed. Please try again.' };
+        }
+        // ارتدادٌ — الرمزُ لم يُنفَق (شبكةُ أمانٍ تُسحب بعد أن يُقاس المسارُ الجديد)
+        try {
+            const { data } = await supabase.rpc('find_email_by_phone', { input_phone: digits });
+            if (data) return { stop: false, ar: '', en: '', email: String(data) };
+        } catch { /* لا شيء */ }
+        return NOT_FOUND;
+    },
+
+    /**
+     * تحقّقُ رمز الاستعادة **بالجوّال** — فلا يحتاج المتصفّحُ البريدَ أصلاً.
+     * 🔴 ولولا هذه لبقي التسريبُ مفتوحاً: نقلُ الإرسال وحده لا يُغني، لأن
+     *    الشاشةَ تحتاج البريدَ **بعد** الإرسال لتُدخل الرمز.
+     */
+    verifyResetByPhone: async (digits: string, code: string, captchaToken?: string): Promise<{
+        ok: boolean; ar: string; en: string;
+    }> => {
+        let srv: any = null;
+        try {
+            const r = await supabase.functions.invoke('phone-login', { body: {
+                action: 'verify', phone: digits, code, captchaToken,
+            } });
+            srv = r.data;
+            const fe: any = r.error;
+            if (!srv && fe?.context?.json) { try { srv = await fe.context.json(); } catch { /* ليس json */ } }
+        } catch { /* يُعالَج أدناه */ }
+        const sess = srv?.session;
+        if (srv?.ok === true && sess?.access_token && sess?.refresh_token) {
+            const { data, error } = await supabase.auth.setSession({
+                access_token: sess.access_token, refresh_token: sess.refresh_token,
+            });
+            if (!error && data?.user) return { ok: true, ar: '', en: '' };
+            return { ok: false,
+                ar: 'تم التحقّق لكن تعذّر حفظ الجلسة على هذا المتصفّح. جرّب نافذةً عادية (لا خفيّة).',
+                en: 'Verified, but the session could not be stored in this browser. Try a normal (non-private) window.' };
+        }
+        const code2 = String(srv?.error || '');
+        if (code2 === 'auth_unavailable' || code2 === 'auth_unreachable') {
+            return { ok: false, ar: 'خدمةُ التحقّق غير متاحة الآن. حاول بعد دقيقة.', en: 'The verification service is unavailable. Try again in a minute.' };
+        }
+        return { ok: false,
+            ar: '⚠️ الرمز غير صحيح أو انتهت صلاحيته. اضغط «إرسال رمز جديد» بالأسفل.',
+            en: '⚠️ The code is wrong or expired. Tap "Send a new code" below.' };
+    },
+
     resetPassword: async (email: string, captchaToken?: string) => {
         // v13.96 — الكابتشا على الخادم تحرس /recover كما تحرس /signup و/token.
         return await supabase.auth.resetPasswordForEmail(email, {

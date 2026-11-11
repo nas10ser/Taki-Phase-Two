@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext';
 import { validationService } from '../services/validationService';
 import { authService, MIN_AGE } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
-import { normalizeArabicNumerals } from '../utils/helpers';
+import { normalizeArabicNumerals, maskEmail } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
 import TurnstileWidget from '../components/TurnstileWidget';
 import PasswordField, { pwIsStrong, pwChecks } from '../components/PasswordField';
@@ -114,6 +114,8 @@ const Register: React.FC = () => {
     const [identityProven, setIdentityProven] = useState<boolean | null>(null);
     /** البريد الذي أُرسل إليه الرمز فعلاً — قد يكون محلولاً من رقم الجوال. */
     const [resetEmail, setResetEmail] = useState('');
+    const [resetPhone, setResetPhone] = useState('');      // v15.91 — للخادم
+    const [resetMasked, setResetMasked] = useState('');    // v15.91 — للعرض وحده
     const [userType, setUserType] = useState<'buyer' | 'seller' | ''>('');
     // Form States
     const [name, setName] = useState('');
@@ -215,10 +217,8 @@ const Register: React.FC = () => {
     const isRTL = language === 'ar';
     const t = useCallback((ar: string, en: string) => (isRTL ? ar : en), [isRTL]);
 
-    // ⏰ 10-MINUTE VERIFICATION TIMEOUT
-    // If the user doesn't verify (link or code) within 10 minutes, the
-    // unconfirmed auth.users row is deleted server-side and they are sent
-    // back to the landing screen.
+    // ⏰ 10-MINUTE VERIFICATION TIMEOUT If the user doesn't verify (link or code) within 10 minutes, the
+    // unconfirmed auth.users row is deleted server-side and they are sent back to the landing screen.
     React.useEffect(() => {
         if (mode !== 'verify' || !email) return;
         const timeoutId = setTimeout(async () => {
@@ -273,14 +273,17 @@ const Register: React.FC = () => {
     }, []);
 
     /** يُخفي أغلب البريد: كشفه لمن يعرف رقم جوال فقط تسريبُ هوية. */
-    const maskEmail = (e: string) => {
-        const [u, d] = String(e || '').split('@');
-        if (!d) return e;
-        return `${u.slice(0, 2)}${'•'.repeat(Math.max(2, u.length - 2))}@${d}`;
-    };
 
     /** إعادة إرسال رمز الاستعادة من داخل شاشة التعيين — بلا رجوع ولا لبس. */
     const handleResendResetCode = async () => {
+        if (resetPhone) {                   // v15.91 — الخادمُ يُعيد الإرسال بالجوّال
+            setLoading(true);
+            const r = await authService.recoverByPhone(resetPhone, captchaToken, `${window.location.origin}/register`);
+            setLoading(false); renewCaptcha();
+            if (r.masked) { setResetCode(''); setIdentityProven(false); }
+            await customAlert(t(r.ar || '📧 أرسلنا رمزاً جديداً.', r.en || '📧 A new code was sent.'));
+            return;
+        }
         const target = (resetEmail || email).trim();
         if (!target.includes('@')) {
             await customAlert(t('ارجع لتسجيل الدخول واطلب الاستعادة من جديد.',
@@ -369,6 +372,10 @@ const Register: React.FC = () => {
                                         'Enter the 6-digit code from the email.'));
                     return;
                 }
+                if (resetPhone) {   // v15.91 — الخادمُ يحسم البريدَ ويتحقّق ويُعيد الجلسة
+                    const v = await withTimeout(authService.verifyResetByPhone(resetPhone, code, captchaToken));
+                    if (!v.ok) { await customAlert(t(v.ar, v.en)); return; }
+                } else {
                 const { error: vErr } = await withTimeout(supabase.auth.verifyOtp({
                     email: (resetEmail || email).trim(), token: code, type: 'recovery',
                 }));
@@ -376,6 +383,7 @@ const Register: React.FC = () => {
                     await customAlert(t('⚠️ الرمز غير صحيح أو انتهت صلاحيته. اضغط «إرسال رمز جديد» بالأسفل.',
                                         '⚠️ The code is wrong or expired. Tap "Send a new code" below.'));
                     return;
+                }
                 }
                 // الرمز يُستهلك بنجاح التحقّق ⇒ الهوية صارت مُثبَتة. فلو رفض
                 // الخادمُ كلمةَ المرور بعدها لا نطالبه برمزٍ لم يعد يملكه.
@@ -392,8 +400,7 @@ const Register: React.FC = () => {
             clearPasswordRecovery();
             // v14.05 (بلاغ ناصر: «المفروض يتحدّث مباشرة في الموقع»):
             // ننتقل **أولاً** ثم نُظهر التنبيه. كان الانتقال ينتظر إغلاق
-            // التنبيه، فمن تركه مفتوحاً بقي على شاشة التعيين وظنّ أن شيئاً
-            // لم يحدث — ولو حدّث الصفحة عادت تطلب رمزاً.
+            // التنبيه، فمن تركه مفتوحاً بقي على شاشة التعيين وظنّ أن شيئاً لم يحدث — ولو حدّث الصفحة عادت تطلب رمزاً.
             history.replace('/');
             customAlert(t('✅ تم تغيير كلمة المرور. يمكنك استخدامها الآن.',
                           '✅ Password changed. You can use it now.'));
@@ -404,8 +411,7 @@ const Register: React.FC = () => {
                     '⌛️ The server took too long. Check your connection and try again — nothing changed.')
                 : explainPwError(msg));
         } finally {
-            // 🔴 في finally لا في كل مسار على حدة: نسيان واحدٍ منها هو ما ترك
-            // الزرّ يدور بلا نهاية في بلاغ ناصر.
+            // 🔴 في finally لا في كل مسار على حدة: نسيان واحدٍ منها هو ما ترك الزرّ يدور بلا نهاية في بلاغ ناصر.
             setLoading(false);
         }
     };
@@ -419,22 +425,18 @@ const Register: React.FC = () => {
         const digits = normalizeArabicNumerals(trimmedEmail).replace(/\D/g, '');
         if (!trimmedEmail.includes('@') && digits.length >= 9) {
             setLoading(true);
-            let resolved: string | null = null;
-            try {
-                const { data } = await supabase.rpc('find_email_by_phone', { input_phone: digits });
-                if (data) resolved = String(data);
-            } catch { /* نُعالج أدناه */ }
+            // 🔴 v15.91 — الخادمُ يحسم البريدَ ويُرسل الرسالة؛ ولا يعود هنا إلّا
+            //    بريدٌ **مُقنَّع**. والارتدادُ داخلها حين لا يُجيب الخادم.
+            const rec = await authService.recoverByPhone(digits, captchaToken, `${window.location.origin}/register`);
             setLoading(false);
-            if (!resolved) {
-                await customAlert(t(
-                    'لم نجد حساباً بهذا الرقم يمكن استعادته. اكتب بريدك الإلكتروني في الخانة أعلاه.',
-                    'No recoverable account for this number. Enter your email address in the field above.'));
+            if (rec.ar) await customAlert(t(rec.ar, rec.en));
+            if (rec.stop) {                           // الخادمُ أرسلها — ولا تُرسَل مرّتين
+                if (!rec.masked) return;              // لا حساب · كابتشا
+                setResetCode(''); setNewPw(''); setNewPw2(''); setResetEmail('');
+                setResetPhone(digits); setResetMasked(rec.masked); setIdentityProven(false); setMode('reset');
                 return;
             }
-            trimmedEmail = resolved;
-            await customAlert(t(
-                `سنرسل رمز الاستعادة إلى بريدك: ${maskEmail(resolved)}`,
-                `We'll send the reset code to your email: ${maskEmail(resolved)}`));
+            trimmedEmail = rec.email || trimmedEmail;
         }
 
         if (!trimmedEmail) {
@@ -534,8 +536,7 @@ const Register: React.FC = () => {
             const error = result?.error;
 
             // ALWAYS clear the loading state before awaiting any modal — that
-            // way the button reads "Sign In" again the moment the alert
-            // appears, never sticking on "Processing…".
+            // way the button reads "Sign In" again the moment the alert appears, never sticking on "Processing…".
             clearTimeout(timeoutHandle);
             setLoading(false);
 
@@ -805,8 +806,7 @@ const Register: React.FC = () => {
     const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         let rawVal = e.target.value;
 
-        // --- Immediate validation & filtering ---
-        // 0. Convert Arabic numerals to English digits first
+        // --- Immediate validation & filtering --- 0. Convert Arabic numerals to English digits first
         rawVal = normalizeArabicNumerals(rawVal);
         setEmailSuccess(false);
 
@@ -857,8 +857,7 @@ const Register: React.FC = () => {
         // In login mode we skip the existence pre-check entirely: the actual
         // sign-in attempt is the source of truth, and the per-keystroke RPC
         // was making the login feel laggy + showing a misleading green ✅.
-        // We still keep the async existence check on register so users learn
-        // up front that an email is taken.
+        // We still keep the async existence check on register so users learn up front that an email is taken.
         if (mode !== 'login' && trimmed && !hasArabic && !hasSpaces && (isPhonePotential || validationService.isValidEmail(trimmed))) {
             emailDebounceRef.current = setTimeout(async () => {
                 setEmailChecking(true);
@@ -1119,8 +1118,7 @@ const Register: React.FC = () => {
         const isLogin = mode === 'login';
 
         // Password Validation — explicit light colors (CSS var --accent
-        // resolves to near-black slate-800 which is invisible on the dark
-        // register gradient).
+        // resolves to near-black slate-800 which is invisible on the dark register gradient).
         const STRONG_GREEN = '#10b981';
         const CHECK_OFF = '#94a3b8';
         let strengthColor = CHECK_OFF;
@@ -1528,9 +1526,9 @@ const Register: React.FC = () => {
                     </p>
                     {/* v14.01 — إظهار وجهة الرمز: يقطع الشكّ «هل وصل للبريد الصحيح؟»
                         ويكشف فوراً لو أُرسل لحساب غير المقصود. مُقنَّع لحماية الهوية. */}
-                    {identityProven === false && resetEmail && (
+                    {identityProven === false && (resetEmail || resetMasked) && (
                         <p style={{ textAlign: 'center', fontSize: '0.8rem', marginBottom: 20, color: '#38bdf8' }}>
-                            📧 {maskEmail(resetEmail)}
+                            📧 {resetMasked || maskEmail(resetEmail)}
                         </p>
                     )}
 

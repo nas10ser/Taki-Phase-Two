@@ -39,6 +39,16 @@ const CORS: Record<string, string> = {
 };
 const json = (b: unknown, s: number) => new Response(JSON.stringify(b), { status: s, headers: CORS });
 
+/**
+ * تقنيعُ البريد — **مطابقٌ حرفياً** لـ`maskEmail` في `src/pages/Register.tsx`،
+ * فما يراه المستخدمُ لا يتغيّر بانتقال الحساب إلى الخادم.
+ */
+function maskEmail(e: string): string {
+  const [u, d] = String(e || "").split("@");
+  if (!d) return e;
+  return `${u.slice(0, 2)}${"•".repeat(Math.max(2, u.length - 2))}@${d}`;
+}
+
 /** ردٌّ واحدٌ لكلّ فشلٍ في الاعتماد — لا يُفرّق بين رقمٍ مجهولٍ وكلمةٍ خاطئة. */
 const DENIED = { ok: false, error: "invalid_credentials" };
 
@@ -57,16 +67,22 @@ Deno.serve(async (req: Request) => {
   // الترويسةُ كما وصلت — حرفياً (انظر الفخَّ أعلاه).
   const xff = req.headers.get("x-forwarded-for") || "";
 
-  let phone = "", password = "", captchaToken = "";
+  let phone = "", password = "", captchaToken = "", action = "login", otp = "", redirectTo = "";
   try {
     const body = await req.json();
     phone = String(body?.phone || "").trim();
     password = String(body?.password || "");
     captchaToken = String(body?.captchaToken || "");
+    action = String(body?.action || "login");
+    otp = String(body?.code || "").trim();
+    redirectTo = String(body?.redirectTo || "");
   } catch {
     return json({ ok: false, error: "bad_body" }, 400);
   }
-  if (!phone || !password) return json(DENIED, 400);
+  if (!["login", "recover", "verify"].includes(action)) return json({ ok: false, error: "bad_action" }, 400);
+  if (!phone) return json(DENIED, 400);
+  if (action === "login" && !password) return json(DENIED, 400);
+  if (action === "verify" && !otp) return json(DENIED, 400);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -93,6 +109,73 @@ Deno.serve(async (req: Request) => {
     email = e ? String(e) : null;
   } catch {
     return json({ ok: false, error: "gate_failed" }, 503);
+  }
+
+  // ── ١ب) «نسيت كلمة المرور» بالجوّال — نفسُ التسريب، نفسُ العلاج ─────────
+  // 🔴 كان المتصفّحُ يسأل `find_email_by_phone` هنا أيضاً فيصله البريدُ كاملاً،
+  //    ثمّ **تُقنّعه الشاشةُ للعرض وحده** — والتقنيعُ في الشاشة لا يمنع من
+  //    ينادي الدالّةَ مباشرةً. الآن: الخادمُ يُرسل الرسالة، ولا يعود للمتصفّح
+  //    إلّا البريدُ **مُقنَّعاً** (وهو ما كان يُعرض أصلاً).
+  // 🪤 وحالةُ «لا حساب» تبقى كما هي في سلوك الواجهة — تغييرُها قرارُ منتجٍ
+  //    لا أمنٍ، وهو بندٌ مستقلٌّ بيد ناصر («رسالةُ الدخول تكشف وجود الحساب»).
+  if (action === "recover") {
+    if (!email) return json({ ok: true, found: false }, 200);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+        method: "POST",
+        headers: {
+          "apikey": ANON_KEY,
+          "Authorization": `Bearer ${ANON_KEY}`,
+          "Content-Type": "application/json",
+          ...(redirectTo ? { "redirect_to": redirectTo } : {}),
+          ...(xff ? { "x-forwarded-for": xff } : {}),
+        },
+        body: JSON.stringify({
+          email,
+          ...(captchaToken ? { gotrue_meta_security: { captcha_token: captchaToken } } : {}),
+        }),
+      });
+      if (res.status === 200) return json({ ok: true, found: true, masked: maskEmail(email) }, 200);
+      const b = await res.json().catch(() => null);
+      if (String(b?.error_code || "") === "captcha_failed") {
+        return json({ ok: false, error: "captcha_failed", message: String(b?.msg || "") }, 400);
+      }
+      return json({ ok: false, error: "recover_failed" }, 503);   // ⇒ ارتدادٌ للمسار القديم
+    } catch {
+      return json({ ok: false, error: "recover_failed" }, 503);
+    }
+  }
+
+  // ── ١ج) تحقّقُ رمز الاستعادة — بالجوّال، فلا يحتاج المتصفّحُ البريدَ أصلاً ─
+  // 🔴 ولولا هذا الفرعِ لبقي التسريبُ مفتوحاً: الشاشةُ تحتاج البريدَ **بعد**
+  //    الإرسال لتُدخل الرمز، فنقلُ الإرسال وحده لا يُغني.
+  // 🪤 و`/verify` ليست من مسارات الكابتشا عند GoTrue (هي `/signup` و`/token`
+  //    و`/recover` و`/resend`)، فالرمزُ يُمرَّر إن وُجد ولا يُشترط.
+  if (action === "verify") {
+    if (!email) return json(DENIED, 400);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+        method: "POST",
+        headers: {
+          "apikey": ANON_KEY,
+          "Authorization": `Bearer ${ANON_KEY}`,
+          "Content-Type": "application/json",
+          ...(xff ? { "x-forwarded-for": xff } : {}),
+        },
+        body: JSON.stringify({
+          type: "recovery", email, token: otp,
+          ...(captchaToken ? { gotrue_meta_security: { captcha_token: captchaToken } } : {}),
+        }),
+      });
+      const b = await res.json().catch(() => null);
+      if (res.status === 200 && b?.access_token && b?.refresh_token) {
+        return json({ ok: true, session: b }, 200);
+      }
+      if (res.status >= 500) return json({ ok: false, error: "auth_unavailable" }, 503);
+      return json({ ok: false, error: "bad_code" }, 400);
+    } catch {
+      return json({ ok: false, error: "auth_unreachable" }, 503);
+    }
   }
 
   // ── ٢) تُنادى GoTrue في الحالتين — بريدٌ لا يوجد حين لا يُعثر على حساب ───

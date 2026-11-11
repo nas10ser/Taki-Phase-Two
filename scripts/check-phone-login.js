@@ -103,9 +103,28 @@ if (fn) {
             + '     فزمنُ الردّ واستهلاكُ رمز الكابتشا يصيران عرّافَين عن وجود الحساب.'
         );
     }
-    const earlyReturn = /if\s*\(\s*!\s*email\s*\)\s*return/.test(fn);
-    if (earlyReturn) {
-        errors.push(`${FN} — عودةٌ مبكّرة عند \`!email\` — تُعيد العرّافَ الزمنيّ.`);
+    // 🪤 والنطاقُ **مسارُ الدخول وحده**: فرعا «استعادة» و«تحقّق الرمز» تعودان
+    //    عند `!email` عمداً (الأولى تقول `found:false` — وهو سلوكُ الواجهة
+    //    القائم وقرارُ منتجٍ لا أمن، والثانية ترفض رفضاً موحّداً). ومنعٌ شاملٌ
+    //    هنا كان سيتّهم كوداً صحيحاً، وإضعافُ الحارس لإسكاته أسوأُ من الاثنين.
+    const loginFrom = fn.indexOf('const probeEmail');
+    if (loginFrom === -1) {
+        errors.push(`${FN} — لم يُعثر على \`probeEmail\`، فلا يمكن تحديدُ مسار الدخول.`);
+    } else if (/if\s*\(\s*!\s*email\s*\)\s*return/.test(fn.slice(loginFrom))) {
+        errors.push(`${FN} — عودةٌ مبكّرة عند \`!email\` في **مسار الدخول** — تُعيد العرّافَ الزمنيّ.`);
+    }
+
+    // ── وفرعا الاستعادة: لا يخرج بريدٌ كاملٌ منهما أبداً ───────────────────
+    for (const [needle, name] of [['action === "recover"', 'فرعُ إرسال الاستعادة'],
+                                  ['action === "verify"', 'فرعُ تحقّق الرمز']]) {
+        if (!fn.includes(needle)) errors.push(`${FN} — ${name} غير موجود؛ فمسارُ «نسيت كلمة المرور» ما زال يحسم البريدَ في المتصفّح.`);
+    }
+    if (!/masked:\s*maskEmail\(email\)/.test(fn)) {
+        errors.push(`${FN} — فرعُ الاستعادة لا يُعيد بريداً **مُقنَّعاً**؛ وإعادتُه كاملاً هي الثغرةُ بعينها.`);
+    }
+    // 🪤 ولا يُعاد `email` عارياً في أيّ جسم ردّ
+    for (const m of fn.match(/json\(\s*\{[^}]*\bemail\b[^}]*\}/g) || []) {
+        if (!/masked/.test(m)) errors.push(`${FN} — جسمُ ردٍّ يحمل \`email\` بلا تقنيع: ${m.slice(0, 70)}`);
     }
 
     // 🔇 ولا تُطبع كلمةُ المرور إطلاقاً
@@ -135,10 +154,62 @@ if (mig) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// وتُحلَّل دوالُّ الحافة فعلاً — لا تُقرأ نصّاً
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 عيبٌ أدخلتُه في ١١ نوفمبر ٢٠٢٦ وأوقف الدالّة على الإنتاج فوراً:
+//    `let … code = ""` ثمّ `const code = …` أدناه ⇒
+//    `SyntaxError: Identifier 'code' has already been declared`، فردّت ٥٠٠
+//    على **كلّ** طلب. و`npm run typecheck` لا يراها: ملفّات Deno خارج مشروع
+//    TypeScript، والحارسُ كان يقرأ النصّ ولا يُحلّله.
+// 🪤 و`--noResolve` مقصود: الاستيراداتُ من `https://esm.sh` لا تُحَلّ هنا،
+//    لكنّ أخطاءَ البنية والتعريفِ المكرّر تُكشف كلُّها.
+{
+    const { execFileSync } = require('child_process');
+    const fnDir = path.join(ROOT, 'supabase/functions');
+    const files = [];
+    for (const d of fs.readdirSync(fnDir, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        for (const f of fs.readdirSync(path.join(fnDir, d.name))) {
+            if (f.endsWith('.ts')) files.push(path.join('supabase/functions', d.name, f));
+        }
+    }
+    if (files.length < 8) {
+        errors.push(`مُسِح ${files.length} ملفَّ دالّةٍ فقط — مَسحٌ فارغٌ يُنتج «أخضرَ» كاذباً.`);
+    }
+    // 🪤 **ملفٌّ واحدٌ في كلّ نداء**: مع `--noResolve` تصير الملفّاتُ بلا
+    //    استيرادٍ «سكربتات» تتشارك النطاقَ العامّ، فيتّهم `const json` في
+    //    `stock-oauth` نظيرَه في دالّةٍ أخرى بـ«إعادة تعريف» — إيجابيّةٌ كاذبة
+    //    تُفشل البناءَ على كودٍ سليم. والعزلُ يُنهيها.
+    const real = [];
+    for (const f of files) {
+        try {
+            execFileSync('npx', ['tsc', '--noEmit', '--noResolve', '--skipLibCheck',
+                '--allowImportingTsExtensions', '--target', 'es2022', '--module', 'esnext',
+                '--moduleResolution', 'bundler', f],
+                { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+        } catch (e) {
+            const out = String((e.stdout || '') + (e.stderr || ''));
+            // 🪤 **قائمةُ سماحٍ لا منع**: نفحص ما لا يعتمد على مكتبةِ البيئة —
+            //    أخطاءُ البنية كلُّها (TS1xxx) و«معرّفٌ مكرّر» و«استُعمل قبل
+            //    تعريفه». وما عداها تحكمه أنواعُ Deno التي لا يملكها `tsc`
+            //    هنا، فتظهر إيجابيّاتٌ كاذبة (مثال مقيس: `crypto.subtle`
+            //    في `telegram-auth` ⇒ TS2769 على كودٍ يعمل في الإنتاج).
+            //    والمنعُ يفشل مفتوحاً — والسماحُ يفشل مغلقاً، وهو المطلوب هنا.
+            for (const l of out.split('\n')) {
+                if (/error TS1\d{3}\b/.test(l) || /error TS(2300|2451|2448|2403)\b/.test(l)) real.push(l);
+            }
+        }
+    }
+    if (real.length) {
+        errors.push('دوالُّ الحافة لا تُحلَّل:\n     ' + real.slice(0, 6).join('\n     '));
+    }
+}
+
 if (errors.length) {
     console.error('\n❌ البناء متوقّف: الدخولُ بالجوّال');
     for (const e of errors) console.error('   • ' + e);
     console.error('');
     process.exit(1);
 }
-console.log('✅ الدخولُ بالجوّال: البريدُ يُحسم على الخادم · الرفضُ موحّد · العنوانُ يُمرَّر حرفياً · وشبكةُ الأمان قائمة');
+console.log('✅ الدخولُ بالجوّال: البريدُ والاستعادةُ وتحقّقُ الرمز كلُّها على الخادم · الرفضُ موحّد · العنوانُ يُمرَّر حرفياً · وكلُّ دوالّ الحافة تُحلَّل');

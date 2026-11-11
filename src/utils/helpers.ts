@@ -791,3 +791,16 @@ export const getAuthenticityBadge = (real = 0, fake = 0, isRTL = true): Authenti
  */
 export const storeAvatar = (profile: any): string =>
     String(profile?.avatar_url || profile?.avatar || '');
+
+/**
+ * تقنيعُ البريد للعرض — `ab••••@gmail.com` (v15.91).
+ * 🔴 ونسخةُ الخادم في `supabase/functions/phone-login/index.ts` **مطابقةٌ
+ *    حرفياً**: ما يراه المستخدمُ لا يتغيّر بانتقال الحساب إلى الخادم.
+ * 🪤 وكان مُعرَّفاً داخل `Register.tsx` — وهو ملفٌّ عند سقفه، والتقنيعُ أداةٌ
+ *    عامّةٌ لا خاصّيةُ شاشة.
+ */
+export const maskEmail = (e: string): string => {
+    const [u, d] = String(e || '').split('@');
+    if (!d) return e;
+    return `${u.slice(0, 2)}${'•'.repeat(Math.max(2, u.length - 2))}@${d}`;
+};
