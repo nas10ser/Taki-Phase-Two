@@ -50,10 +50,6 @@ export interface PlatformSettings {
      *  و`vacation` يُنزِّل الأثر من `required` إلى `advisory` بضغطة — فغيابُ
      *  المراجع الوحيد لا يُجمّد تجّاره. */
     verification: { mode: 'off' | 'advisory' | 'required'; slaHours: number; vacation: boolean; showBadge: boolean };
-    /** v14.92 — المهلة المعلنة للردّ على الشكاوى. تُقال للمشتري عند الإرسال
-     *  وفي «شكواي»، وتُضبط من الإعدادات بلا نشر — فلا يُكتب رقمُ ساعاتٍ
-     *  نصّاً في أي مكان (أوّل ضبطٍ يجعله كذباً — درس v14.12). */
-    complaintsSlaHours: number;
     /** v14.97 — نافذة الاسترداد الفوري. `hours` **ليست مهلة احتجاز**: تاكي لا
      *  تحتفظ بالمال أصلاً (الدفع يذهب لحساب التاجر مباشرة). هي نافذةُ ضمانٍ
      *  إجرائيّ: خلالها يصل طلبُ الاسترداد التاجرَ فوراً ويُنفَّذ **بلا خطوة
@@ -95,7 +91,7 @@ export const PLATFORM_SETTING_KEYS = [
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
-    'complaints_sla_hours', 'chat_limits', 'verification', 'refund_window',
+    'chat_limits', 'verification', 'refund_window',
     'stock_link_enabled', 'image_cdn_host', 'contact_emails',
 ];
 
@@ -133,7 +129,6 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     bannerSeconds: 2,
     bookingHolds: { pickupHours: 2, deliveryHours: 6, selfCloseMinutes: 10 },
     merchantVatRate: 15,
-    complaintsSlaHours: 24,
     chatLimits: { perBooking: 0, perHour: 120 },
     verification: { mode: 'off', slaHours: 24, vacation: false, showBadge: false },
     refundWindow: { hours: 2, merchantButton: true },
@@ -186,9 +181,6 @@ export const applyPlatformSetting = (
             // v14.17 — نسبة ضريبة طلبات التجار. للعرض فقط (حاسبة التاجر)؛
             // الفاتورة نفسها تحمل نسبتها مجمّدة من لحظة البيع.
             return prev => ({ ...prev, merchantVatRate: num((value || {}).rate, 15, 0, 100) });
-        case 'complaints_sla_hours':
-            // v14.92 — كم ساعةً نَعِد بالردّ خلالها على الشكوى.
-            return prev => ({ ...prev, complaintsSlaHours: num(value, 24, 1, 720) });
         case 'chat_limits':
             // v14.93 — حدود المحادثة. 0 في per_booking = بلا حدّ، فلا يُقصّ
             // بـGREATEST إلى 1؛ والقاعدة هي الحَكَم دائماً وهذا للعرض فقط.

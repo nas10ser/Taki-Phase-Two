@@ -41,7 +41,6 @@ import {
     UserWarning,
 } from '../../services/adminService';
 import { CopyButton } from '../../components/admin/CopyButton';
-import { ComplaintsSlaCard } from '../../components/admin/ComplaintsSlaCard';
 import { Tooltip } from '../../components/admin/Tooltip';
 import { supabase } from '../../services/supabaseClient';
 import {
@@ -502,11 +501,14 @@ const AdminReports: React.FC = () => {
             </div>
         );
     } else if (view === 'complaints') {
-        // المهلة المعلنة تُضبط من هنا — موضعُ الوعد حيث يُنفَّذ، لا في درجٍ عامّ.
-        const sla = <ComplaintsSlaCard />;
+        // 🔴 v15.94 — بطاقةُ «نردّ خلال…» أُسقطت بأمر ناصر (١١ نوفمبر ٢٠٢٦):
+        //    حُذفت جملةُ المهلة من نافذة الشكوى، وكانت **الشيءَ الوحيد** الذي
+        //    تضبطه تلك البطاقة. ومقبضٌ لا يُحرّك شيئاً أسوأُ من غيابه — وهو
+        //    نفسُ المعيار الذي بُنيت عليه (v14.92): «إعدادٌ بلا شاشةٍ تضبطه
+        //    يُعيد ناصراً إليّ»، وعكسُه صحيح. والمفتاحُ `complaints_sla_hours`
+        //    باقٍ في القاعدة بلا قارئ، فإعادةُ الوعد يوماً سطرٌ واحد.
         body = complaints.length === 0 ? (
             <div style={{ display: 'grid', gap: 10 }}>
-                {sla}
                 <AdmEmpty
                     icon="🎉"
                     title={hasFilters ? 'لا شكوى تطابق هذه المرشِّحات' : 'لا توجد شكاوى حالياً'}
@@ -518,7 +520,6 @@ const AdminReports: React.FC = () => {
             </div>
         ) : (
             <div style={{ display: 'grid', gap: 10 }}>
-                {sla}
                 {complaints.map((c) => (
                     <ComplaintCard key={c.id} complaint={c} onOpenAccount={openAccount} onStatusChange={changeComplaintStatus} onReplied={load} onInternalNote={setInternalNote} />
                 ))}
