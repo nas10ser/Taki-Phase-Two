@@ -4,7 +4,7 @@ DO
 -- @@VOLATILE الخادم: محلّي-داخل-الحاوية
 -- القاعدة: postgres
 -- النسخة: PostgreSQL 17.6
--- @@VOLATILE وُلِّدت: 2026-11-11 21:32 (توقيت الرياض)
+-- @@VOLATILE وُلِّدت: 2026-11-11 22:30 (توقيت الرياض)
 -- 🪤 مولَّدٌ آلياً بـscripts/export-db-logic.sh — لا يُحرَّر بيد.
 --    وهو لقطةٌ للمقارنة والتعافي، وليس ملفَّ هجرة: لا تُشغّله.
 
@@ -14843,10 +14843,7 @@ CREATE OR REPLACE FUNCTION public.increment_deal_click(target_deal_id text)
 AS $function$
 DECLARE v_store text;
 BEGIN
-    UPDATE public.deals
-       SET clicks = COALESCE(clicks, 0) + 1
-     WHERE id = target_deal_id
-    RETURNING store_id INTO v_store;
+    SELECT store_id INTO v_store FROM public.deals WHERE id = target_deal_id;
     IF v_store IS NOT NULL THEN
         INSERT INTO public.analytics_events (kind, user_id, store_id, deal_id)
         VALUES ('deal_click', auth.uid()::text, v_store, target_deal_id);
@@ -14865,10 +14862,8 @@ CREATE OR REPLACE FUNCTION public.increment_deal_view(target_deal_id text)
 AS $function$
 DECLARE v_store text;
 BEGIN
-    UPDATE public.deals
-       SET views = COALESCE(views, 0) + 1
-     WHERE id = target_deal_id
-    RETURNING store_id INTO v_store;
+    -- 🔴 لا `UPDATE deals` هنا: الكتابةُ تُجمَّع في `taki_sync_deal_counters`.
+    SELECT store_id INTO v_store FROM public.deals WHERE id = target_deal_id;
     IF v_store IS NOT NULL THEN
         INSERT INTO public.analytics_events (kind, user_id, store_id, deal_id)
         VALUES ('deal_view', auth.uid()::text, v_store, target_deal_id);
@@ -19220,6 +19215,125 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_complaint_mail() DEFINER owner=supabase_admin search_path=search_path=public anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_complaint_mail()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_box     text;
+    v_to      text;
+    v_key     text;
+    v_from    text;
+    v_subj    text;
+    v_html    text;
+    v_who     text;
+    v_label   text;
+    v_req     bigint;
+    v_err     text;
+BEGIN
+    -- ① الصندوق بحسب النوع. 🪤 قائمةُ سماحٍ صريحة لا `CASE ELSE complain`:
+    --    نوعٌ جديد يُضاف للتطبيق ولا يُضاف هنا يجب أن **يَظهر** لا أن يُفرَز
+    --    بالتخمين إلى صندوق الشكاوى.
+    v_box := CASE NEW.category
+        WHEN 'app_issue'   THEN 'complain'
+        WHEN 'store_issue' THEN 'complain'
+        WHEN 'payment'     THEN 'complain'
+        WHEN 'suggestion'  THEN 'info'
+        WHEN 'other'       THEN 'info'
+        ELSE NULL
+    END;
+    v_label := CASE NEW.category
+        WHEN 'app_issue'   THEN 'مشكلة في التطبيق'
+        WHEN 'store_issue' THEN 'مشكلة مع متجر'
+        WHEN 'payment'     THEN 'دفع / سعر'
+        WHEN 'suggestion'  THEN 'اقتراح / تحسين'
+        WHEN 'other'       THEN 'أخرى'
+        ELSE COALESCE(NEW.category, '—')
+    END;
+
+    IF v_box IS NULL THEN
+        INSERT INTO public.complaint_mail (complaint_id, category, mailbox, error)
+        VALUES (NEW.id, COALESCE(NEW.category,'?'), '—',
+                'نوعٌ غيرُ معروفٍ للموجّه — أضِفه إلى taki_complaint_mail')
+        ON CONFLICT (complaint_id) DO NOTHING;
+        RETURN NEW;
+    END IF;
+
+    SELECT NULLIF(btrim(value ->> v_box), '') INTO v_to
+      FROM public.platform_settings WHERE key = 'contact_emails';
+
+    SELECT decrypted_secret INTO v_key
+      FROM vault.decrypted_secrets WHERE name = 'app_secret:resend_api_key';
+
+    IF v_to IS NULL THEN
+        v_err := format('صندوق «%s» غير مضبوط في contact_emails', v_box);
+    ELSIF v_key IS NULL OR length(v_key) < 20 THEN
+        v_err := 'مفتاح Resend غير موجودٍ في الخزنة';
+    END IF;
+
+    IF v_err IS NOT NULL THEN
+        INSERT INTO public.complaint_mail (complaint_id, category, mailbox, to_email, error)
+        VALUES (NEW.id, NEW.category, v_box, v_to, v_err)
+        ON CONFLICT (complaint_id) DO NOTHING;
+        RETURN NEW;
+    END IF;
+
+    SELECT COALESCE(NULLIF(u.name,''), NULLIF(u.email,''), 'مستخدم')
+      INTO v_who FROM public.users u WHERE u.id = NEW.user_id;
+
+    v_subj := format('[%s] %s', v_label,
+                     COALESCE(NULLIF(btrim(NEW.subject), ''), left(COALESCE(NEW.message,''), 60)));
+    v_from := 'TAKI <no-reply@takisa.net>';
+
+    v_html :=
+        '<div dir="rtl" style="font-family:system-ui,-apple-system,Segoe UI,Tahoma,sans-serif;line-height:1.9">'
+     || '<h2 style="margin:0 0 10px">📣 ' || v_label || '</h2>'
+     || '<p style="margin:0 0 4px"><b>من:</b> ' || COALESCE(v_who,'مستخدم')
+     || ' · <b>الدور:</b> ' || COALESCE(NEW.user_role,'—') || '</p>'
+     || '<p style="margin:0 0 4px"><b>العنوان:</b> '
+     || COALESCE(NULLIF(btrim(NEW.subject),''), '—') || '</p>'
+     || '<hr style="border:none;border-top:1px solid #ddd;margin:12px 0">'
+     || '<p style="white-space:pre-wrap;margin:0">'
+     || replace(replace(replace(COALESCE(NEW.message,''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;')
+     || '</p>'
+     || CASE WHEN COALESCE(array_length(NEW.attachments, 1), 0) > 0
+             THEN '<p style="margin:12px 0 0"><b>مرفقات:</b> '
+                  || array_length(NEW.attachments, 1)
+                  || ' — تُفتح من لوحة الإدارة</p>'
+             ELSE '' END
+     || '<p style="margin:16px 0 0"><a href="https://www.takisa.net/admin?tab=reports">فتح الشكوى في لوحة الإدارة</a></p>'
+     || '</div>';
+
+    BEGIN
+        SELECT net.http_post(
+            url     := 'https://api.resend.com/emails',
+            headers := jsonb_build_object(
+                           'Authorization', 'Bearer ' || v_key,
+                           'Content-Type',  'application/json'),
+            body    := jsonb_build_object(
+                           'from',     v_from,
+                           'to',       jsonb_build_array(v_to),
+                           'subject',  v_subj,
+                           'html',     v_html),
+            timeout_milliseconds := 8000
+        ) INTO v_req;
+    EXCEPTION WHEN others THEN
+        v_err := left(SQLERRM, 300);
+    END;
+
+    INSERT INTO public.complaint_mail (complaint_id, category, mailbox, to_email, request_id, error)
+    VALUES (NEW.id, NEW.category, v_box, v_to, v_req, v_err)
+    ON CONFLICT (complaint_id) DO NOTHING;
+
+    RETURN NEW;
+END
+$function$
+;
+
+
 -- ═══ FUNCTION taki_complaint_party(p_name text) DEFINER owner=supabase_admin search_path=search_path=public anon=YES ═══
 CREATE OR REPLACE FUNCTION public.taki_complaint_party(p_name text)
  RETURNS boolean
@@ -19296,6 +19410,15 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_cron_log_retention_days() INVOKER owner=supabase_admin search_path=NOT_SET anon=YES ═══
+CREATE OR REPLACE FUNCTION public.taki_cron_log_retention_days()
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$ SELECT 7 $function$
+;
+
+
 -- ═══ FUNCTION taki_cron_seen_sync() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=no ═══
 CREATE OR REPLACE FUNCTION public.taki_cron_seen_sync()
  RETURNS integer
@@ -19314,7 +19437,7 @@ BEGIN
 
   -- 🔴 الاحتفاظُ ٩٠ يوماً — **أوسعُ** من نافذة كشف التوقّف، وإلّا حُذف الدليل
   --    الذي يقوم عليه الكشف (درسٌ مدفوعُ الثمن في v15.25 وv15.56).
-  DELETE FROM cron.job_run_details WHERE start_time < now() - interval '90 days';
+  DELETE FROM cron.job_run_details WHERE start_time < now() - make_interval(days => public.taki_cron_log_retention_days());
 
   -- ── تحديثُ «منذ متى والخادمُ حيّ» بفحصِ ساعتين لا ستّين يوماً ────────────
   -- 🪤 النافذةُ ساعتان **لأن** المزامنةَ ساعية: أيُّ عودةٍ من انقطاعٍ يقع
@@ -23689,6 +23812,64 @@ $function$
 ;
 
 
+-- ═══ FUNCTION taki_sync_deal_counters() DEFINER owner=supabase_admin search_path=search_path=public anon=no ═══
+CREATE OR REPLACE FUNCTION public.taki_sync_deal_counters()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_lo   bigint;
+    v_hi   bigint;
+    v_n    int := 0;
+BEGIN
+    SELECT last_id INTO v_lo FROM public.deal_counter_cursor WHERE only_row FOR UPDATE;
+    IF v_lo IS NULL THEN
+        RETURN jsonb_build_object('ok', false, 'error', 'NO_CURSOR');
+    END IF;
+
+    -- 🪤 فسحةُ دقيقة: معرّفُ `identity` يُمنح قبل الإيداع، فترتيبُ الإيداع
+    --    قد يخالف ترتيبَ المعرّفات. والحدُّ الأعلى يتجاهل آخرَ دقيقة فلا
+    --    يُقفَل على صفٍّ لم يودَع بعد (وإلّا ضاع عدٌّ بصمتٍ إلى الأبد).
+    SELECT max(id) INTO v_hi
+      FROM public.analytics_events
+     WHERE id > v_lo AND created_at < now() - interval '1 minute';
+
+    IF v_hi IS NULL THEN
+        UPDATE public.deal_counter_cursor
+           SET synced_at = now(), last_deals = 0 WHERE only_row;
+        RETURN jsonb_build_object('ok', true, 'deals', 0, 'cursor', v_lo);
+    END IF;
+
+    WITH agg AS (
+        SELECT e.deal_id,
+               count(*) FILTER (WHERE e.kind = 'deal_view')  AS v,
+               count(*) FILTER (WHERE e.kind = 'deal_click') AS c
+          FROM public.analytics_events e
+         WHERE e.id > v_lo AND e.id <= v_hi
+           AND e.kind IN ('deal_view', 'deal_click')
+           AND e.deal_id IS NOT NULL
+         GROUP BY e.deal_id
+    ), upd AS (
+        UPDATE public.deals d
+           SET views  = COALESCE(d.views, 0)  + agg.v,
+               clicks = COALESCE(d.clicks, 0) + agg.c
+          FROM agg
+         WHERE d.id = agg.deal_id AND (agg.v > 0 OR agg.c > 0)
+        RETURNING 1
+    ) SELECT count(*) INTO v_n FROM upd;
+
+    UPDATE public.deal_counter_cursor
+       SET last_id = v_hi, synced_at = now(), last_deals = v_n
+     WHERE only_row;
+
+    RETURN jsonb_build_object('ok', true, 'deals', v_n, 'cursor', v_hi);
+END
+$function$
+;
+
+
 -- ═══ FUNCTION taki_sync_deal_shop_name() DEFINER owner=supabase_admin search_path=search_path=public, pg_temp anon=YES ═══
 CREATE OR REPLACE FUNCTION public.taki_sync_deal_shop_name()
  RETURNS trigger
@@ -26594,6 +26775,7 @@ CREATE TRIGGER tr_zy_issue_order_invoice AFTER UPDATE OF status, paid_at ON publ
 CREATE TRIGGER tr_zz_close_delivery_track AFTER UPDATE OF status ON public.bookings FOR EACH ROW EXECUTE FUNCTION tr_close_delivery_track();
 CREATE TRIGGER trg_adjust_deal_quantity AFTER INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION adjust_deal_quantity();
 CREATE TRIGGER tr_aa_rate_limit_complaint BEFORE INSERT ON public.complaints FOR EACH ROW EXECUTE FUNCTION tr_rate_limit_complaint();
+CREATE TRIGGER tr_zz_complaint_mail AFTER INSERT ON public.complaints FOR EACH ROW EXECUTE FUNCTION taki_complaint_mail();
 CREATE TRIGGER tr_zz_new_complaint AFTER INSERT ON public.complaints FOR EACH ROW EXECUTE FUNCTION handle_new_complaint();
 CREATE TRIGGER tr_aa_rate_limit_authvote BEFORE INSERT ON public.deal_authenticity_votes FOR EACH ROW EXECUTE FUNCTION tr_rate_limit_authvote();
 CREATE TRIGGER tr_deal_auth_counts AFTER INSERT OR DELETE OR UPDATE ON public.deal_authenticity_votes FOR EACH ROW EXECUTE FUNCTION _taki_sync_deal_auth_counts();
@@ -27251,12 +27433,14 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- bot_gate_usage rls=true forced=false policies=0
 -- capacity_alerts rls=true forced=false policies=1
 -- cities rls=true forced=false policies=1
+-- complaint_mail rls=true forced=false policies=0
 -- complaint_replies rls=true forced=false policies=3
 -- complaints rls=true forced=false policies=4
 -- contest_entries rls=true forced=false policies=3
 -- contests rls=true forced=false policies=4
 -- deal_authenticity_votes rls=true forced=false policies=1
 -- deal_branches rls=true forced=false policies=1
+-- deal_counter_cursor rls=true forced=false policies=0
 -- deals rls=true forced=false policies=4
 -- delivery_tracks rls=true forced=false policies=1
 -- device_push_tokens rls=true forced=false policies=4
@@ -27485,3 +27669,4 @@ CREATE OR REPLACE VIEW public.v_top_sellers AS
 -- [99] 40 3 * * * active=true :: SELECT public.taki_prune_notifications()
 -- [102] 17 4 * * 0 active=true :: SELECT public.prune_device_push_tokens();
 -- [103] 5 2 * * * active=true :: SELECT public.taki_prune_stock_parked();
+-- [106] */5 * * * * active=true :: SELECT public.taki_sync_deal_counters();
