@@ -4,7 +4,7 @@ DO
 -- @@VOLATILE الخادم: محلّي-داخل-الحاوية
 -- القاعدة: postgres
 -- النسخة: PostgreSQL 17.6
--- @@VOLATILE وُلِّدت: 2026-11-10 22:08 (توقيت الرياض)
+-- @@VOLATILE وُلِّدت: 2026-11-11 21:32 (توقيت الرياض)
 -- 🪤 مولَّدٌ آلياً بـscripts/export-db-logic.sh — لا يُحرَّر بيد.
 --    وهو لقطةٌ للمقارنة والتعافي، وليس ملفَّ هجرة: لا تُشغّله.
 
@@ -13043,7 +13043,7 @@ $function$
 ;
 
 
--- ═══ FUNCTION find_email_by_phone(input_phone text) DEFINER owner=postgres search_path=search_path=public, auth anon=YES ═══
+-- ═══ FUNCTION find_email_by_phone(input_phone text) DEFINER owner=postgres search_path=search_path=public, auth anon=no ═══
 CREATE OR REPLACE FUNCTION public.find_email_by_phone(input_phone text)
  RETURNS text
  LANGUAGE plpgsql
