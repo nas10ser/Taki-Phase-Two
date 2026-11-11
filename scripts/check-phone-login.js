@@ -65,15 +65,22 @@ if (auth) {
     if (!/setSession\s*\(/.test(auth)) {
         errors.push(`${AUTH} — لا يُثبّت الجلسةَ العائدة بـ\`setSession\`.`);
     }
-    // 🪤 شبكةُ أمانٍ ضدّ قفلٍ لا يُقاس: أوّلُ فشلِ كابتشا عبر الوسيط يُطفئ
-    //    المسارَ الجديد لبقيّة الجلسة، فتمضي المحاولةُ التالية في المسار
-    //    المُثبَت. بلا هذا يصير أيُّ رفضٍ غيرِ متوقَّعٍ من الكابتشا **باباً
-    //    مغلقاً** لا محاولةً ضائعة.
-    if (!/taki-phone-login-srv-off/.test(auth) || !/sessionStorage\.setItem/.test(auth)) {
-        errors.push(
-            `${AUTH} — لا توجد شبكةُ أمانٍ تُطفئ المسارَ الخادميّ بعد فشلِ كابتشا.\n`
-            + '     يلزم مفتاحٌ في `sessionStorage` يُكتب عند `captcha_failed` ويُقرأ قبل النداء.'
-        );
+    // 🔴 **الشرطُ انقلب في v15.92**: كانت شبكةُ أمانٍ (مفتاحُ `sessionStorage`
+    //    وارتدادٌ إلى `find_email_by_phone`) مطلوبةً حتى يُقاس المسارُ الخادميّ.
+    //    وقد قِيس بحركةٍ حقيقيّة (دخولٌ ناجحٌ ٢٠٢٦-١١-١١ ٠٢:٢٤، مطابقٌ لجلسةٍ في
+    //    `auth.sessions` ولـ`status:200` في سجلّ GoTrue)، ثمّ سُحب منحُ `anon`
+    //    عن الدالّة. فالارتدادُ إليها اليومَ **يفشل دائماً**، ويُحوّل فشلَ
+    //    كابتشا عابراً إلى فشلٍ دائمٍ لبقيّة الجلسة. ⇒ صفرُ نداءٍ منه.
+    for (const [f, src] of [[AUTH, auth], ['src/pages/Register.tsx',
+        fs.existsSync(path.join(ROOT, 'src/pages/Register.tsx'))
+            ? strip(fs.readFileSync(path.join(ROOT, 'src/pages/Register.tsx'), 'utf8')) : '']]) {
+        if (/\brpc\(\s*['"]find_email_by_phone['"]/.test(src)) {
+            errors.push(
+                `${f} — ينادي \`find_email_by_phone\` من المتصفّح.\n`
+                + '     منحُ `anon` عنها مسحوب (v15.87) فالنداءُ يفشل دائماً،\n'
+                + '     والبريدُ من الرقم هو التسريبُ الذي أُغلق. استعمل `phone-login`.'
+            );
+        }
     }
 }
 

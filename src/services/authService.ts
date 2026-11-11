@@ -404,15 +404,7 @@ export const authService = {
             // 🪤 ولا يرتدّ إلى المسار القديم إلّا حين **لم يُستهلك رمزُ الكابتشا**
             //    (٥xx أو انقطاعُ شبكة). فالرمزُ يُستعمل مرّةً واحدة، وارتدادٌ بعد
             //    ٤٠٠ كان سيُنتج «كابتشا خاطئة» على كلّ محاولةٍ ثانية.
-            // 🪤 **شبكةُ أمانٍ ضدّ قفلٍ لا أستطيع قياسَه**: لو رُفض رمزُ الكابتشا
-            //    عبر الوسيط لسببٍ لم يُقَس، لكان المستخدمُ يُرفَض كلَّ مرّة.
-            //    فأوّلُ فشلِ كابتشا يُطفئ المسارَ الجديد **لبقيّة الجلسة**،
-            //    فتمضي المحاولةُ التالية في المسار القديم المُثبَت. أسوأُ ما
-            //    يقع عندها محاولةٌ واحدةٌ ضائعة، لا بابٌ مغلق.
-            const SRV_OFF = 'taki-phone-login-srv-off';
-            let useServer = true;
-            try { useServer = sessionStorage.getItem(SRV_OFF) !== '1'; } catch { /* وضعٌ خاصّ */ }
-            if (useServer) try {
+            try {
                 const r = await supabase.functions
                     .invoke('phone-login', { body: { phone: normalizedPhone, password, captchaToken } });
                 // 🪤 **`invoke` لا يُعيد جسمَ الردّ عند ٤٠٠/٤٢٩** — يضعه في
@@ -436,13 +428,7 @@ export const authService = {
                 }
                 const code = String((srv as any)?.error || '');
                 if (code === 'rate_limited') return { error: { message: String((srv as any)?.message || 'محاولات كثيرة — أعد المحاولة بعد قليل.') } } as any;
-                if (code === 'captcha_failed') {
-                    // 🪤 ولا يُشعَل المفتاحُ إلّا إن **أُرسل رمزٌ ورُفض**: الرفضُ
-                    //    لغياب الرمز أصلاً لا يقول شيئاً عن الوسيط، وإطفاءُ
-                    //    المسار الجديد عنده يُنزله بلا سبب لبقيّة الجلسة.
-                    if (captchaToken) { try { sessionStorage.setItem(SRV_OFF, '1'); } catch { /* وضعٌ خاصّ */ } }
-                    return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
-                }
+                if (code === 'captcha_failed') return { error: { message: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.' } } as any;
                 // 🪤 والتلميحُ **ثابتٌ للجميع** فلا يكشف وجودَ حساب: حساباتُ
                 //    الإدارة لا تُحَلّ بالجوّال أصلاً (بالتصميم منذ v12.39)،
                 //    وكان المسارُ القديم يقول ذلك صراحةً — وهو تسريبٌ. فالعبارةُ
@@ -451,32 +437,19 @@ export const authService = {
                 // 🪤 `auth_unavailable` = ردٌّ ٥xx من قوقل‑تروو **بعد** أن رأى
                 //    الرمز، فقد يكون أُنفق ⇒ لا يُرتدّ، ويُقال للمستخدم الحقيقة.
                 if (code === 'auth_unavailable') return { error: { message: 'خدمةُ الدخول غير متاحة الآن. حاول بعد دقيقة.' } } as any;
-                // وما بقي (`gate_failed` · `auth_unreachable` · خطأُ شبكة) يعني
-                // أن الطلبَ لم يبلغ قوقل‑تروو ⇒ الرمزُ لم يُنفَق ⇒ المسارُ القديم.
-            } catch { /* شبكةٌ أو دالّةٌ غائبة ⇒ المسارُ القديم */ }
+                // وما بقي (`gate_failed` · `auth_unreachable` · خطأُ شبكة) يسقط
+                // إلى الرسالة الصريحة أدناه — لا إلى نداءٍ ثانٍ من المتصفّح.
+            } catch { /* شبكةٌ أو دالّةٌ غائبة ⇒ الرسالةُ أدناه */ }
 
-            let targetEmail: string | null = null;
-            try {
-                const { data: rpcEmail } = await supabase.rpc('find_email_by_phone', { input_phone: normalizedPhone });
-                if (rpcEmail) targetEmail = String(rpcEmail);
-            } catch { /* نسقط للنمط القديم أدناه */ }
-
-            const result = await supabase.auth
-                .signInWithPassword({ email: targetEmail || dummyEmail, password, options: opts } as any)
-                .catch((err: any) => ({ error: { message: err?.message || 'sign-in-failed' } } as any));
-
-            if (result?.data?.user) return result;
-
-            const msg = String(result?.error?.message || '').toLowerCase();
-            if (msg.includes('invalid login credentials')) {
-                // v13.97 — رسالة أوضح حين لا يُحلّ الرقم إلى بريد: بعض الحسابات
-                // (كحسابات الإدارة) تدخل بالبريد وحده منذ v12.39، فالرقم الصحيح
-                // يبدو «غير مسجّل». لا نُلمّح لنوع الحساب — نوجّه للبديل فقط.
-                return { error: { message: !targetEmail
-                    ? 'تعذّر الدخول بهذا الرقم. جرّب البريد الإلكتروني المرتبط بالحساب، أو سجّل حساباً جديداً.'
-                    : 'كلمة المرور أو رقم الجوال غير صحيح، حاول مرة أخرى.' } };
-            }
-            return result;
+            // 🔴 v15.92 — **لا ارتدادَ بعد اليوم.** كان هنا نداءُ
+            //    `find_email_by_phone` من المتصفّح شبكةَ أمانٍ حتى يُقاس المسارُ
+            //    الخادميّ — وقد قِيس (دخولٌ حقيقيٌّ ناجح ٢٠٢٦-١١-١١ ٠٢:٢٤)،
+            //    ثمّ سُحب منحُ `anon` عنها. والارتدادُ إلى دالّةٍ مسحوبةٍ أسوأُ
+            //    من عدمه: يُحوّل فشلَ كابتشا عابراً إلى فشلٍ دائمٍ لبقيّة الجلسة.
+            // 🪤 وتلميحُ «جرّب البريد» صار داخل رسالة `invalid_credentials`
+            //    أعلاه **ثابتاً للجميع**: التفريقُ بين «رقمٌ لا يُحَلّ» و«كلمةٌ
+            //    خاطئة» كان هو نفسُه تسريباً عن وجود الحساب.
+            return { error: { message: 'تعذّر الدخول الآن. تأكّد من اتصالك وأعد المحاولة بعد قليل.' } } as any;
         } else {
             return await supabase.auth.signInWithPassword({ email: identifier, password, options: opts } as any);
         }
@@ -552,12 +525,10 @@ export const authService = {
         if (String(srv?.error || '') === 'captcha_failed') {
             return { stop: true, ar: 'تعذّر التحقّق من أنك لست روبوتاً. أعد المحاولة.', en: 'Verification failed. Please try again.' };
         }
-        // ارتدادٌ — الرمزُ لم يُنفَق (شبكةُ أمانٍ تُسحب بعد أن يُقاس المسارُ الجديد)
-        try {
-            const { data } = await supabase.rpc('find_email_by_phone', { input_phone: digits });
-            if (data) return { stop: false, ar: '', en: '', email: String(data) };
-        } catch { /* لا شيء */ }
-        return NOT_FOUND;
+        // 🔴 v15.92 — لا ارتدادَ إلى `find_email_by_phone`: سُحب منحُ `anon` عنها،
+        //    فنداؤها من المتصفّح يفشل دائماً ويُظهر «لا حساب» لحسابٍ موجود.
+        return { stop: true, ar: 'تعذّر إرسال الرمز الآن. تأكّد من اتصالك وأعد المحاولة بعد قليل.',
+                 en: 'Could not send the code right now. Check your connection and try again shortly.' };
     },
 
     /**
