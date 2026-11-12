@@ -52,6 +52,15 @@
       "destination": "/api/sitemap"
     },
     {
+      "_comment": "تجربةٌ خاملة (v15.96): قياسُ هل تُخزِّن حافةُ Vercel صورةً مُمرَّرة من أصلٍ خارجي. لا يستعملها التطبيق ما لم يُضبط image_cdn_host على www.takisa.net. المسارُ مقصورٌ على كائناتِ العروض العامّة للقراءة — لا rest ولا auth ولا functions.",
+      "source": "/storage/v1/object/public/deals/:path*",
+      "destination": "https://api.takisa.net/storage/v1/object/public/deals/:path*"
+    },
+    {
+      "source": "/storage/v1/render/image/public/deals/:path*",
+      "destination": "https://api.takisa.net/storage/v1/render/image/public/deals/:path*"
+    },
+    {
       "source": "/((?!\\.well-known/)(?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
