@@ -90,12 +90,12 @@ export const OrderCloseActions: React.FC<Props> = ({
             <div style={{ width: '100%', marginTop: 8 }}>
                 <SelfCloseNotice
                     booking={order}
-                    beforeAck={left => (isRTL
-                        ? `اضغط «تأكيد استلام الطلب» أوّلاً — ومن تلك اللحظة يبدأ العدّ (وإلّا فبعد ${left}). والكود يعمل الآن`
-                        : `Press “Confirm receipt” first — the countdown starts then (otherwise in ${left}). The code works now`)}
-                    waiting={left => (isRTL
-                        ? `زرّ «تم التسليم» بلا كود يُفتح بعد ${left} من تأكيدك — والكود يعمل الآن`
-                        : `Code-free handover unlocks ${left} after you confirmed — the code works now`)}
+                    beforeAck={(left, hold) => (isRTL
+                        ? `الكود يعمل الآن: امسحه أو اكتبه ليُغلق الطلب فوراً. وزرّ «تم التسليم (بدون كود)» يظهر بعد ${hold} من ضغطك «تأكيد استلام الطلب» — أو بعد ${left} تلقائياً إن لم تؤكّد.`
+                        : `The code works now: scan or type it to close the order immediately. The “Handed over (no code)” button appears ${hold} after you press “Confirm receipt” — or automatically in ${left} if you never confirm.`)}
+                    waiting={(left, hold) => (isRTL
+                        ? `الكود يعمل الآن: امسحه أو اكتبه ليُغلق الطلب فوراً. وزرّ «تم التسليم (بدون كود)» يظهر بعد ${left} (${hold} من تأكيدك).`
+                        : `The code works now: scan or type it to close the order immediately. The “Handed over (no code)” button appears in ${left} (${hold} after you confirmed).`)}
                 >
                     <button onClick={async () => {
                         if (!(await customConfirm(isRTL

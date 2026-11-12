@@ -17,7 +17,7 @@
 // the install/activate handlers never fire and users keep getting cached
 // HTML / CSS from the previous release. (Bug observed v10.1–v10.14: 14
 // deploys all kept serving v10.0 builds because nobody bumped this.)
-const CACHE_NAME = 'taki-cache-v16.13';
+const CACHE_NAME = 'taki-cache-v16.14';
 // 🔴 v14.05 — كان فيها '/manifest.json' وهو **404** (الاسم الصحيح
 // manifest.webmanifest). و`cache.addAll` **يرفض الدفعة كاملة** إن فشل عنصر
 // واحد ⇒ فشل التثبيت في كل تحديث، ثم يمسح التفعيلُ المخزونَ القديم فلا يبقى
@@ -77,6 +77,10 @@ const isOwnBackend = h =>
  */
 const isPrivateStorage = url =>
   /^\/storage\/v1\/(?:object|render\/image)\/(?:sign|authenticated|upload)\//.test(url.pathname);
+
+/** صورةُ مستودعٍ **عامّة** — تُترك للمتصفّح (انظر الشرح في معالج fetch). */
+const isPublicStorageImage = url =>
+  /^\/storage\/v1\/(?:object|render\/image)\/public\//.test(url.pathname);
 
 const isApi = url =>
   isPrivateStorage(url) ||
@@ -197,6 +201,30 @@ self.addEventListener('fetch', event => {
   // في صفحةٍ بلا خدمة عاملة وتفشل في صفحتنا.) وفائدةٌ ثانية: لم تعد بلاطات
   // الخريطة تُكدَّس في مخزون التطبيق.
   if (url.origin !== self.location.origin && !isOwnBackend(url.hostname)) return;
+
+  /**
+   * 🔴 v16.14 — صورُ المستودع العامّ تمرّ إلى المتصفّح **بلا وساطة**.
+   * ═══════════════════════════════════════════════════════════════════
+   * كانت تنزل إلى فرع «الملفّات الساكنة» أدناه (الامتداد `.jpg`)، فكلُّ
+   * صورةٍ تكلّف: `caches.open` ثمّ `cache.match` ثمّ `cache.put` بنسخةٍ
+   * كاملةٍ في CacheStorage. والمقيس أن هذا **كلفةٌ بلا مقابل**:
+   *   ① الخادمُ يُرسل `cache-control: max-age=31536000` لهذه الصور (قِيس
+   *      على الإنتاج) — فمخزنُ المتصفّح HTTP يُصيب أصلاً، وبلا أيّ كود.
+   *   ② و`CACHE_NAME` يُرفع **كلَّ نشرة** (قاعدةٌ ثابتة عندنا)، والتفعيلُ
+   *      يمسح كلَّ مخزونٍ لا يطابق الاسم ⇒ مخزونُ الصور يُباد مع كلّ
+   *      إصدار. أي أنه **لا يكاد يُصيب بعد نشرة**، ويبقى منه ثمنُه:
+   *      قراءةٌ فاشلةٌ وكتابةٌ كاملةٌ لكلّ صورة.
+   *   ③ وحصّةُ CacheStorage على آيفون صغيرة؛ وملؤها بصورٍ أصليّةٍ (قِيس
+   *      أصلٌ واحدٌ **٢٫٨ م.ب**) يُعرّض **قشرةَ التطبيق نفسَها** للإخلاء،
+   *      فيصير الإقلاعُ البارد أبطأ — عكسُ المقصود تماماً.
+   * ⇒ المتصفّحُ أقدرُ على هذه الصور منّا: مخزنُه يَعبُر النشرات، ويُدير
+   *   الحصّةَ بنفسه، ويقدّمها بلا جولةٍ في الخدمة العاملة.
+   * 🪤 و`/public/` وحدها: الروابطُ الموقَّعة (`sign`/`authenticated`) تبقى
+   *    على معالجتها في `isApi` — رمزٌ منتهٍ لا يجوز أن يُقدَّم من مخزون.
+   * 🪤 ولا يُمسّ المضيفُ الخاصّ بنا (`self.location.origin`): شعارُنا
+   *    وأيقوناتُنا جزءٌ من قشرة العمل بلا شبكة.
+   */
+  if (url.origin !== self.location.origin && isPublicStorageImage(url)) return;
 
   // Never cache API / Supabase responses (auth, queries, RPCs, realtime)
   if (isApi(url)) {

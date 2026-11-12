@@ -20,7 +20,9 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
-import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt, openOrdersFloor } from './ratingPrompts';
+import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt } from './ratingPrompts';
+import { mergeDealPages } from './dealMerge';
+import { useOpenOrdersBadge } from './useOpenOrdersBadge';
 import { analyticsAllowed, syncAnalyticsConsentFromAccount } from '../services/analyticsConsent';
 import { readSnapshot, writeSnapshot, clearSnapshots } from '../utils/snapshotCache';
 import { guestFavorites } from '../utils/favoritesStore';
@@ -211,35 +213,6 @@ interface AppContextType {
 
 const DATA_VERSION = '4.0'; // Persistence upgrade
 
-/**
- * v13.22 — دمج صفحتين من الواجهة مع الحفاظ على الترتيب وبلا تكرار.
- * `primary` له الأولوية عند تكرار المعرّف (الصفحة الأحدث من القاعدة تغلب
- * النسخة القديمة في الذاكرة)، والترتيب النهائي `created_at` تنازلياً — نفس
- * ترتيب الاستعلام تماماً فلا «تقفز» البطاقات أمام المستخدم.
- */
-const mergeDealPages = (primary: Deal[], secondary: Deal[]): Deal[] => {
-    const byId = new Map<string, Deal>();
-    for (const d of secondary) byId.set(d.id, d);
-    for (const d of primary) {
-        const old = byId.get(d.id);
-        // نحافظ على الحقول المُرطَّبة محلياً (تصويت المصداقية) كما في مسار البث
-        byId.set(d.id, old ? {
-            ...old, ...d,
-            authReal: (d as any).authReal ?? (old as any).authReal,
-            authFake: (d as any).authFake ?? (old as any).authFake,
-            myAuthVote: ((old as any).myAuthVote === true || (old as any).myAuthVote === false)
-                ? (old as any).myAuthVote : (d as any).myAuthVote,
-            // v13.24 — لا نمحو تقييمات مُرطَّبة بمصفوفة فارغة. المسارات السريعة
-            // (browse) لا تجلب صفوف التقييمات لأن البطاقة تكتفي بالمتوسط المثبَّت،
-            // فلولا هذا الحارس لأفقدت صفحةَ المتجر وتفاصيلَ العرض مراجعاتها.
-            ratings: (Array.isArray(d.ratings) && d.ratings.length) ? d.ratings
-                   : ((old.ratings && old.ratings.length) ? old.ratings : (d.ratings || [])),
-        } as Deal : d);
-    }
-    return Array.from(byId.values())
-        .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
-            || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-};
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -780,11 +753,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // ones, and the heartbeat can't tell (any realtime event keeps it "alive").
     // Deals-only = one small query, and it's PAUSED entirely while backgrounded
     // so it costs nothing in the user's pocket. v12.06
+    /**
+     * 🔴 v16.14 — **الاستطلاع صار مشروطاً بصحّة الريل‑تايم** (بلاغُ ناصر:
+     * «الموقع ثقيل والتنقّل ثقيل»، وأمرُه: أسرعُ شيءٍ لملايين المستخدمين).
+     *
+     * القياسُ من الإنتاج (١٢ نوفمبر ٢٠٢٦): نداءُ صفحةِ العروض الأولى
+     * **٤٠٬٦٣٦ بايتاً**. وكان يقع **كلَّ ٣٠ ثانية** لكلّ جهازٍ في المقدّمة:
+     *   · على جوّال المستخدم: ٤٫٨ م.ب في الساعة من باقته، بلا أن يلمس شيئاً.
+     *   · على خادمنا (**نواةٌ واحدة**): استعلامٌ لكلّ جهازٍ كلَّ ٣٠ ثانية.
+     *     بألف جهازٍ مفتوح = ٣٣ استعلاماً/ثانية · وبمليون = ٣٣ ألفاً.
+     *   · وهو يزاحم على نفس النواة نداءاتِ البيع والشراء وتحويلَ الصور.
+     *
+     * ولماذا وُجد أصلاً (v12.06، وسببٌ حقيقيّ): قناةُ العروض تسقط على iOS
+     * بصمتٍ أكثر من غيرها، و«سقوطُ حزمةٍ واحدة» لا يراه فحصُ الصحّة.
+     *
+     * ⇒ فلا يُحذف الحارس، بل يُقاس: `realtimeService.isHealthy()` (صفرُ
+     *   طلبِ شبكة) تقول إن القنوات منضمّةٌ والـsocket متصل. فحينها الشبكةُ
+     *   هي من يوصل الجديد، والاستطلاعُ يصير **شبكةَ أمانٍ كلّ خمس دقائق**
+     *   لا كلَّ ثلاثين ثانية (عُشرُ الحمل). وإن كانت القناةُ معطّلةً عاد
+     *   الاستطلاعُ إلى الثلاثين ثانية لأنه حينئذٍ **الطريقُ الوحيد**.
+     * 🪤 ولا يُستغنى عنه بـ`verifyAndReconnect`: تلك تكشف قناةً **ساقطة**،
+     *    وهذه تحرس من حزمةٍ ضاعت وقناتُها «سليمة».
+     */
     useEffect(() => {
         let cancelled = false;
+        let lastFeedPullAt = 0;
+        const HEALTHY_INTERVAL = 300_000;   // ٥ دقائق حين تكون القناة سليمة
         const poll = () => {
             if (document.visibilityState !== 'visible') return;
             if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+            let healthy = false;
+            try { healthy = realtimeService.isHealthy(); } catch { healthy = false; }
+            if (healthy && Date.now() - lastFeedPullAt < HEALTHY_INTERVAL) return;
+            lastFeedPullAt = Date.now();
             // v13.22 — الاستطلاع الدوري يجدّد **الصفحة الأولى** ويدمجها فوق
             // المُحمّل (كان يُعيد تنزيل الكتالوج كله كل ٣٠ ثانية لكل جهاز).
             dealRepository.getFeedPage()
@@ -3241,21 +3242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // preview mode via setViewAs; non-admins always see their real role.
     const effectiveUserType: 'buyer' | 'seller' | 'admin' =
         (user?.userType === 'admin' && viewAs) ? viewAs : (user?.userType || 'buyer');
-
-    // 🔴 v15.77 (أمرُ ناصر) — نظيرُ شارة «حجوزاتي» للتاجر: علامةٌ على
-    // «لوحتي» تقول إن هناك طلباً ينتظره. والعدُّ **من الخادم** لأن النافذة
-    // المحلّية ٢٠٠ صفّ للطرفين معاً، ويبقى العدُّ المحلّي أرضيّةً حتى يصل
-    // جوابُ الخادم (نفسُ نمط `notifUnread` المقيس في v14.26).
-    const storeOpenLocal = useMemo(() => openOrdersFloor(bookings, user?.id), [bookings, user?.id]);
-    const [storeOpenServer, setStoreOpenServer] = useState(0);
-    useEffect(() => {
-        const uid = user?.id;
-        if (!uid || (effectiveUserType !== 'seller' && effectiveUserType !== 'admin')) { setStoreOpenServer(0); return; }
-        let alive = true;
-        void bookingRepository.countOpenForStore(uid).then(n => { if (alive) setStoreOpenServer(n); });
-        return () => { alive = false; };
-    }, [user?.id, effectiveUserType, storeOpenLocal]);
-    const storeOpenOrders = Math.max(storeOpenServer, storeOpenLocal);
+    // 🔔 شارةُ «لوحتي»: عددُ الطلبات التي تنتظر التاجر.
+    //    المنطقُ ومعه درسُ السباق في `useOpenOrdersBadge.ts` (v16.14).
+    const storeOpenOrders = useOpenOrdersBadge(
+        bookings, user?.id, effectiveUserType, lastBookingEvent?.seq ?? 0);
 
     // v11.19 — admin permission derivations. Single source of truth; both
     // the dashboard tab filtering and individual action buttons consult

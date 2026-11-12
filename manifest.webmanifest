@@ -13,8 +13,8 @@
     "standalone",
     "minimal-ui"
   ],
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#9E2B4E",
+  "theme_color": "#9E2B4E",
   "orientation": "portrait-primary",
   "categories": [
     "shopping",

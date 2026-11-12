@@ -17,15 +17,24 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { selfCloseState, SelfCloseInput } from '../utils/bookingHold';
+import { selfCloseState, SelfCloseInput, minutesLabelGen } from '../utils/bookingHold';
 
 interface Props {
     /** الطلبُ كما تعرفه الشاشة — منه تُشتقّ لحظةُ فتح الزرّ. */
     booking: SelfCloseInput;
-    /** نصُّ الانتظار بعد بدء الساعة؛ يستقبل المدّة المتبقّية مصوغة. */
-    waiting: (left: string) => string;
-    /** نصُّ ما قبل تأكيد التاجر — المنتظَرُ شخصٌ لا وقت (ومعه المدّةُ الاحتياطيّة). */
-    beforeAck: (left: string) => string;
+    /**
+     * نصُّ الانتظار بعد بدء الساعة.
+     * `left` المتبقّي حتى يُفتح الزرّ، و`hold` طولُ المهلة نفسِها.
+     */
+    waiting: (left: string, hold: string) => string;
+    /**
+     * نصُّ ما قبل تأكيد التاجر — المنتظَرُ شخصٌ لا وقت.
+     * 🔴 v16.14 (بلاغُ ناصر): كانت الجملةُ «… (وإلّا فبعد ٢٣٠ دقيقة)» تقول
+     *    **متى** ولا تقول **ماذا** — شرطٌ بلا جواب. فصار المكوّن يمرّر
+     *    المدّتين معاً (`left` للفتحة الاحتياطيّة و`hold` لمهلة التأكيد)
+     *    حتى تكتمل الجملةُ بفاعلٍ ومفعول: أيُّ زرٍّ يُفتح، ومتى، ولماذا.
+     */
+    beforeAck: (left: string, hold: string) => string;
     children: React.ReactNode;
 }
 
@@ -37,6 +46,8 @@ export const SelfCloseNotice: React.FC<Props> = ({ booking, waiting, beforeAck, 
 
     const state = selfCloseState(booking, minutes, now);
     const ticking = !!state;
+    // طولُ المهلة مصوغاً — من `bookingHold` وحده (لا رقمَ يُكتب في شاشة).
+    const holdLabel = minutesLabelGen(minutes, isRTL);
 
     // النبضُ يعمل ما دام هناك ما يُعدّ، ويتوقّف من تلقاء نفسه بعده.
     useEffect(() => {
@@ -55,8 +66,8 @@ export const SelfCloseNotice: React.FC<Props> = ({ booking, waiting, beforeAck, 
             textAlign: 'center',
         }}>
             {state.acknowledged
-                ? <>⏳ {waiting(state.label(isRTL))}</>
-                : <>🕓 {beforeAck(state.label(isRTL))}</>}
+                ? <>⏳ {waiting(state.label(isRTL), holdLabel)}</>
+                : <>🕓 {beforeAck(state.label(isRTL), holdLabel)}</>}
         </div>
     );
 };

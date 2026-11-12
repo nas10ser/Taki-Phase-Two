@@ -14,7 +14,7 @@ import os, subprocess, sys, tempfile
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import img
-from logo_build import resize, place, NAVY  # نفسُ الأصل ونفسُ طريقة التركيب
+from logo_build import resize, place, BRAND_BG  # نفسُ الأصل ونفسُ طريقة التركيب
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
@@ -39,12 +39,12 @@ def main():
 
     # ── أيقونةُ App Store: ١٠٢٤×١٠٢٤ · بلا شفافية · بلا حوافٍّ مستديرة ──────
     # 🪤 والنظامُ هو من يستدير الحوافّ؛ تدويرُها في الملفّ يُنتج هالةً مزدوجة.
-    icon = place(1024, 1024, art, 0.74, NAVY)          # نفسُ نسبة apple-touch-icon
+    icon = place(1024, 1024, art, 0.74, BRAND_BG)          # نفسُ نسبة apple-touch-icon
     emit('appstore-icon-1024.png', icon[:, :, :3])      # ← RGB: إسقاطُ قناة ألفا
 
     # ── أيقونةُ قوقل بلاي: ٥١٢×٥١٢ · ٣٢ بت (الشفافيةُ مسموحة) ─────────────
     # 🪤 وبلاي يقصّ خارج دائرةٍ كما المُشغّل، فتبقى نسبةُ ٠٫٦٨ المقيسة.
-    emit('play-icon-512.png', place(512, 512, art, 0.68, NAVY))
+    emit('play-icon-512.png', place(512, 512, art, 0.68, BRAND_BG))
 
     # ── الصورةُ المميَّزة في بلاي: ١٠٢٤×٥٠٠ · إلزاميّةٌ لنشر أي تطبيق ───────
     # 🪤 وتُبنى بمتصفّحٍ بلا رأس لأن فيها نصّاً عربياً — رسمُ الخطّ العربيّ
@@ -65,7 +65,7 @@ def main():
     if not ok:
         # ارتدادٌ معلَن لا صامت: شعارٌ بلا نصّ خيرٌ من صورةٍ قديمةٍ كاذبة
         print('⚠️ تعذّر بناءُ الصورة المميَّزة بالمتصفّح — تُبنى بلا نصّ.')
-        emit('play-feature-graphic-1024x500.png', place(1024, 500, art, 0.72, NAVY)[:, :, :3])
+        emit('play-feature-graphic-1024x500.png', place(1024, 500, art, 0.72, BRAND_BG)[:, :, :3])
 
     # 🔴 والتحقّقُ يقرأ **الملفَّ المكتوب** لا المصفوفةَ التي بُنيت منه: قياسُ
     #    `arr.shape[2]` قاس نيّتي لا ما خرج — و`img.write_png` تُسقط ألفا حين

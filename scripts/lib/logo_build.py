@@ -7,7 +7,14 @@ import img
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SRC  = os.path.join(ROOT, 'لوقو شفاف بدون خلفيه دقه عاليه .png')
-NAVY = (15, 23, 42)          # #0f172a — نفسُ background_color و theme_color في البيان
+# 🔴 v16.14 (أمرُ ناصر: «اللون النيفي باهت جدا كتطبيق — أعطني عنابياً فاتحاً»).
+#    العنّابيُّ اختيرَ بالنظر لا بالرأي: رُسمت ستُّ خلفياتٍ بالأيقونة نفسِها
+#    وقُورنت جنباً إلى جنب. والمقياسُ أن رسمةَ تاكي تحمل **أحمرَ داكناً**
+#    (‎#400000–#800000 = ١٥٪ من بكسلاتها)، فخلفيةٌ عنّابيّةٌ داكنةٌ تبتلعه.
+#    و‎#9E2B4E فاتحٌ بما يكفي ليبقى الوسادُ والثوبُ الأبيضُ واضحَين.
+# 🪤 واسمُ الثابت يبقى واحداً في كلّ مكان: البيانُ وindex.html يحملان
+#    نفسَ القيمة، ويحرسها `scripts/check-brand-color.js`.
+BRAND_BG = (158, 43, 78)          # #9E2B4E — نفسُ background_color و theme_color في البيان
 
 def resize(arr, w, h):
     """تصغيرٌ/تكبيرٌ عبر sips (CoreImage) مع حفظ الشفافية."""
@@ -65,7 +72,7 @@ def main():
     #    يُلين الحوافّ بلا أن يُضيف تفصيلاً، فلا يُدَّعى.
     big = resize(art, 4096, int(round(4096 * art.shape[0] / art.shape[1])))
     emit('branding/taki-logo-poster-4096.png', big)
-    emit('branding/taki-logo-poster-navy-4096.png', img.over(NAVY, big))
+    emit('branding/taki-logo-poster-brand-4096.png', img.over(BRAND_BG, big))
 
     # ── أيقوناتُ التطبيق: على النيفي، بمساحةِ أمانٍ للقناع ─────────────────
     # 🔴 وقِيس على جهاز ناصر أن **الشفافية غيرُ ممكنةٍ أصلاً** في أيقونة الشاشة
@@ -76,8 +83,8 @@ def main():
     # 🔴 والبيانُ يُعلن `purpose: maskable` (صحيحٌ مع خلفيةٍ مُصمتة)، وأندرويد
     #    يقصّ خارج دائرةٍ قطرُها ٨٠٪. فنسبةُ ٠٫٦٨ تُبقي الرأسَ والجوّالَ داخلها.
     for size in (512, 192):
-        emit(f'logo{size}.png', place(size, size, art, 0.68, NAVY))
-    emit('apple-touch-icon.png', place(180, 180, art, 0.74, NAVY))
+        emit(f'logo{size}.png', place(size, size, art, 0.68, BRAND_BG))
+    emit('apple-touch-icon.png', place(180, 180, art, 0.74, BRAND_BG))
 
     # ── علامةٌ شفّافةٌ خفيفةٌ للترويسة وشاشة الدخول ───────────────────────
     # 🪤 ولا تُستعمل `logo192` هناك: تلك على خلفيةٍ داكنةٍ صلبة، فتظهر مربّعاً
@@ -148,14 +155,14 @@ def main():
     if not any(r[0] == 'og-image.png' for r in made):
         # ارتدادٌ معلَن: شعارٌ على خلفيةٍ داكنة بلا نصّ، خيرٌ من صورةٍ قديمةٍ كاذبة
         print('⚠️ تعذّر بناءُ بطاقة المشاركة بالمتصفّح — تُبنى بلا نصّ.')
-        emit('og-image.png', place(1200, 630, art, 0.80, NAVY))
+        emit('og-image.png', place(1200, 630, art, 0.80, BRAND_BG))
 
     for rel, w, h, sz in made:
         print(f'   ✓ {rel:42} {w}×{h}  {sz/1024:.1f} KB')
     print(f'✅ الشعار: {len(made)} ملفّاً من أصلٍ واحد')
 
 # 🪤 v15.56 — كانت `main()` تُنادى عند **الاستيراد** لا عند التشغيل وحده،
-#    فاستيرادُ `resize/place/NAVY` من `store_assets.py` أعاد بناءَ الشعار
+#    فاستيرادُ `resize/place/BRAND_BG` من `store_assets.py` أعاد بناءَ الشعار
 #    كلِّه (ثماني ملفّات، دقيقتان) كأثرٍ جانبيّ صامت — وغيّر `logo-mark.webp`
 #    في المستودع بلا سببٍ. والحارسُ هو هذا السطر لا غير.
 if __name__ == '__main__':
