@@ -98,7 +98,51 @@ check('الكسرةُ تُعيد المحوّلَ فعلاً (فالحارسُ �
       brokenSet.includes('/render/image/') && brokenSet !== '',
       brokenSet.slice(0, 90));
 
-// ── ⑥ حارسٌ بنيويّ: كلُّ srcSet={thumbSrcSet(x)} يقابله src={thumbUrl(x)} ──
+// ── ⑥ شبكةُ التوصيل: ماذا يتحوّل وماذا **لا** يتحوّل ───────────────────────
+// 🔴 المعيارُ مقيسٌ لا مُفترَض: `render/image` يتفاوض على الصيغة (WebP/JPEG)
+//    بنفس `ETag` وبلا `Vary` ⇒ لا يصلح لمخزنٍ مشترك. والملفُّ الثابت لا
+//    يتفاوض ⇒ هو وحده ما يمرّ بالشبكة.
+console.log('\n🌐 شبكةُ توصيل الصور:');
+const C = load();
+C.setImageCdnHost('img.takisa.net');
+
+check('المضيفُ ضُبط', C.imageCdnHost() === 'img.takisa.net', C.imageCdnHost());
+check('التوأمُ الثابت يتحوّل إلى الشبكة',
+      C.thumbUrl(MARKED).startsWith('https://img.takisa.net/storage/v1/object/public/deals/'),
+      C.thumbUrl(MARKED));
+check('والهيرو الثابت كذلك',
+      C.heroUrl(MARKED).startsWith('https://img.takisa.net/storage/v1/object/public/deals/'),
+      C.heroUrl(MARKED));
+check('🔴 ومسارُ المحوّل **لا** يتحوّل (وإلّا ٤٠٤ ثمّ ارتداد)',
+      C.sizedUrl(UNMARKED, 1600).startsWith('https://api.takisa.net/storage/v1/render/image/'),
+      C.sizedUrl(UNMARKED, 1600));
+check('وهيرو بلا توأمٍ يبقى على الأصل (يمرّ بـsizedUrl)',
+      C.heroUrl(UNMARKED).includes('api.takisa.net'),
+      C.heroUrl(UNMARKED));
+check('ورابطٌ خارجيّ لا يُمسّ', C.cdnUrl(FOREIGN) === FOREIGN);
+check('ومسارٌ ليس كائناً عامّاً لا يُمسّ',
+      C.cdnUrl('https://api.takisa.net/rest/v1/deals') === 'https://api.takisa.net/rest/v1/deals');
+
+C.setImageCdnHost('');
+check('والإطفاءُ يُعيد كلَّ عنوانٍ إلى الأصل',
+      C.thumbUrl(MARKED).includes('api.takisa.net') && C.heroUrl(MARKED).includes('api.takisa.net'),
+      C.thumbUrl(MARKED));
+check('ومضيفٌ بصيغةٍ خاطئة يُهمَل (فلا تنكسر كلُّ صورة)',
+      (C.setImageCdnHost('not a host!!'), C.imageCdnHost() === ''), C.imageCdnHost());
+
+// كسرةٌ مقصودة: إزالةُ حارس البادئة يُعيد المحوّلَ إلى الشبكة
+console.log('\n🔨 كسرةٌ مقصودة — إزالةُ حارس البادئة من cdnUrl:');
+const ANCHOR2 = "    if (!('/' + rest).startsWith(CDN_SAFE_PREFIX)) return url;\n";
+const brokenCdn = load((c) => {
+    if (c.split(ANCHOR2).length - 1 !== 1) throw new Error('مرساةُ الكسرة ليست فريدة');
+    return c.replace(ANCHOR2, '');
+});
+brokenCdn.setImageCdnHost('img.takisa.net');
+check('الكسرةُ تُسرّب المحوّلَ إلى الشبكة فعلاً',
+      brokenCdn.sizedUrl(UNMARKED, 1600).includes('img.takisa.net'),
+      brokenCdn.sizedUrl(UNMARKED, 1600));
+
+// ── ⑦ حارسٌ بنيويّ: كلُّ srcSet={thumbSrcSet(x)} يقابله src={thumbUrl(x)} ──
 console.log('\n🔎 مواضعُ الاستعمال في الواجهة:');
 const { walk } = require('./lib/walk');
 const files = walk(path.join(__dirname, '..'), ['src'], /\.tsx?$/)

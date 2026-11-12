@@ -56,13 +56,47 @@ const THUMB_QUALITY = 70;
  *    صفّاً في قاعدةٍ ليست سياسة. و`img.takisa.net` (أو أيُّ اسمٍ في نطاقنا
  *    مُوجَّهٍ بـCNAME إلى الشبكة) يعمل اليومَ بلا سطرِ كود.
  */
-let CDN_HOST = '';
 const OWN_HOST = 'api.takisa.net';
+
+/**
+ * 🔴 **المسارُ الوحيد الذي يصلح لمخزنٍ مشترك** — وهذا قياسٌ لا احتياط.
+ * قِيس على الإنتاج (١٢ نوفمبر ٢٠٢٦) على **نفس عنوان المحوّل** بالضبط:
+ *     Accept: image/webp… ⇒ `image/webp` · ٢٦٬٨٢٦ بايت
+ *     Accept: image/jpeg… ⇒ `image/jpeg` · ٢٩٬١٤٨ بايت
+ *     و`ETag` واحدٌ للاثنين، و**صفرُ ترويسة `Vary`**.
+ * أي أن `render/image` يتفاوض على الصيغة بلا أن يُعلن ذلك. فمخزنٌ مشترك
+ * يحفظ أوّلَ صيغةٍ تصله ويُسلّمها للجميع **سنةً كاملة** — ومتصفّحٌ لا يفكّ
+ * WebP يرى صورةً مكسورةً إلى الأبد. (و`Vary: Accept` لا يكفي: خطةُ
+ * Cloudflare المجّانيّة لا تُفرّع المخزن إلّا على `Accept-Encoding`.)
+ * ✅ أمّا الملفُّ الثابت فلا يتفاوض — قِيس بثلاث قيمٍ لـ`Accept`: JPEG دائماً
+ *    وبنفس البايتات.
+ * ⇒ لذلك يبقى المحوّلُ على الأصل حيث المخزنُ خاصٌّ بكلّ متصفّح.
+ * 🪤 وبلا هذا الحارس كانت `sizedUrl` (المُكبِّر · الهيرو بلا توأم) تُنتج
+ *    عنواناً على مضيف الشبكة **لا يخدمه أصلاً** ⇒ ٤٠٤ ثمّ ارتدادٌ — أي
+ *    طلبٌ فاشلٌ زائدٌ لكلّ صورةٍ من ذلك المسار.
+ */
+const CDN_SAFE_PREFIX = '/storage/v1/object/public/';
+
+/** 🪤 بذرةٌ محلّيّة: الإعدادُ يصل من القاعدة **بعد** أوّل رسم، فبلا بذرةٍ
+ *  تُرسَم صورُ أوّل شاشةٍ على الأصل ثمّ تبقى عليه (فرعُ المفتاح لا يُعيد
+ *  التصيير عمداً) — أي أن الشبكةَ لا تُستعمل في الجلسة الباردة أصلاً.
+ *  والقراءةُ ملفوفةٌ: متصفّحٌ يمنع التخزين يرمي استثناءً عند القراءة نفسِها. */
+const SEED_KEY = 'taki-img-cdn';
+const readSeed = (): string => {
+    try { return localStorage.getItem(SEED_KEY) || ''; } catch { return ''; }
+};
+const HOST_RE = /^([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/;
+
+let CDN_HOST = (() => { const h = readSeed(); return HOST_RE.test(h) ? h : ''; })();
 
 export const setImageCdnHost = (host?: string | null): void => {
     const h = String(host || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
     // حارسٌ: مضيفٌ بصيغةٍ غريبة يُهمَل بدل أن يُنتج عناوينَ مكسورة للجميع.
-    CDN_HOST = /^([A-Za-z0-9-]+\.)+[A-Za-z]{2,}$/.test(h) ? h : '';
+    CDN_HOST = HOST_RE.test(h) ? h : '';
+    try {
+        if (CDN_HOST) localStorage.setItem(SEED_KEY, CDN_HOST);
+        else localStorage.removeItem(SEED_KEY);
+    } catch { /* تخزينٌ ممنوع — البذرةُ راحةٌ لا شرط */ }
 };
 export const imageCdnHost = (): string => CDN_HOST;
 
@@ -70,7 +104,10 @@ export const imageCdnHost = (): string => CDN_HOST;
 export const cdnUrl = (url: string): string => {
     if (!CDN_HOST) return url;
     if (!url.startsWith(`https://${OWN_HOST}/`)) return url;
-    return `https://${CDN_HOST}/` + url.slice(`https://${OWN_HOST}/`.length);
+    const rest = url.slice(`https://${OWN_HOST}/`.length);
+    // المحوّلُ وما ليس كائناً عامّاً يبقيان على الأصل — انظر CDN_SAFE_PREFIX.
+    if (!('/' + rest).startsWith(CDN_SAFE_PREFIX)) return url;
+    return `https://${CDN_HOST}/` + rest;
 };
 
 export const THUMB_MARK = 't=1';

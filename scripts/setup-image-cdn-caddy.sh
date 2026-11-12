@@ -122,13 +122,23 @@ if [ "$SIZE" = "$ORIG" ]; then say "   ✅ مطابقةٌ للأصل بايتا�
 
 say "   المساراتُ الممنوعة على هذا الاسم:"
 FAIL=0
-for p in "/rest/v1/users?select=*" "/auth/v1/settings" "/functions/v1/phone-login" "/email-templates/recovery.html" "/storage/v1/object/public/chat/x" "/" ; do
+for p in "/rest/v1/users?select=*" "/auth/v1/settings" "/functions/v1/phone-login" "/email-templates/recovery.html" "/storage/v1/object/public/chat/x" "/storage/v1/render/image/public/deals/x.jpg?width=300" "/" ; do
     c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$CDN_HOST$p")
     if [ "$c" = "404" ]; then say "      ✅ 404  $p"; else say "      🔴 $c  $p"; FAIL=1; fi
 done
 c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST "https://$CDN_HOST$IMG_PATH")
 if [ "$c" = "404" ] || [ "$c" = "405" ]; then say "      ✅ $c  POST على الصورة (GET/HEAD وحدهما)"; else say "      🔴 $c  POST مرّ!"; FAIL=1; fi
 [ "$FAIL" = "0" ] || { restore; die "سطحٌ مكشوفٌ على الاسم الجديد — أُعيد الإعدادُ السابق."; }
+
+say "   لا تفاوضَ على الصيغة (شرطُ مخزنٍ مشترك):"
+CT_W=$(curl -s -o /dev/null -D- --max-time 20 -H 'Accept: image/webp,image/*,*/*' "https://$CDN_HOST$IMG_PATH" | grep -i '^content-type' | tr -d '\r' | awk '{print $2}')
+CT_J=$(curl -s -o /dev/null -D- --max-time 20 -H 'Accept: image/jpeg,*/*'        "https://$CDN_HOST$IMG_PATH" | grep -i '^content-type' | tr -d '\r' | awk '{print $2}')
+if [ "$CT_W" = "$CT_J" ] && [ -n "$CT_W" ]; then
+    say "      ✅ $CT_W لكلّ قيم Accept — صيغةٌ واحدة، فلا تُسمَّم ذاكرةُ الحافة"
+else
+    say "      🔴 صيغتان لنفس العنوان: webp⇒$CT_W · jpeg⇒$CT_J"
+    restore; die "تفاوضٌ على الصيغة بلا Vary — لا يصلح لمخزنٍ مشترك."
+fi
 
 say "   الأصلُ القديم ما زال يعمل:"
 for u in "https://$API_HOST$IMG_PATH|200" "https://$API_HOST/rest/v1/|200"; do
