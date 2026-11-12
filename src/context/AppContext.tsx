@@ -1173,7 +1173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (now - lastSoundAtRef.current < 1500) return;
         lastSoundAtRef.current = now;
         try {
-            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            const audio = new Audio('/notify.mp3');   // 🔴 v16.02 — كان خارجياً فحجبته سياسةُ الأمان: صوتٌ لم يُسمَع قطّ.
             audio.volume = 0.5;
             audio.play().catch(() => {}); // Browser might block auto-play
         } catch (e) {}
