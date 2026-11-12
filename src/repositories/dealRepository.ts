@@ -165,6 +165,9 @@ export interface NearbyResult {
     cursor: { dist: number; key: string } | null;
 }
 
+/** الطلباتُ الطائرة لصفحة الواجهة — انظر الشرح فوق `getFeedPage`. */
+const feedInFlight = new Map<string, Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }>>();
+
 export const dealRepository = {
     /**
      * v13.26 — «حولي» على مستوى **الفرع** ومن الخادم.
@@ -287,8 +290,36 @@ export const dealRepository = {
      * الترتيب `created_at DESC, id DESC` يطابق الفهرس `idx_deals_feed_keyset`
      * تماماً، و`id` فاصلٌ حاسم يمنع تكرار أو تخطّي عرض عند تساوي الطابع الزمني.
      */
-    getFeedPage: async (opts?: { limit?: number; cursor?: DealCursor | null }): Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }> => {
+    /**
+     * 🔴 v16.15 — **نداءان متطابقان في اللحظة صفر، مقيسان على الإنتاج.**
+     * `AppContext` يجلب الصفحةَ الأولى عند الإقلاع، و`Home` ينادي
+     * `refreshDeals()` عند التركيب — فيخرج الاستعلامُ نفسُه **مرّتين**
+     * (قِيس: `startTime` صفر لكليهما، و**٤٠٬٦٣٦ بايتاً** للنداء الواحد).
+     * أي أن كلَّ زائرٍ كان يدفع ثمانين كيلوبايتاً نصفُها مُهدَر، في أحرج
+     * لحظةٍ في عمر الصفحة ومن نواةٍ واحدةٍ على الخادم.
+     *
+     * ⇒ **مشاركةُ الطلب الطائر** لا نافذةٌ زمنيّة: النداءُ الثاني يستلم
+     *   **نفسَ الوعد** ما دام الأوّل لم يُحسم. فلا شيءَ يُتخطّى ولا يتأخّر
+     *   جوابٌ واحد — يسقط الطلبُ الزائد وحده. والمفتاحُ يشمل المؤشّر والحدّ
+     *   فلا تختلط صفحةٌ بأخرى.
+     * 🪤 ويُمسح المفتاحُ في `finally` — وإلّا صارت هذه ذاكرةً تُقدّم جواباً
+     *    قديماً أبداً، وهو عيبٌ أسوأ من الطلب المُكرَّر.
+     */
+    getFeedPage: (opts?: { limit?: number; cursor?: DealCursor | null }): Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }> => {
         const limit = Math.max(1, opts?.limit ?? DEALS_PAGE_SIZE);
+        const c0 = opts?.cursor;
+        const key = `${limit}|${c0 ? c0.createdAt + ':' + c0.id : ''}`;
+        const flying = feedInFlight.get(key);
+        if (flying) return flying;
+        const p = dealRepository._feedPage(limit, c0 || null)
+            .finally(() => { feedInFlight.delete(key); });
+        feedInFlight.set(key, p);
+        return p;
+    },
+
+    /** التنفيذُ الفعليُّ لصفحة الواجهة — لا يُنادى إلّا من `getFeedPage`. */
+    _feedPage: async (limit: number, cursor: DealCursor | null): Promise<{ deals: Deal[]; nextCursor: DealCursor | null; hasMore: boolean }> => {
+        const opts = { cursor };
         try {
             let q = supabase.from('deals').select(DEAL_SELECT).neq('status', 'deleted');
             const c = opts?.cursor;

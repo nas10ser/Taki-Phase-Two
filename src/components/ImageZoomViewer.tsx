@@ -11,7 +11,7 @@
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { sizedUrl } from '../utils/thumb';
+import { sizedUrl, heroUrl } from '../utils/thumb';
 const ImageZoomViewer: React.FC<{
     images: string[];
     initialIndex: number;
@@ -28,6 +28,35 @@ const ImageZoomViewer: React.FC<{
     const idx = Math.min(Math.max(index, 0), Math.max(0, images.length - 1));
     // تُصفَّر مع كل صورة، وإلّا بقي المُكبِّرُ على الأصل الكامل لكلّ ما بعدها.
     React.useEffect(() => { setZoomFailedTransform(false); }, [idx]);
+
+    /**
+     * 🔴 v16.14 — **طبقتان: ما هو في يد المتصفّح أوّلاً، ثمّ الأعلى دقّةً.**
+     * (بلاغُ ناصر: «عند فتح أيّ صورة تتأخّر في الفتح، تجلس تلفّ».)
+     *
+     * القياسُ من الإنتاج على صورةٍ حقيقيّة:
+     *   · `_h.jpg` الثابت  — ١٢٠ ك.ب · ١٦٤ م.ث · **صفرُ معالجٍ على الخادم**
+     *     و**هو نفسُه ما رسمته صفحةُ العرض خلفَ العارض** ⇒ في مخزن المتصفّح.
+     *   · تحويلُ ١٦٠٠    — ٢٦٤ ك.ب · ٤٨٠–٩١٤ م.ث · ولا يُخزَّن على الخادم
+     *     إطلاقاً (قِيس: الطلبُ الثاني بنفس زمن الأوّل) ⇒ كلُّ فتحةِ مُكبِّر
+     *     كانت تُجبر تحويلاً جديداً على **نواةٍ واحدة**، والمستخدمُ ينتظر.
+     *
+     * ⇒ يُفتح المُكبِّرُ على الطبقة الجاهزة **فوراً وبصفر بايت**، ويُحمَّل
+     *   الأعلى دقّةً في الخلفية فيُبدَّل حين يجهز — بلا دوّارةٍ وبلا وميض
+     *   (`key` لا يتغيّر فلا يُعاد تركيبُ العنصر).
+     * 🪤 ولا يُحمَّل الأعلى إن كان **نفسَ** العنوان (صورةٌ ليست من مستودعنا)
+     *    — وإلّا طلبناه مرّتين بلا فائدة.
+     */
+    const [hiResFor, setHiResFor] = useState('');
+    React.useEffect(() => {
+        const u = images[idx] || '';
+        const hi = u ? sizedUrl(u, 1600, 78) : '';
+        if (!u || !hi || hi === heroUrl(u)) { setHiResFor(hi ? u : ''); return; }
+        let alive = true;
+        const im = new Image();
+        im.onload = () => { if (alive) setHiResFor(u); };
+        im.src = hi;
+        return () => { alive = false; im.onload = null; };
+    }, [idx, images]);
     const lastTouchDist = React.useRef<number | null>(null);
     const lastTouchPos = React.useRef<{ x: number; y: number } | null>(null);
     // ===== Modern swipe-to-navigate (Instagram-style) =====
@@ -260,8 +289,11 @@ const ImageZoomViewer: React.FC<{
             ) : (
                 <img
                     key={images[idx]}
-                    /* ١٦٠٠ بكسلاً (١٩٧ ك.ب) لا الأصل (٢٨٠١) — ثمّ ارتدادٌ للأصل */
-                    src={zoomFailedTransform ? images[idx] : sizedUrl(images[idx], 1600, 78)}
+                    /* الجاهزُ أوّلاً ثمّ ١٦٠٠ بكسلاً، ثمّ ارتدادٌ للأصل عند الفشل */
+                    src={zoomFailedTransform ? images[idx]
+                        : (hiResFor === images[idx]
+                            ? sizedUrl(images[idx], 1600, 78)
+                            : heroUrl(images[idx]))}
                     alt=""
                     onError={() => {
                         if (!zoomFailedTransform) { setZoomFailedTransform(true); return; }
