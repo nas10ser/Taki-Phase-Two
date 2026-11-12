@@ -35,12 +35,22 @@ const show = () => console.log('  المنشورُ الآن: '
 const args = process.argv.slice(2);
 if (!args.length || args.includes('--show')) { show(); process.exit(0); }
 
+// 🔴 v16.06 — كان `--off` **يمسح العنوانين من الصفّ**، و`taki_complaint_mail`
+//    على القاعدة يقرأ **نفسَ الصفّ** ليعرف إلى أين يُرسل الشكوى. فإخفاءُ
+//    العنوان عن الصفحة كان **يقطع تسليمَ الشكاوى بالبريد** بلا أيّ إنذار
+//    (قِيس في نصّ الدالّة: `v_to IS NULL` ⇒ يُسجَّل خطأٌ ولا تُرسل رسالة).
+//    وما خدَع أن الرسالةَ تقول «أُخفيت من الصفحة» وهي صادقةٌ وناقصة.
+//  ⇒ الآن العنوانان **يبقيان**، ويُطفأ `public` وحده.
 if (args.includes('--off')) {
-    sql(`UPDATE public.platform_settings SET value='{"info": "", "complain": ""}'::jsonb
+    sql(`UPDATE public.platform_settings
+            SET value = jsonb_set(COALESCE(value,'{}'::jsonb), '{public}', 'false'::jsonb, true)
           WHERE key='contact_emails'`);
     const v = sql("SELECT value::text FROM public.platform_settings WHERE key='contact_emails'");
-    if (!/"info": ""/.test(v)) { console.error('❌ لم يُثبت الإخفاء بالقراءة: ' + v); process.exit(1); }
+    if (!/"public": false/.test(v)) { console.error('❌ لم يُثبت الإخفاء بالقراءة: ' + v); process.exit(1); }
+    const keep = sql("SELECT COALESCE(value->>'complain','') FROM public.platform_settings WHERE key='contact_emails'");
+    if (!keep) { console.error('❌ ضاع عنوانُ الشكاوى — تسليمُ الشكاوى ينكسر. أُوقف.'); process.exit(1); }
     console.log('✅ أُخفيت العناوينُ من الصفحة.');
+    console.log('   وتسليمُ الشكاوى بالبريد **باقٍ يعمل** — العنوانُ محفوظٌ ولم يُمسح.');
     process.exit(0);
 }
 
@@ -86,7 +96,8 @@ if (!args.includes('--confirmed')) {
 const lit = (v) => `'${String(v).replace(/'/g, "''")}'`;
 sql(`UPDATE public.platform_settings
         SET value = jsonb_build_object('info', ${lit(info)},
-                                       'complain', ${lit(complain)})
+                                       'complain', ${lit(complain)},
+                                       'public', true)
       WHERE key='contact_emails'`);
 const back = sql("SELECT (value->>'info')||'|'||(value->>'complain') FROM public.platform_settings WHERE key='contact_emails'");
 if (back !== `${info}|${complain}`) {
