@@ -120,3 +120,64 @@ api.takisa.net {
         respond 404
     }
 }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🖼 img.takisa.net — مضيفُ الصور وحده، خلف شبكة Cloudflare
+# ═══════════════════════════════════════════════════════════════════════════
+# لماذا مضيفٌ ثانٍ ولا نُوكِّل `api` نفسَه: توكيلُ `api` يُمرّر **قاعدةَ
+# البيانات والمصادقةَ والبثَّ الحيَّ ودوالَّ الحافة** عبر وسيطٍ ثالث، ويغيّر
+# مسارَ الشهادة ومسارَ WebSocket معاً. ومضيفٌ للصور وحدها يأخذ كلَّ المكسب
+# (البايتاتُ تخرج من نواةٍ واحدةٍ في جدة إلى حافةٍ عالميّة) بصفر مخاطرةٍ على
+# ما سواه.
+#
+# 🔒 والسطحُ **أضيقُ ما يمكن**: `deals` هو المستودعُ العامّ الوحيد (قِيس:
+#    `chat` و`complaints` خاصّان)، فالمسارُ محصورٌ به وحده، والطريقةُ
+#    GET/HEAD وحدهما. وكلُّ ما عداه — rest · auth · functions · realtime ·
+#    قوالبُ البريد — **لا يُوجَد على هذا الاسم إطلاقاً**، يردّ 404.
+#
+# 🪤 ولا تُنشر هذه الكتلةُ قبل أن يُحلّ اسمُ `img.takisa.net` فعلاً: كتلةٌ
+#    لمضيفٍ بلا سجلّ DNS تجعل Caddy تطلب شهادةً لا تستطيع إثباتَها فتُعيد
+#    المحاولةَ أبداً — وهو العيبُ نفسُه الذي كلّف `{$PROXY_DOMAIN}` أعلاه.
+#    و`scripts/setup-image-cdn-caddy.sh` يرفض النشرَ ما لم يُحلّ الاسم.
+#
+# 🪤 و`img.takisa.net` **خارج** `isOwnBackend` في `sw.js` عمداً: إدخالُه هناك
+#    يجعل الخدمةَ العاملة تجلبه بـ`fetch`، و`fetch` داخلها يخضع لـ`connect-src`
+#    (لا `img-src`) — و`connect-src` يذكر `api.takisa.net` حرفياً، فتنكسر كلُّ
+#    صورةٍ **داخل التطبيق المثبَّت وحده** بينما تعمل في المتصفّح العادي.
+img.takisa.net {
+    # 🔴 تحدّي HTTP-01 حصراً. السببُ بنيويّ لا تفضيليّ: Caddy تُجرّب
+    #    `tls-alpn-01` أوّلاً، وهو تحدٍّ يجري **داخل مصافحة TLS** — وسحابةُ
+    #    Cloudflare البرتقاليّة تُنهي TLS عندها، فلا يصل التحدّي الأصلَ أبداً
+    #    ويفشل حتماً قبل أن تسقط Caddy إلى `http-01`. وتعطيلُه يجعل الإصدارَ
+    #    من أوّل محاولة، ويُبقي سجلَّ Caddy نظيفاً (درسُ `{$PROXY_DOMAIN}`).
+    #    و`http-01` يمرّ عبر الوسيط: Cloudflare تستثني
+    #    `/.well-known/acme-challenge/*` من «Always Use HTTPS».
+    tls {
+        issuer acme {
+            disable_tlsalpn_challenge
+        }
+    }
+
+    header {
+        -server
+        Strict-Transport-Security "max-age=63072000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        # صورٌ تُطلب من www.takisa.net — أصلٌ آخر، فلا بدّ من cross-origin.
+        Cross-Origin-Resource-Policy "cross-origin"
+    }
+
+    # 🪤 ولا `encode` هنا: الصورُ مضغوطةٌ أصلاً، وضغطُها ثانيةً معالجٌ بلا مكسب.
+
+    @images {
+        method GET HEAD
+        path /storage/v1/object/public/deals/* /storage/v1/render/image/public/deals/*
+    }
+    handle @images {
+        reverse_proxy kong:8000
+    }
+
+    handle {
+        respond 404
+    }
+}

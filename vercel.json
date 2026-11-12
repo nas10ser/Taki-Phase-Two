@@ -52,27 +52,11 @@
       "destination": "/api/sitemap"
     },
     {
-      "source": "/storage/v1/object/public/deals/:path*",
-      "destination": "https://api.takisa.net/storage/v1/object/public/deals/:path*"
-    },
-    {
-      "source": "/storage/v1/render/image/public/deals/:path*",
-      "destination": "https://api.takisa.net/storage/v1/render/image/public/deals/:path*"
-    },
-    {
       "source": "/((?!\\.well-known/)(?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
-    {
-      "source": "/storage/v1/:path*",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=31536000, s-maxage=31536000, immutable" },
-        { "key": "CDN-Cache-Control", "value": "public, max-age=31536000, immutable" },
-        { "key": "Vercel-CDN-Cache-Control", "value": "public, max-age=31536000, immutable" }
-      ]
-    },
     {
       "source": "/.well-known/apple-app-site-association",
       "headers": [
