@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# TAKI · إشعالُ مضيف الصور `img.takisa.net` على خادم جدة — بأمرٍ واحد
+# TAKI · نشرُ إعداد Caddy على جدة بأمان — ومعه مضيفُ الصور إن وُجد سجلُّه
 #
-#   bash scripts/setup-image-cdn-caddy.sh
+#   bash scripts/deploy-caddy.sh
+#
+# الإعدادُ المنشورُ = `supabase/ops/caddy/Caddyfile` **زائدَ**
+# `img-cdn.Caddyfile` **فقط إن كان `img.takisa.net` يُحلّ**. فما دام السجلُّ
+# غيرَ موجود يُنشر الأساسيُّ وحده — ولا تُطلب شهادةٌ لاسمٍ لا يُحلّ أبداً.
 #
 # ما يفعله، بالترتيب، ولا يمضي خطوةً إن فشلت التي قبلها:
-#   ① يرفض العملَ إن لم يُحلّ `img.takisa.net` بعد — كتلةٌ لمضيفٍ بلا سجلّ
-#     تجعل Caddy تطلب شهادةً لا تستطيع إثباتَها فتُعيد المحاولة أبداً (وهو
-#     العيبُ الذي كلّفنا `{$PROXY_DOMAIN}`).
+#   ① يفحص هل يُحلّ `img.takisa.net` — فيُقرّر تضمينَ كتلته أو تركَها.
 #   ② ينسخ الإعدادَ احتياطياً على الخادم بختمٍ زمنيّ.
 #   ③ يرفع Caddyfile المستودع ويفحص صيغتَه **داخل الحاوية** قبل أي تحميل.
 #   ④ يُعيد التحميل (reload) لا التشغيل — بلا انقطاعِ ثانيةٍ على `api`.
@@ -25,6 +27,7 @@ CDN_HOST="${1:-img.takisa.net}"
 API_HOST="api.takisa.net"
 REMOTE_DIR=/opt/taki/supabase/volumes/proxy/caddy
 LOCAL_CADDY="$(cd "$(dirname "$0")/.." && pwd)/supabase/ops/caddy/Caddyfile"
+LOCAL_IMG="$(cd "$(dirname "$0")/.." && pwd)/supabase/ops/caddy/img-cdn.Caddyfile"
 
 say()  { printf '%s\n' "$*"; }
 die()  { printf '❌ %s\n' "$*" >&2; exit 1; }
@@ -32,27 +35,27 @@ ssh_() { ssh -o ConnectTimeout=25 -i "$KEY" "$HOST_SSH" "$@"; }
 
 [ -f "$KEY" ]         || die "مفتاحُ جدة غير موجود: $KEY"
 [ -f "$LOCAL_CADDY" ] || die "Caddyfile غيرُ موجودٍ في المستودع: $LOCAL_CADDY"
-grep -q "^$CDN_HOST {" "$LOCAL_CADDY" || die "كتلةُ «$CDN_HOST» ليست في Caddyfile المستودع."
+
 
 say "🖼  إشعالُ مضيف الصور: $CDN_HOST"
 say ""
 
 # ── ① شرطُ DNS ────────────────────────────────────────────────────────────
-say "① هل يُحلّ الاسم؟"
+say "① هل يُحلّ اسمُ مضيف الصور؟"
 IPS=$(dig +short "$CDN_HOST" A | grep -E '^[0-9.]+$' | tr '\n' ' ')
+WITH_CDN=0; PROXIED=0
 if [ -z "$IPS" ]; then
-    die "«$CDN_HOST» لا يُحلّ بعد — لم يُضَف سجلُّ DNS.
-   في Cloudflare ← takisa.net ← DNS ← Add record:
-     Type=A · Name=img · IPv4=207.127.99.122 · Proxy status=🟠 Proxied
-   ثمّ أعِد تشغيل هذا الأمر. (ولا تُنشر الكتلةُ قبل ذلك عمداً.)"
-fi
-say "   ✅ يُحلّ إلى: $IPS"
-if printf '%s' "$IPS" | grep -q '207\.127\.99\.122'; then
-    say "   ℹ️  رماديّ (DNS only) — يصل الخادمَ مباشرةً. يعمل، لكن **بلا شبكةِ توصيل**."
-    PROXIED=0
+    say "   ℹ️  «$CDN_HOST» لا يُحلّ بعد ⇒ **يُنشر الأساسيُّ وحده**، بلا كتلةِ الصور."
+    say "      (ولا تُطلب شهادةٌ لاسمٍ لا يُحلّ — وهو فخٌّ كلّفنا سجلّاً يصرخ كلّ ست ساعات.)"
 else
-    say "   ✅ برتقاليّ (Proxied) — خلف شبكة Cloudflare. وهذا هو الغرض."
-    PROXIED=1
+    WITH_CDN=1
+    say "   ✅ يُحلّ إلى: $IPS"
+    if printf '%s' "$IPS" | grep -q '207\.127\.99\.122'; then
+        say "   ℹ️  رماديّ (DNS only) — يصل الخادمَ مباشرةً. يعمل، لكن **بلا شبكةِ توصيل**."
+    else
+        say "   ✅ برتقاليّ (Proxied) — خلف شبكة Cloudflare."
+        PROXIED=1
+    fi
 fi
 say ""
 
@@ -74,7 +77,14 @@ restore() {
 
 # ── ③ الرفعُ وفحصُ الصيغة ─────────────────────────────────────────────────
 say "③ رفعُ الإعداد وفحصُ صيغته داخل الحاوية"
-scp -q -o ConnectTimeout=25 -i "$KEY" "$LOCAL_CADDY" "$HOST_SSH:/tmp/Caddyfile.new" || { restore; die "تعذّر الرفع."; }
+BUILT=$(mktemp -t taki-caddy); trap 'rm -f "$BUILT"' EXIT
+cat "$LOCAL_CADDY" > "$BUILT"
+if [ "$WITH_CDN" = "1" ]; then
+    [ -f "$LOCAL_IMG" ] || { restore; die "كتلةُ الصور غيرُ موجودة: $LOCAL_IMG"; }
+    printf '\n' >> "$BUILT"; cat "$LOCAL_IMG" >> "$BUILT"
+    say "   (ومعه كتلةُ $CDN_HOST)"
+fi
+scp -q -o ConnectTimeout=25 -i "$KEY" "$BUILT" "$HOST_SSH:/tmp/Caddyfile.new" || { restore; die "تعذّر الرفع."; }
 ssh_ "sudo cp /tmp/Caddyfile.new $REMOTE_DIR/Caddyfile && rm -f /tmp/Caddyfile.new" || { restore; die "تعذّر النسخ."; }
 if ! ssh_ "sudo docker exec supabase-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile" 2>&1 | tail -3; then
     restore; die "فحصُ الصيغة فشل — لم يُحمَّل شيء."
@@ -90,7 +100,28 @@ say "   ✅"
 say ""
 
 # ── ⑤ القياس ──────────────────────────────────────────────────────────────
-say "⑤ القياس"
+say "⑤ قياسُ المحوّل على الأصل (قائمةُ السماح)"
+XF="https://$API_HOST/storage/v1/render/image/public/deals"
+SMP=$(ssh_ "sudo docker exec supabase-db psql -U supabase_admin -d postgres -At -c \"SELECT name FROM storage.objects WHERE bucket_id='deals' AND name NOT LIKE '%\\\\_t.jpg' AND name NOT LIKE '%\\\\_h.jpg' ORDER BY name LIMIT 1\"" 2>/dev/null | tr -d '\r')
+if [ -n "$SMP" ]; then
+  XFAIL=0
+  for wq in "600 70 200" "300 70 200" "1600 78 200" "1080 75 200" "9999 100 404" "9999 70 404" "600 100 404" "2501 70 404"; do
+    set -- $wq
+    c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$XF/$SMP?width=$1&quality=$2")
+    if [ "$c" = "$3" ]; then say "      ✅ $c  width=$1 quality=$2"; else say "      🔴 $c (المتوقَّع $3)  width=$1 quality=$2"; XFAIL=1; fi
+  done
+  [ "$XFAIL" = "0" ] || { restore; die "قائمةُ سماح المحوّل لا تعمل كما قُصد."; }
+else
+  say "      ⚠️ لا صورةَ أصلٍ للتجربة — تُخطَّى"
+fi
+say ""
+
+if [ "$WITH_CDN" != "1" ]; then
+  say "✅ نُشر الإعدادُ الأساسيُّ وقِيس. ولم تُنشر كتلةُ الصور (لا سجلَّ DNS بعد)."
+  exit 0
+fi
+
+say "⑥ قياسُ مضيف الصور"
 SAMPLE=$(ssh_ "sudo docker exec supabase-db psql -U supabase_admin -d postgres -At -c \"SELECT name FROM storage.objects WHERE bucket_id='deals' AND name LIKE '%\\\\_t.jpg' ORDER BY name LIMIT 1\"" 2>/dev/null | tr -d '\r')
 [ -n "$SAMPLE" ] || { restore; die "لا مصغّرةَ في المستودع للتجربة."; }
 IMG_PATH="/storage/v1/object/public/deals/$SAMPLE"
