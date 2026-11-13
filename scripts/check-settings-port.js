@@ -63,5 +63,17 @@ check('والمنفذُ يُصدّر الإبطال', /export const invalidatePl
 // والمنفذُ مشاركٌ للطلب الطائر لا نداءٌ لكلّ سائل
 check('المنفذُ يشارك الطلبَ الطائر', /memoAsync\(\s*'platform_settings:batch'/.test(ps));
 
+// ④ 🔴 **التفريغُ على تبدّل الهويّة وحده.** كان يقع على كلّ حدثِ مصادقة،
+//    و`INITIAL_SESSION` يقع لزائرٍ مجهولٍ أيضاً — فيمحو طلباً **طائراً**
+//    فيُعاد فتحُه. قِيس على الإنتاج: دفعةُ الإعدادات مرّتين بفارق ٩٣ م.ث.
+{
+    const ctx = strip(R('src/context/AppContext.tsx'));
+    const i = ctx.indexOf('clearAsyncMemo()');
+    const near = i > 0 ? ctx.slice(Math.max(0, i - 400), i + 80) : '';
+    check('التفريغُ مشروطٌ بتبدّل المعرّف',
+        /nextUid\s*!==\s*lastAuthUidRef\.current/.test(near),
+        'تفريغٌ بلا شرطٍ يمحو الطلبَ الطائرَ فيتكرّر النداء');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);

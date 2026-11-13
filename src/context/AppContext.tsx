@@ -407,6 +407,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // مراجع (لا حالة) حتى لا يُعاد بناء دالة القياس مع كل تغيّر — فتُستدعى من
     // اشتراكات تُسجّل مرة واحدة، ولو أُعيد بناؤها لاحتجنا إعادة الاشتراك كلّه.
     const userIdRef = useRef<string | undefined>(undefined);
+    /** آخرُ هويّةٍ رآها مستمعُ المصادقة — التفريغُ على تبدّلها وحده (v16.25). */
+    const lastAuthUidRef = useRef<string | null | undefined>(undefined);
     const languageRef = useRef<'ar' | 'en'>('ar');
     const ratingPromptRef = useRef<{ barcode: string; dealId: string; storeId: string; storeName: string; myVote?: boolean | null } | null>(null);
     const ingestDealsRef = useRef<(incoming: Deal[]) => void>(() => {});
@@ -957,13 +959,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             try {
                 const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
                     try {
-                        // 🔴 v16.17 — تُفرَّغ ذاكرةُ `memoAsync` عند **أيّ** تبدّلٍ
-                        // في الهويّة (دخولاً أو خروجاً أو انتحالاً أو تجديدَ
-                        // توكن). الأجوبةُ المحفوظةُ عامّةٌ اليوم، لكن ربطَها
-                        // بجلسةٍ ماضيةٍ هو بالضبط النمطُ الذي يُسلّم جوابَ
-                        // حسابٍ لحسابٍ آخر متى تفرّعت دالّةٌ على المنادي.
-                        // والكلفةُ صفر: نداءٌ أو نداءان يُعادان بعد الدخول.
-                        clearAsyncMemo();
+                        // 🔴 v16.17/25 — تُفرَّغ ذاكرةُ `memoAsync` عند تبدّل
+                        //    **الهويّة** وحدها. و`INITIAL_SESSION`/`TOKEN_REFRESHED`
+                        //    ليسا تبدّلاً: التفريغُ فيهما يمحو طلباً **طائراً**
+                        //    فيُعاد فتحُه (قِيس: دفعةُ الإعدادات مرّتين بفارق
+                        //    ٩٣ م.ث لزائرٍ مجهولٍ لا هويّةَ له أصلاً).
+                        const nextUid = session?.user?.id || null;
+                        if (nextUid !== lastAuthUidRef.current) {
+                            lastAuthUidRef.current = nextUid; clearAsyncMemo();
+                        }
                         // Explicit sign-out branch — without this, logging out
                         // left `user` populated until a full reload, so the UI
                         // showed the previous account on a guest session.
