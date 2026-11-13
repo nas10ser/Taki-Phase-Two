@@ -32,7 +32,7 @@ const problems = [];
 const notes = [];
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const stripYamlComments = (t) => t.split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join('\n');
-const stripGroovyComments = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+const stripGroovyComments = (t) => t.replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/\/\/[^\n]*/g, '');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ١) العقدُ موصولٌ في كلا السيرين، ومعرّفاتُه حقيقيّة

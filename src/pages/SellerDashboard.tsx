@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 const BarcodeScanner = React.lazy(() => import('../components/BarcodeScanner'));
@@ -44,7 +44,7 @@ import { splitInclusive, fmtSAR } from '../utils/vat';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
-import OrderCloseActions from '../components/seller/OrderCloseActions'; import OrdersToolbar, { emptyOrdersLabel } from '../components/seller/OrdersToolbar';
+import OrderCloseActions from '../components/seller/OrderCloseActions'; import OrdersToolbar, { emptyOrdersLabel } from '../components/seller/OrdersToolbar'; import DealsToolbar from '../components/seller/DealsToolbar'; import ListSearchRow from '../components/ListSearchRow'; import useListSearch from '../hooks/useListSearch';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 const StoreLocationPicker = React.lazy(() => import('../components/seller/StoreLocationPicker'));
 
@@ -2916,6 +2916,18 @@ const SellerDashboard: React.FC = () => {
         (d.status === 'active' && (isSoldOut(d) || isTimedOut(d)))
     );
 
+    // v16.30 — بحثٌ في «عروضي» و«التقييمات». العدّادان يبقيان على القوائم غير
+    //    المُرشَّحة، والترشيحُ في المتصفّح يصحّ: `getByStore` بلا سقف (قِيس).
+    const dealSearch = useListSearch(
+        productsTab === 'active' ? activeDeals : expiredDeals,
+        d => [d.itemName, (d as any).sku, (d as any).barcode, d.category, d.description],
+    );
+    const myRatings = useMemo(() => myDeals.flatMap(d =>
+        (d.ratings || []).map(r => ({ ...r, dealId: d.id, dealName: (d as any).itemName || (d as any).title || '' }))
+    ).sort((a: any, b: any) => new Date(b.createdAt || b.date || 0).getTime()
+        - new Date(a.createdAt || a.date || 0).getTime()), [myDeals]);
+    const reviewSearch = useListSearch(myRatings, (r: any) => [r.comment, r.userName, r.dealName]);
+
     const inputGroupStyle: React.CSSProperties = {
         display: 'flex', gap: 16, marginBottom: 20
     };
@@ -4804,24 +4816,14 @@ const SellerDashboard: React.FC = () => {
                     </form>
                 ) : view === 'products' ? (
                     <div>
-                        {/* Tabs for Active/Expired */}
-                        <div style={{ display: 'flex', gap: 10, marginBottom: 20, background: 'var(--card-bg)', padding: 6, borderRadius: 16, border: '1px solid var(--border-color)' }}>
-                            <button 
-                                onClick={() => setProductsTab('active')}
-                                style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: productsTab === 'active' ? 'var(--dark)' : 'transparent', color: productsTab === 'active' ? 'white' : 'var(--text-secondary)', fontWeight: 800, fontSize: '0.9rem', transition: 'all 0.2s', cursor: 'pointer' }}
-                            >
-                                {isRTL ? 'عروض نشطة' : 'Active'} ({activeDeals.length})
-                            </button>
-                            <button 
-                                onClick={() => setProductsTab('expired')}
-                                style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: productsTab === 'expired' ? 'var(--dark)' : 'transparent', color: productsTab === 'expired' ? 'white' : 'var(--text-secondary)', fontWeight: 800, fontSize: '0.9rem', transition: 'all 0.2s', cursor: 'pointer' }}
-                            >
-                                {isRTL ? 'عروض سابقة' : 'Past'} ({expiredDeals.length})
-                            </button>
-                        </div>
-
+                        <DealsToolbar
+                            tab={productsTab} onTab={setProductsTab}
+                            activeCount={activeDeals.length} expiredCount={expiredDeals.length}
+                            query={dealSearch.q} onQuery={dealSearch.set} isRTL={isRTL}
+                        />
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 12 }}>
-                            {(productsTab === 'active' ? activeDeals : expiredDeals).map(deal => {
+                            {dealSearch.active && dealSearch.rows.length === 0 && (<div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: 40, fontWeight: 800, color: 'var(--text-secondary)' }}>🔍 {isRTL ? 'لا عرض يطابق بحثك' : 'No deal matches your search'}</div>)}
+                            {dealSearch.rows.map(deal => {
                                 const isActiveDeal = activeDeals.some(d => d.id === deal.id);
                                 const isOutOfStock = isDealSoldOut(deal);   // v15.07 — كان بلا شرط السقف فيَسِم العرضَ الزمنيّ «نفد»
                                 return (
@@ -5252,15 +5254,13 @@ const SellerDashboard: React.FC = () => {
                     // `set_rating_reply` RPC (SECURITY DEFINER, only the
                     // store owner can write the reply column).
                     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <ListSearchRow search={reviewSearch} isRTL={isRTL}
+                            placeholder={isRTL ? 'ابحث في التقييمات بالنصّ أو اسم المشتري أو العرض…' : 'Search reviews by text, buyer or deal…'}
+                            noMatch={isRTL ? 'لا تقييم يطابق بحثك' : 'No review matches your search'} />
                         {(() => {
-                            const allRatings = myDeals.flatMap(d =>
-                                (d.ratings || []).map(r => ({ ...r, dealId: d.id, dealName: (d as any).itemName || (d as any).title || '' }))
-                            ).sort((a: any, b: any) => {
-                                const ta = new Date(a.createdAt || a.date || 0).getTime();
-                                const tb = new Date(b.createdAt || b.date || 0).getTime();
-                                return tb - ta;
-                            });
-
+                            const allRatings = reviewSearch.rows;
+                            // 🪤 أثناء البحث تُكتم «لا تقييمات بعد» وحدها — لا العرضُ كلُّه.
+                            if (allRatings.length === 0 && reviewSearch.active) return null;
                             if (allRatings.length === 0) {
                                 return (
                                     <div style={{ textAlign: 'center', padding: 40, opacity: 0.6 }}>

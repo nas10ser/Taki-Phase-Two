@@ -148,7 +148,7 @@ if (!haveAASA && !haveAL) {
 for (const f of ['scripts/set-assetlinks.js', 'scripts/set-apple-appsite.js']) {
     const p = path.join(ROOT, f);
     if (!fs.existsSync(p)) continue;
-    const body = read(p).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*/gm, '');
+    const body = read(p).replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/^[ \t]*\/\/[^\n]*/gm, '');
     for (const m of body.match(/curl [^'"`\n]*/g) || []) {
         if (!/(^|\s)-[a-zA-Z]*f/.test(m)) {
             errors.push(

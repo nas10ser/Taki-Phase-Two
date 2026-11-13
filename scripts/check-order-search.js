@@ -24,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const R = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
 let pass = 0, fail = 0;

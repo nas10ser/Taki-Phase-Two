@@ -50,7 +50,7 @@ const ok = (m) => { pass++; console.log('  ✓ ' + m); };
     // 🪤 وتُجرَّد التعليقاتُ أوّلاً: أوّلُ صياغةٍ لهذا الفحص فشلت لأنها أمسكت
     //    **تعليقَها هو** (الذي يشرح الثغرة ويذكر اسمَ الحقل). وهو فخٌّ مسجَّلٌ
     //    في هذا المشروع مرّتين: حارسٌ يتّهم النصَّ الذي يحرسه.
-    const strip = (x) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const strip = (x) => x.replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/^\s*\/\/.*$/gm, '');
     const src = strip(require('fs').readFileSync(
         require('path').join(__dirname, '..', 'server/lib/stockSync.js'), 'utf8'));
     assert.ok(!/createHmac/.test(src), 'البوتُ ما زال يوقّع — أي أن السرَّ ما زال يخرج من القاعدة');

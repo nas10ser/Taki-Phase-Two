@@ -19,7 +19,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { AdmSection, INVOICES } from '../../components/admin/ui';
+import { AdmSection, AdmSearch, INVOICES } from '../../components/admin/ui';
+import useListSearch from '../../hooks/useListSearch';
 import { arCount } from '../../utils/arPlural';
 import { supabase } from '../../services/supabaseClient';
 import { adminService } from '../../services/adminService';
@@ -254,6 +255,11 @@ const AdminTax: React.FC = () => {
     const [payments, setPayments] = useState<PaymentRow[]>([]);
     const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
     const [names, setNames] = useState<Record<string, string>>({});
+    // v16.30 — بحثٌ في فواتير المشتريات وفواتير العملاء. 🔴 والشاشةُ تعرض
+    //    أحدثَ ٣٠/٥٠ من ألفٍ وألفين محمَّلة، فالبحثُ هنا **يوسّع** ما يُرى
+    //    لا يضيّقه: يطابق على الكلّ ثمّ يُقتطع المعروض.
+    const expSearch = useListSearch(expenses, e => [e.supplier_name, e.supplier_vat_number, e.invoice_ref, e.description, e.category]);
+    const paySearch = useListSearch(payments, p2 => [names[p2.merchant_id], p2.merchant_id, p2.plan_id, p2.invoice_no, p2.status]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -630,7 +636,12 @@ const AdminTax: React.FC = () => {
                 </button>
                 {expenses.length > 0 && (
                     <div className="mt-3 space-y-2">
-                        {expenses.slice(0, 30).map(e => (
+                        <AdmSearch value={expSearch.q} onChange={expSearch.set}
+                            placeholder="ابحث بالمورّد أو الرقم الضريبي أو المرجع…" label="بحث في فواتير المشتريات" />
+                        {expSearch.active && expSearch.rows.length === 0 && (
+                            <div className="text-center py-6 text-xs font-extrabold text-[var(--text-secondary)]">🔍 لا فاتورة تطابق بحثك</div>
+                        )}
+                        {expSearch.rows.slice(0, 30).map(e => (
                             <div key={e.id} className="flex items-center gap-2 border border-[var(--border-color)] rounded-xl px-3 py-2">
                                 <div className="flex-1 min-w-0">
                                     <div className="text-xs font-extrabold text-[var(--text-primary)] truncate">{e.supplier_name} <span className="font-bold text-[var(--text-secondary)]">— {catLabel(e.category)}</span></div>
@@ -769,7 +780,12 @@ const AdminTax: React.FC = () => {
                     <div className="text-[11px] text-[var(--text-secondary)] font-bold">لا توجد مدفوعات بعد — كل دفعة اشتراك ستظهر هنا بفاتورة جاهزة، وزر «كل الفواتير» أعلاه يطبعها دفعة واحدة.</div>
                 ) : (
                     <div className="space-y-2">
-                        {payments.slice(0, 50).map(p => (
+                        <AdmSearch value={paySearch.q} onChange={paySearch.set}
+                            placeholder="ابحث باسم التاجر أو رقم الفاتورة أو الباقة…" label="بحث في فواتير العملاء" />
+                        {paySearch.active && paySearch.rows.length === 0 && (
+                            <div className="text-center py-6 text-xs font-extrabold text-[var(--text-secondary)]">🔍 لا فاتورة تطابق بحثك</div>
+                        )}
+                        {paySearch.rows.slice(0, 50).map(p => (
                             <div key={p.id} className="flex items-center gap-2 border border-[var(--border-color)] rounded-xl px-3 py-2">
                                 <div className="flex-1 min-w-0">
                                     <div className="text-xs font-extrabold text-[var(--text-primary)] truncate">{names[p.merchant_id] || p.merchant_id}</div>

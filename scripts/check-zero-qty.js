@@ -18,7 +18,7 @@ const path = require('path');
 const R = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 /** يُسقط تعليقات // وblock comments والسلاسل الحرفية ذات الـbackticks الطويلة تُبقى. */
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');
 

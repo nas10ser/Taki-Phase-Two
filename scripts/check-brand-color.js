@@ -24,7 +24,7 @@ const zlib = require('zlib');
 const R = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const B = (p) => fs.readFileSync(path.join(__dirname, '..', p));
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*#[^\n]*$/gm, '')
     .replace(/<!--[\s\S]*?-->/g, '');
 

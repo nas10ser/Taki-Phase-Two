@@ -1,4 +1,6 @@
 import { fetchPlatformSetting } from '../context/platformSettings';
+import ListSearchRow from '../components/ListSearchRow';
+import useListSearch from '../hooks/useListSearch';
 import React, { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
@@ -70,6 +72,10 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; isRTL: boolea
         return () => { alive = false; };
     }, [userId]);
 
+    // v16.30 — بحثٌ في «فواتيري»: القائمةُ ٢٤ صفّاً تصل دفعةً واحدة.
+    const search = useListSearch(rows, (p2: any) => [p2.invoice_no, p2.status, p2.plan_id, p2.amount,
+        new Date(p2.paid_at || p2.created_at).toLocaleDateString('en-GB')]);
+
     if (rows.length === 0) return null;
     return (
         <div className="mt-8 bg-[var(--card-bg)] rounded-2xl p-5 border border-[var(--border-color)] shadow-sm">
@@ -79,7 +85,10 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; isRTL: boolea
                    'Every subscription you pay for is invoiced automatically here — print it or save it as a PDF.')}
             </p>
             <div className="space-y-2">
-                {rows.map(p => (
+                <ListSearchRow search={search} isRTL={isRTL}
+                    placeholder={t('ابحث برقم الفاتورة أو التاريخ أو الحالة…', 'Search by invoice no., date or status…')}
+                    noMatch={t('لا فاتورة تطابق بحثك', 'No invoice matches your search')} />
+                {search.rows.map(p => (
                     <div key={p.id} className="flex items-center gap-2 border border-[var(--border-color)] rounded-xl px-3 py-2">
                         <div className="flex-1 min-w-0">
                             <div className="text-xs font-extrabold text-[var(--text-primary)]">

@@ -36,11 +36,12 @@ import { CATEGORIES } from '../../data/mock';
 import {
     AdmSection,
     AdmStat, AdmStatGrid,
-    AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
+    AdmPill, AdmEmpty, AdmSearch, AdmSkeleton, AdmButton,
     AdmTable,
     admNum, toneFg, toneBg,
     admCount, MINUTES, HOURS, DAYS, WARNINGS, CANCELLATIONS, OPEN_F, SHOWN_M, WORDS, STORES, ROWS,
 } from '../../components/admin/ui';
+import useListSearch from '../../hooks/useListSearch';
 import type { Tone, AdmColumn } from '../../components/admin/ui';
 
 interface StoreRow {
@@ -155,6 +156,9 @@ const AdminModeration: React.FC = () => {
     const canAct = hasPermission('action_delete_deals');
     const [overview, setOverview] = useState<{ total_open: number; stores: StoreRow[] } | null>(null);
     const [flags, setFlags] = useState<FlagRow[]>([]);
+    // v16.30 — بحثٌ في المخالفات: القائمةُ تصل دفعةً واحدة (سقف ٣٠٠) فالترشيحُ
+    //    يُرشّح كلَّ ما تعرضه الشاشة أصلاً.
+    const search = useListSearch(flags, f => [f.content, f.offender_name, f.ref_id, (f.matched || []).join(' ')]);
     const [storeFilter, setStoreFilter] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState<'open' | 'reviewed' | ''>('');
     const [loading, setLoading] = useState(true);
@@ -458,7 +462,14 @@ const AdminModeration: React.FC = () => {
                             />
                         ) : (
                             <div style={{ display: 'grid', gap: 9 }}>
-                                {flags.map(f => {
+                                <AdmSearch value={search.q} onChange={search.set}
+                                    placeholder="ابحث بالنصّ أو اسم المخالِف أو الكلمة المرصودة…" label="بحث في المخالفات" />
+                                {search.active && search.rows.length === 0 && (
+                                    <div style={{ textAlign: 'center', padding: 28, fontWeight: 800, color: 'var(--adm-fg-muted, var(--text-secondary))' }}>
+                                        🔍 لا مخالفة تطابق بحثك
+                                    </div>
+                                )}
+                                {search.rows.map(f => {
                                     const meta = SOURCE_META[f.source] || { icon: '❔', label: f.source };
                                     const tone: Tone = f.status === 'open' ? 'bad' : 'ok';
                                     return (

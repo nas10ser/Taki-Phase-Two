@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import SearchField from '../components/SearchField';
+import useListSearch from '../hooks/useListSearch';
 import { createT, isDealExpiredByTime } from '../utils/helpers';
 import { Deal } from '../data/mock';
 import DealCard from '../components/DealCard';
@@ -50,19 +52,34 @@ const Favorites: React.FC = () => {
         return () => { alive = false; };
     }, [favorites, ingestDeals]);
 
-    const { live, gone } = useMemo(() => {
+    // المحفوظاتُ الموجودة فعلاً، بترتيب الحفظ — قبل القسمة إلى حيّةٍ ومنتهية.
+    const items = useMemo(() => {
         const byId = new Map(deals.map(d => [d.id, d]));
-        const live: Deal[] = [];
-        const gone: Deal[] = [];
+        const out: Deal[] = [];
         for (const id of favorites) {
             const d = byId.get(id);
             if (!d) continue;                       // حُذف العرض أو لم يصل بعد
+            out.push(d);
+        }
+        return out;
+    }, [favorites, deals]);
+
+    // v16.30 — بحثٌ في المحفوظات. 🔴 ويصحّ هنا لأن القائمة **كاملةٌ** في
+    //    الذاكرة (`getByIds(favorites)` أعلاه)، فلا يُخفي الترشيحُ محفوظاً.
+    const search = useListSearch(items, d => [d.itemName, d.shopName, d.category, d.description]);
+
+    const { live, gone } = useMemo(() => {
+        const live: Deal[] = [];
+        const gone: Deal[] = [];
+        for (const d of search.rows) {
             (isDealExpiredByTime(d) || d.status === 'expired' ? gone : live).push(d);
         }
         return { live, gone };
-    }, [favorites, deals]);
+    }, [search.rows]);
 
-    const empty = favSettled && !hydrating && live.length === 0 && gone.length === 0;
+    const empty = favSettled && !hydrating && items.length === 0;
+    /** لا محفوظَ يطابق البحث — وهي **غير** «لم تحفظ شيئاً» (درس v16.28). */
+    const noMatch = !empty && search.active && search.rows.length === 0;
 
     return (
         <div className="page-content" style={{ background: 'var(--body-bg)', minHeight: '100vh', direction: isRTL ? 'rtl' : 'ltr' }}>
@@ -120,6 +137,25 @@ const Favorites: React.FC = () => {
                     </div>
                 ) : (
                     <>
+                        {items.length > 0 && (
+                            <div style={{ marginBottom: 14 }}>
+                                <SearchField
+                                    value={search.q}
+                                    onChange={search.set}
+                                    isRTL={isRTL}
+                                    placeholder={t('ابحث في محفوظاتك بالاسم أو المتجر…', 'Search your saved deals by name or store…')}
+                                />
+                            </div>
+                        )}
+                        {noMatch && (
+                            <div style={{
+                                textAlign: 'center', padding: '44px 20px', background: 'var(--card-bg)',
+                                borderRadius: 24, border: '1px dashed var(--border-color)',
+                                fontWeight: 800, color: 'var(--text-secondary)',
+                            }}>
+                                🔍 {t('لا محفوظَ يطابق بحثك', 'No saved deal matches your search')}
+                            </div>
+                        )}
                         {!user && (
                             <div style={{
                                 background: 'var(--card-bg)', border: '1px dashed var(--border-color)',

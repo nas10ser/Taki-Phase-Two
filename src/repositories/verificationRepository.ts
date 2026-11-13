@@ -321,9 +321,11 @@ export const verificationRepository = {
         status: VerificationStatus | null = 'submitted',
         limit = 50,
         cursor: string | null = null,
+        /** v16.30 — بحثٌ على الخادم: رقمُ الوثيقة · الجوّال · اسمُ المتجر/المالك. */
+        q: string | null = null,
     ): Promise<{ ok: boolean; rows?: AdminVerificationRow[]; nextCursor?: string | null; msg?: string }> => {
         const { data, error } = await supabase.rpc('admin_list_verifications', {
-            p_status: status, p_limit: limit, p_cursor: cursor,
+            p_status: status, p_limit: limit, p_cursor: cursor, p_q: q || null,
         });
         if (error) { logger.warn('admin_list_verifications:', error.message); return { ok: false, msg: error.message }; }
         const d: any = data || {};

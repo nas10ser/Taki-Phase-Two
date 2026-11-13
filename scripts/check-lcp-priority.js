@@ -28,7 +28,7 @@ const fail = (m) => { console.error('❌ ' + m); process.exit(1); };
  *    مرّةٍ يقع هذا الفخُّ في المشروع — فصار التجريدُ شرطَ كلِّ قراءة، لا
  *    خطوةً تُذكر عند الحاجة.
  */
-const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+const strip = (t) => t.replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/\/\/[^\n]*/g, '');
 const read = (p) => strip(fs.readFileSync(path.join(ROOT, p), 'utf8'));
 
 // ── ١) البطاقةُ تفرّق بين عاجلٍ ومؤجَّل ──────────────────────────────────

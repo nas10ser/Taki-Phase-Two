@@ -5,6 +5,8 @@ import BottomNav from '../components/BottomNav';
 import { PushToggleRow } from '../components/PushOptIn';
 import AnalyticsToggleRow from '../components/AnalyticsToggleRow';
 import { useApp } from '../context/AppContext';
+import ListSearchRow from '../components/ListSearchRow';
+import useListSearch from '../hooks/useListSearch';
 import { REGIONS, CITIES, LOCATIONS, Category, CATEGORIES , geoName } from '../data/mock';
 import { SmartAlertRule } from '../services/authService';
 import { normalizeArabicNumerals, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
@@ -199,6 +201,7 @@ const Profile: React.FC = () => {
     const [contactEmail, setContactEmail] = useState(user?.email || '');
     const isRTL = language === 'ar';
 
+    // v16.30 — بحثٌ في المتاجر المتابَعة: القائمةُ كاملةٌ في الذاكرة.
     const followedMerchantsList = useMemo(() => {
         return followedMerchants.map(id => {
             const profile = storeProfiles[id];
@@ -221,6 +224,8 @@ const Profile: React.FC = () => {
             return { id, name: isRTL ? 'متجر' : 'Store', avatar: null, rating: avg };
         });
     }, [followedMerchants, storeProfiles, deals, isRTL]);
+
+    const followedSearch = useListSearch(followedMerchantsList, (m2: any) => [m2.name, m2.shop, m2.city]);
 
     // Wait for the auth gate before deciding the visitor is a guest.
     // Without this, a refresh on /profile briefly shows the "Welcome"
@@ -331,7 +336,12 @@ const Profile: React.FC = () => {
                 {activeTab === 'followed' && (
                     <div className="animate-fade-in">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {followedMerchantsList.length > 0 ? followedMerchantsList.map(m => (
+                            {followedMerchantsList.length > 0 && (
+                                <ListSearchRow search={followedSearch} isRTL={isRTL}
+                                    placeholder={isRTL ? 'ابحث في متاجرك المتابَعة بالاسم…' : 'Search followed stores by name…'}
+                                    noMatch={isRTL ? 'لا متجر يطابق بحثك' : 'No store matches your search'} />
+                            )}
+                            {followedSearch.rows.length > 0 ? followedSearch.rows.map(m => (
                                 <div
                                     key={m.id}
                                     role="button"

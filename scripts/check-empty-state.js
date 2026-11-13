@@ -39,7 +39,7 @@ const SITEMAP = 'api/sitemap.js';
 const GATE_KEY = 'sitemap_catalogue_enabled';
 
 const stripComments = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^\s*\/\/.*$/gm, '');
 
 /** السلسلةُ بأكملها بين علامتَي اقتباس — لا جزءاً من جملةٍ أطول. */

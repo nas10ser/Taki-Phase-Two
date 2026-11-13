@@ -5,6 +5,8 @@ import StorePolicies from '../components/StorePolicies';
 import DealCard from '../components/DealCard';
 import { getStore } from '../data/mock';
 import { useApp } from '../context/AppContext';
+import SearchField from '../components/SearchField';
+import useListSearch from '../hooks/useListSearch';
 import { SellerTopBar } from '../components/SellerTopBar';
 import { userRepository } from '../repositories/userRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
@@ -602,6 +604,15 @@ const StoreDetails: React.FC = () => {
             .flatMap(d => (d.ratings || []).map(r => ({ ...r, itemName: d.itemName, dealId: d.id })))
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [deals, id]);
+
+    /**
+     * v16.30 — بحثٌ في صفحة المتجر: لكلّ تبويبٍ قائمتُه.
+     * 🔴 ويصحّ الترشيحُ في المتصفّح لأن `getByStore(id)` تجلب **كلَّ** عروض
+     *    المتجر بلا سقف (قِيس)، فلا عرضَ يُخفيه البحثُ وهو موجود.
+     */
+    const activeSearch = useListSearch(storeDeals, d => [d.itemName, d.description, d.category]);
+    const pastSearch = useListSearch(pastStoreDeals, d => [d.itemName, d.description, d.category]);
+    const reviewSearch = useListSearch(allStoreReviews, (r: any) => [r.comment, r.userName, r.itemName]);
 
     // Real average rating across all of this store's deals (active + expired
     // alike — historical reviews are still meaningful).
@@ -1228,10 +1239,28 @@ const StoreDetails: React.FC = () => {
 
             {/* Content Sections */}
             <div style={{ padding: 16, paddingBottom: 100 }}>
+                {/* v16.30 — حقلٌ واحدٌ يتبع التبويبَ المفتوح: ثلاثةُ حقولٍ فوق
+                    ثلاث قوائمَ متبادلة تزحم الشاشة بلا فائدة. */}
+                {(() => {
+                    const cur = viewTab === 'active' ? activeSearch : viewTab === 'past' ? pastSearch : reviewSearch;
+                    const ph = viewTab === 'reviews'
+                        ? (isRTL ? 'ابحث في الآراء بالنصّ أو اسم المنتج…' : 'Search reviews by text or product…')
+                        : (isRTL ? 'ابحث في عروض المتجر بالاسم أو الوصف…' : 'Search this store’s deals by name or description…');
+                    return (
+                        <div style={{ marginBottom: 14 }}>
+                            <SearchField value={cur.q} onChange={cur.set} isRTL={isRTL} placeholder={ph} />
+                            {cur.active && cur.rows.length === 0 && (
+                                <div style={{ textAlign: 'center', padding: '28px 12px', fontWeight: 800, color: 'var(--text-secondary)' }}>
+                                    🔍 {isRTL ? 'لا نتيجة تطابق بحثك' : 'Nothing matches your search'}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
                 {viewTab === 'active' && (
                     <div className="animate-fade-in">
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
-                            {storeDeals.length > 0 ? storeDeals.map(deal => (
+                            {activeSearch.rows.length > 0 ? activeSearch.rows.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column' }}>
                                     <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
                                     {user?.id === store?.id && (
@@ -1257,7 +1286,7 @@ const StoreDetails: React.FC = () => {
                 {viewTab === 'past' && (
                     <div className="animate-fade-in">
                         <div className="taki-deals-grid" style={{ display: 'grid', gap: 10 }}>
-                            {pastStoreDeals.length > 0 ? pastStoreDeals.map(deal => (
+                            {pastSearch.rows.length > 0 ? pastSearch.rows.map(deal => (
                                 <div key={deal.id} style={{ display: 'flex', flexDirection: 'column', opacity: 0.85 }}>
                                     <DealCard deal={deal} onClick={(id) => history.push(`/deal/${id}`)} isSponsored={(storeProfiles[store?.id || ''] as any)?.is_pinned} />
                                     {user?.id === store?.id && (
@@ -1302,7 +1331,7 @@ const StoreDetails: React.FC = () => {
                 {viewTab === 'reviews' && (
                     <div className="animate-fade-in">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {allStoreReviews.length > 0 ? allStoreReviews.map((r: any) => {
+                            {reviewSearch.rows.length > 0 ? reviewSearch.rows.map((r: any) => {
                                 // The merchant viewing their own store can reply/edit/remove
                                 // every review here, just like in the SellerDashboard
                                 // "التقييمات" tab — so they never need to leave this page.

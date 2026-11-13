@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { goRegister } from '../utils/returnTo';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import SearchField from '../components/SearchField';
+import useListSearch from '../hooks/useListSearch';
 import { createT } from '../utils/helpers';
 import { contestRepository, Contest, MaskedWinner, isContestPubliclyVisible, contestMatchesAudience } from '../repositories/contestRepository';
 
@@ -41,10 +43,17 @@ const Contests: React.FC = () => {
         return () => { alive = false; };
     }, []);
 
-    if (selected) return <ContestEntry contest={selected} onBack={() => setSelected(null)} user={user} />;
-
     // Only show contests that target this user's type (buyers / sellers / all).
-    const shown = contests.filter((c) => contestMatchesAudience(c, user?.userType));
+    // 🪤 ويُحسب **قبل** الخروج المبكّر أدناه: أيُّ خطّافٍ بعد `return` يُسقط
+    //    الشجرةَ عند أوّل تبديلٍ بين الفرعين (فخٌّ موثَّق في هذا المشروع).
+    const shown = useMemo(
+        () => contests.filter((c) => contestMatchesAudience(c, user?.userType)),
+        [contests, user?.userType],
+    );
+    // v16.30 — بحثٌ في المسابقات: القائمةُ تصل كاملةً، فالترشيحُ لا يُخفي شيئاً.
+    const search = useListSearch(shown, (c) => [c.title, c.description, c.prize]);
+
+    if (selected) return <ContestEntry contest={selected} onBack={() => setSelected(null)} user={user} />;
 
     return (
         <div className="pb-28 px-4 max-w-2xl mx-auto font-tajawal animate-fade-in" dir={isRTL ? 'rtl' : 'ltr'} style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 2.5rem)' }}>
@@ -70,7 +79,18 @@ const Contests: React.FC = () => {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {shown.map((c) => <ContestCard key={c.id} contest={c} isRTL={isRTL} onOpen={() => setSelected(c)} />)}
+                    <SearchField
+                        value={search.q}
+                        onChange={search.set}
+                        isRTL={isRTL}
+                        placeholder={t('ابحث في المسابقات بالعنوان أو الجائزة…', 'Search contests by title or prize…')}
+                    />
+                    {search.active && search.rows.length === 0 && (
+                        <div className="text-center text-[var(--text-secondary)] py-10 font-bold">
+                            🔍 {t('لا مسابقة تطابق بحثك', 'No contest matches your search')}
+                        </div>
+                    )}
+                    {search.rows.map((c) => <ContestCard key={c.id} contest={c} isRTL={isRTL} onOpen={() => setSelected(c)} />)}
                 </div>
             )}
         </div>

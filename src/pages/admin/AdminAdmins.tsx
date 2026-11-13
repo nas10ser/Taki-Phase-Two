@@ -19,7 +19,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ADMIN_PERMS, type PermDef } from '../../data/adminPermissions';
 import { useApp } from '../../context/AppContext';
-import { AdmEmpty } from '../../components/admin/ui';
+import { AdmEmpty, AdmSearch } from '../../components/admin/ui';
+import useListSearch from '../../hooks/useListSearch';
 import { supabase } from '../../services/supabaseClient';
 import type { AdminPermission } from '../../services/authService';
 
@@ -49,6 +50,7 @@ const AdminAdmins: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [savingId, setSavingId] = useState<string | null>(null);
     const [pendingPerms, setPendingPerms] = useState<Record<string, string[]>>({});
+    const search = useListSearch(staff, r => [r.name, r.email, r.phone, r.id]);
 
     const refresh = useCallback(async () => {
         setLoading(true);
@@ -167,7 +169,14 @@ const AdminAdmins: React.FC = () => {
             )}
 
             <div className="flex flex-col gap-4">
-                {staff.map(row => {
+                {/* v16.30 — بحثٌ في فريق الإدارة. القائمةُ تصل كاملةً فلا يُخفي الترشيحُ أحداً. */}
+                {staff.length > 0 && (
+                    <AdmSearch value={search.q} onChange={search.set} placeholder="ابحث بالاسم أو البريد أو الجوّال…" label="بحث في فريق الإدارة" />
+                )}
+                {search.active && search.rows.length === 0 && (
+                    <div className="text-center py-8 font-bold text-[var(--adm-fg-muted,var(--text-secondary))]">🔍 لا مسؤول يطابق بحثك</div>
+                )}
+                {search.rows.map(row => {
                     const isSelf = row.id === user?.id;
                     const isProtected = row.is_super_admin;
                     const isDirty = !isProtected && dirty(row);

@@ -138,7 +138,7 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
         //    الحارسُ كوداً سليماً. وهو فخٌّ تكرّر في هذا المشروع أربع مرّات —
         //    أيُّ فحصٍ بموضعٍ نصّيّ يُجرّد التعليقَ أوّلاً، بلا استثناء.
         const t = fs.readFileSync(ma, 'utf8')
-            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+            .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/\/\/[^\n]*/g, '');
         if (!/registerPlugin\s*\(\s*TakiIapPlugin\.class\s*\)/.test(t)) {
             fail('TakiIapPlugin غيرُ مسجَّلٍ في MainActivity — الـWebView لن يراه.');
         }
@@ -186,7 +186,7 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
 // 🪤 وتُجرَّد التعليقاتُ قبل كلّ فحص — وإلّا اتّهم هذا القسمُ تعليقَه هو.
 // ═══════════════════════════════════════════════════════════════════════════
 {
-    const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const strip = (t) => t.replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/\/\/[^\n]*/g, '');
     // مُطبِّعُ الدمج: `'a' + 'b'` ⇐ `'ab'`، مرّاتٍ متتابعةً حتى يستقرّ.
     const joinLiterals = (t) => {
         let out = t;
@@ -317,7 +317,7 @@ console.log(`✅ امتثالُ الشراء داخل التطبيق: الخرو
     const f = path.join(ROOT, 'android/app/src/main/java/net/takisa/app/TakiIapPlugin.java');
     if (fs.existsSync(f)) {
         const t = fs.readFileSync(f, 'utf8')
-            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+            .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/\/\/[^\n]*/g, '');
         // نداءاتُ الفوترة غيرُ المتزامنة: كلٌّ منها يُسلّم BillingResult.
         const ASYNC = /(queryProductDetailsAsync|queryPurchasesAsync|acknowledgePurchase|startConnection)\s*\(/;
         // الوحداتُ: دوالُّ الإضافة + حقلُ المُستدعى العامّ (listener).

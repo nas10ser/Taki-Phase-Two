@@ -31,7 +31,7 @@ const ROOT = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 /** يُجرَّد تعليقُ السطر وتعليقُ الكتلة وتعليقُ JSX. */
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');

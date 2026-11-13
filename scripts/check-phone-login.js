@@ -31,7 +31,7 @@ const ROOT = path.resolve(__dirname, '..');
 const errors = [];
 
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
 const read = (rel) => {

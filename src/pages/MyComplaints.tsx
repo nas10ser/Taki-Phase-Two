@@ -15,6 +15,8 @@ import { useApp } from '../context/AppContext';
 import {
     complaintRepository, MyComplaint, ComplaintReply, ComplaintStatus,
 } from '../repositories/complaintRepository';
+import SearchField from '../components/SearchField';
+import useListSearch from '../hooks/useListSearch';
 
 const STATUS: Record<ComplaintStatus, { ar: string; en: string; bg: string; fg: string }> = {
     open:      { ar: 'مفتوحة',        en: 'Open',      bg: 'var(--adm-warn-bg, #fdf3dd)', fg: 'var(--adm-warn-fg, #92600a)' },
@@ -189,6 +191,13 @@ const MyComplaints: React.FC = () => {
         setRows(r);
     }, []);
 
+    /**
+     * v16.30 — بحثٌ في شكاواي. 🔴 ويصحّ الترشيحُ في المتصفّح هنا لأنه يُرشّح
+     *    **كلَّ ما تعرضه الشاشة أصلاً**: `mine(50)` بلا «تحميل المزيد»،
+     *    فلا سجلَّ كان ظاهراً ثمّ أخفاه البحث.
+     */
+    const search = useListSearch(rows ?? [], (c) => [c.subject, c.message, c.category, c.status]);
+
     useEffect(() => {
         if (!isAuthReady) return;
         if (!user?.id) { setRows([]); return; }
@@ -259,7 +268,18 @@ const MyComplaints: React.FC = () => {
                 </div>
             ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
-                    {rows.map((c) => {
+                    <SearchField
+                        value={search.q}
+                        onChange={search.set}
+                        isRTL={isRTL}
+                        placeholder={isRTL ? 'ابحث في شكاواك بالموضوع أو النصّ…' : 'Search your complaints by subject or text…'}
+                    />
+                    {search.active && search.rows.length === 0 && (
+                        <div style={{ textAlign: 'center', padding: '34px 16px', fontWeight: 800, color: 'var(--text-secondary, #666)' }}>
+                            🔍 {isRTL ? 'لا شكوى تطابق بحثك' : 'No complaint matches your search'}
+                        </div>
+                    )}
+                    {search.rows.map((c) => {
                         const st = STATUS[c.status] ?? STATUS.open;
                         const open = openId === c.id;
                         return (

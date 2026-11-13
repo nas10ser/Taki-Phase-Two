@@ -39,7 +39,7 @@ const raw = fs.existsSync(appPath) ? fs.readFileSync(appPath, 'utf8') : '';
 /** 🪤 تُجرَّد التعليقاتُ أوّلاً — حارسٌ أمسك تعليقَه هو سبعَ مرّاتٍ في هذا المشروع. */
 const strip = (src) => src
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')   // تعليقُ JSX
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
 const src = strip(raw);

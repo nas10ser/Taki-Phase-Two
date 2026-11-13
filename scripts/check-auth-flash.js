@@ -31,7 +31,7 @@ const SELF = path.relative(ROOT, __filename);
 
 /** تُجرَّد التعليقاتُ قبل أيّ فحصٍ نصّيّ — حارسٌ أمسك تعليقَه هو سبعَ مرّاتٍ هنا. */
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*/gm, '')
     .replace(/([^:'"`\\])\/\/[^'"`\n]*$/gm, '$1');
 

@@ -18,7 +18,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty, AdmSkeleton, AdmButton, AdmError, admNum,
+    AdmSearch, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty, AdmSkeleton, AdmButton, AdmError, admNum,
 } from '../../components/admin/ui';
 import { VerificationPill } from '../../components/admin/verification/VerificationPill';
 import { VerificationPolicyCard } from '../../components/admin/verification/VerificationPolicyCard';
@@ -72,34 +72,49 @@ const AdminVerification: React.FC = () => {
     const [more, setMore] = useState(false);
     const [err, setErr] = useState('');
     const [open, setOpen] = useState<string | null>(null);
+    /**
+     * v16.30 — بحثٌ في طابور التوثيق، **على الخادم**: القائمةُ مُرقَّمةٌ
+     * بمؤشّرٍ زمنيّ وزرِّ «عرض المزيد»، فترشيحٌ في المتصفّح كان يقول
+     * «لا نتيجة» عن طلبٍ موجود في صفحةٍ لم تُحمَّل بعد.
+     * 🪤 و`q` **داخل اعتماد `load`** — وإلّا لم يُعَد الجلبُ أبداً وصار
+     *    الحقلُ ميّتاً بلا أيّ خطأ (نفسُ فخّ شاشة التوصيل في v16.29).
+     */
+    const [qInput, setQInput] = useState('');
+    const [q, setQ] = useState('');
+    useEffect(() => {
+        const t = window.setTimeout(() => setQ(qInput.trim()), 350);
+        return () => window.clearTimeout(t);
+    }, [qInput]);
 
     const load = useCallback(async () => {
         setLoading(true); setErr('');
-        const [q, s] = await Promise.all([
-            verificationRepository.adminList(status, PAGE, null),
+        // 🪤 سُمّي `page` لا `q`: المتغيّرُ المحلّيُّ القديم كان يُظلّل نصَّ
+        //    البحث فيُمرّر نفسَه إلى نفسِه (أمسكه المترجم).
+        const [page, s] = await Promise.all([
+            verificationRepository.adminList(status, PAGE, null, q || null),
             verificationRepository.adminStats(),
         ]);
-        if (!q.ok) { setErr(q.msg || 'تعذّر جلب الطابور من الخادم.'); setRows([]); setNext(null); }
-        else { setRows(q.rows || []); setNext(q.nextCursor || null); setOpen(null); }
+        if (!page.ok) { setErr(page.msg || 'تعذّر جلب الطابور من الخادم.'); setRows([]); setNext(null); }
+        else { setRows(page.rows || []); setNext(page.nextCursor || null); setOpen(null); }
         if (s.ok && s.stats) setStats(s.stats);
         setLoading(false);
-    }, [status]);
+    }, [status, q]);
 
     useEffect(() => { load(); }, [load]);
 
     const loadMore = async () => {
         if (!next || more) return;
         setMore(true);
-        const q = await verificationRepository.adminList(status, PAGE, next);
+        const more2 = await verificationRepository.adminList(status, PAGE, next, q || null);
         setMore(false);
-        if (!q.ok) { setErr(q.msg || 'تعذّر جلب بقيّة الطابور.'); return; }
+        if (!more2.ok) { setErr(more2.msg || 'تعذّر جلب بقيّة الطابور.'); return; }
         // 🪤 المؤشّر زمنيّ، وطلبان في الثانية نفسها واردان — فالدمج بالهويّة
         //    لا بالإلحاق الأعمى، وإلا ظهر صفٌّ مرّتين وبدا الطابور أطول مما هو.
         setRows((prev) => {
             const seen = new Set(prev.map((r) => r.id));
-            return [...prev, ...(q.rows || []).filter((r) => !seen.has(r.id))];
+            return [...prev, ...(more2.rows || []).filter((r) => !seen.has(r.id))];
         });
-        setNext(q.nextCursor || null);
+        setNext(more2.nextCursor || null);
     };
 
     const slaHours = stats?.policy?.sla_hours ?? 24;
@@ -154,7 +169,11 @@ const AdminVerification: React.FC = () => {
         body = <AdmError message={err} onRetry={load} />;
     } else if (rows.length === 0) {
         const m = status ? statusMeta(status) : null;
-        body = (
+        body = q ? (
+            <AdmEmpty icon="🔍" title="لا طلب يطابق بحثك"
+                hint="جرّب رقم الوثيقة أو جوّال المالك أو اسم المتجر."
+                action={<AdmButton size="sm" onClick={() => setQInput('')}>✕ امسح البحث</AdmButton>} />
+        ) : (
             <AdmEmpty
                 icon={status === 'submitted' ? '🎉' : '—'}
                 title={status === 'submitted' ? 'لا طلب ينتظر قرارك' : `لا طلب في حالة «${m?.label || 'الكل'}»`}
@@ -288,6 +307,10 @@ const AdminVerification: React.FC = () => {
                             );
                         })}
                     </div>
+                    {/* v16.30 — الحقلُ **خارج** تفرّع الطابور عمداً: لو كان داخله
+                        لاختفى عند «لا نتيجة» فلم يجد الأدمنُ كيف يمسح بحثَه. */}
+                    <AdmSearch value={qInput} onChange={setQInput}
+                        placeholder="ابحث برقم الوثيقة أو الجوّال أو اسم المتجر…" label="بحث في طابور التوثيق" />
                     {body}
                 </div>
             </AdmSection>

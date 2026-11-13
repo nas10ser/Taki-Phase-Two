@@ -23,7 +23,7 @@ const path = require('path');
 const R = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const stripSql = (s) => s.replace(/^[ \t]*--[^\n]*$/gm, '').replace(/--[^\n]*$/gm, '');
 const stripJs = (s) => s
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');
 

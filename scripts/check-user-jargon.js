@@ -35,7 +35,7 @@ const SELF = path.relative(ROOT, __filename);
 
 const strip = (src) => src
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 
 const isExempt = (rel) => /(^|\/)admin\//.test(rel)

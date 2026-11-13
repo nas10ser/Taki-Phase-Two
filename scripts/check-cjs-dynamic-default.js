@@ -47,7 +47,7 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap(e =>
 
 const files = walk(path.join(root, 'src')).filter(f => /\.(ts|tsx)$/.test(f));
 // 🪤 يُجرَّد التعليقُ أوّلاً: هذا الشرحُ نفسه يحوي النمطَ المحظور.
-const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
+const strip = (s) => s.replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1').replace(/^[ \t]*\/\/[^\n]*$/gm, '');
 const RE = /\(\s*await\s+import\(\s*['"]([^'".][^'"]*)['"]\s*\)\s*\)\s*\.default/g;
 
 for (const f of files) {

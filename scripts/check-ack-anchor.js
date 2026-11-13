@@ -17,7 +17,7 @@ const HOLDS = require('../server/lib/holds');
 
 const R = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const strip = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^[ \t]*|\{)\/\*[\s\S]*?\*\//gm, '$1')
     .replace(/^[ \t]*\/\/[^\n]*$/gm, '')
     .replace(/([^:])\/\/[^\n'"`]*$/gm, '$1');
 const stripSql = (s) => s.replace(/^--[^\n]*$/gm, '').replace(/--[^\n]*$/gm, '');
