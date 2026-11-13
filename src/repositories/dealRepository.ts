@@ -2,43 +2,20 @@ import { Deal } from '../data/mock';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 import { withTimeout } from '../utils/helpers';
+import { hydrateRatingsFor, RATINGS_HYDRATE_CAP } from './ratingsHydrator';
 
 /**
- * v13.22 — ترطيب التقييمات لمجموعة عروض (صفحة واحدة).
- * كان هذا المنطق محشوراً داخل getAll ويعمل على **كل** العروض؛ استُخرج ليعمل
- * على الصفحة المطلوبة فقط، فيبقى الطلب صغيراً مهما كبر الكتالوج.
+ * v16.24 — ترطيبُ التقييمات صار **مساراً واحداً** في `ratingsHydrator.ts`.
+ * وكان هنا تنفيذٌ كامل، **وثانٍ مكتوبٌ بيده داخل `getAll()`** — فتُنزَّل نفسُ
+ * الصفوف مرّتين وثلاثاً. قِيس على الإنتاج في فتحةِ صفحة متجر: نداءان
+ * لـ`ratings` بفارق ٣١ م.ث ومجموعتا المعرّفات فيهما متطابقتان تقريباً.
+ * 🪤 والنسختان كانتا تنحرفان أصلاً: هذه تُسقط `deleted_at`، وتلك في `getAll`
+ *    تكرّر نفسَ التحويل بيدها — وأيُّ عمودٍ يُضاف يُنسى في إحداهما.
  */
 const hydrateRatings = async (deals: Deal[]): Promise<Deal[]> => {
     if (deals.length === 0) return deals;
-    const ids = deals.map(d => d.id);
-    const { data: ratingRows } = await supabase
-        .from('ratings')
-        .select('*')
-        .in('deal_id', ids)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        // v13.29 — سقف. منتج رائج بعشرات آلاف التقييمات كان سيُنزّلها كلها مع
-        // الصفحة. المتوسط والعدد يأتيان من `rating_avg`/`rating_count` المثبّتين
-        // على الصف، وهذه القائمة للعرض فقط — فالسقف لا يُفقد رقماً.
-        .limit(RATINGS_HYDRATE_CAP);
-    const byDeal: Record<string, any[]> = {};
-    for (const r of (ratingRows || [])) {
-        (byDeal[r.deal_id] ||= []).push({
-            id: r.id,
-            userId: r.user_id,
-            userName: r.user_name,
-            score: Number(r.score) || 0,
-            comment: r.comment ?? '',
-            // بتوقيت الجهاز — toISOString (UTC) يرجع اليوم للوراء قبل ٣ فجراً
-            date: r.created_at ? (() => { const d = new Date(r.created_at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '',
-            reply: r.reply ?? undefined,
-            repliedBy: r.replied_by ?? undefined,
-            repliedAt: r.replied_at ?? undefined,
-            likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
-            likeCount: Number(r.like_count) || 0,
-        });
-    }
-    for (const d of deals) d.ratings = byDeal[d.id] || [];
+    const byDeal = await hydrateRatingsFor(deals.map(d => d.id));
+    for (const d of deals) d.ratings = (byDeal[d.id] || []) as any;
     return deals;
 };
 
@@ -48,8 +25,6 @@ export interface DealCursor { createdAt: number; id: string; }
 /** حجم صفحة الواجهة الافتراضي — يملأ عدة شاشات دون إثقال أول رسمة. */
 export const DEALS_PAGE_SIZE = 30;
 
-/** سقف صفوف التقييمات المجلوبة مع صفحة عروض (العرض فقط — الإحصاء مثبَّت). */
-const RATINGS_HYDRATE_CAP = 300;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // v13.24 — محرك التصفّح التجاري (browse)
@@ -397,44 +372,19 @@ export const dealRepository = {
             if (error) throw error;
             if (data) {
                 const mappedData: Deal[] = data.map(dealRepository.mapRowToDeal);
-                // Hydrate ratings from the dedicated table in one round trip.
-                // Empty deal list → skip the second query entirely.
+                // v16.24 — المسارُ الواحد (`ratingsHydrator`). وكان هنا **نسخةٌ
+                // ثانيةٌ كاملةٌ** من نفس المنطق مكتوبةٌ بيدها — ومعها عيبٌ لم
+                // يكن في الأولى: **بلا سقفِ صفوفٍ إطلاقاً**، فكانت تُنزّل كلَّ
+                // تقييمات كلِّ العروض في نداءٍ واحد. والنسختان كانتا تنحرفان
+                // بأيّ عمودٍ يُضاف إلى `ratings`.
                 if (mappedData.length > 0) {
-                    const ids = mappedData.map(d => d.id);
-                    const { data: ratingRows } = await supabase
-                        .from('ratings')
-                        .select('*')
-                        .in('deal_id', ids)
-                        .is('deleted_at', null)
-                        .order('created_at', { ascending: false });
-                    if (Array.isArray(ratingRows) && ratingRows.length > 0) {
-                        const byDeal: Record<string, any[]> = {};
-                        for (const r of ratingRows) {
-                            (byDeal[r.deal_id] ||= []).push({
-                                id: r.id,
-                                userId: r.user_id,
-                                userName: r.user_name,
-                                score: Number(r.score) || 0,
-                                comment: r.comment ?? '',
-                                // بتوقيت الجهاز — toISOString (UTC) يرجع اليوم للوراء قبل ٣ فجراً بتوقيت السعودية
-                                date: r.created_at ? (() => { const d = new Date(r.created_at); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })() : '',
-                                reply: r.reply ?? undefined,
-                                repliedBy: r.replied_by ?? undefined,
-                                repliedAt: r.replied_at ?? undefined,
-                                likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
-                                likeCount: Number(r.like_count) || 0,
-                            });
-                        }
-                        for (const d of mappedData) {
-                            d.ratings = byDeal[d.id] || [];
-                        }
-                    }
+                    await hydrateRatings(mappedData);
                     // Hydrate real/fake authenticity vote counts (+ caller's own
                     // vote) in one round trip via the DEFINER RPC. Best-effort:
                     // a failure just leaves the badge hidden. v11.97
                     try {
                         const { authenticityRepository } = await import('./authenticityRepository');
-                        const counts = await authenticityRepository.counts(ids);
+                        const counts = await authenticityRepository.counts(mappedData.map(d => d.id));
                         for (const d of mappedData) {
                             const c = counts[d.id];
                             if (c) { d.authReal = c.realCount; d.authFake = c.fakeCount; d.myAuthVote = c.myVote; }

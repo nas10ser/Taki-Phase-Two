@@ -1,3 +1,4 @@
+import { invalidateRatings } from './ratingsHydrator';
 import { supabase } from '../services/supabaseClient';
 // v15.53 — الرمزُ الآليّ انتقل إلى `hint` (P0001 وحدها تعبر PostgREST).
 import { isPgCode } from '../utils/pgError';
@@ -31,6 +32,17 @@ const fromRow = (r: any): Rating => ({
     likedBy: Array.isArray(r.liked_by) ? r.liked_by : [],
     likeCount: Number(r.like_count) || 0,
 });
+
+/**
+ * 🔴 v16.24 — **كلُّ كتابةِ تقييمٍ تُبطل ذاكرةَ المسار الواحد.**
+ * `ratingsHydrator` يحتفظ بالقوائم ستّين ثانية ليُسقط النداءات المكرَّرة؛
+ * وبلا إبطالٍ هنا يكتب المستخدمُ تقييماً **ولا يراه** حتى تنتهي المهلة —
+ * وهو أسوأُ من النداء المكرَّر الذي جاءت الذاكرةُ لتُسقطه.
+ * 🪤 وموضعُه **طبقةُ المستودع لا الشاشة**: الشاشاتُ خمسٌ وتُضاف سادسةٌ يوماً،
+ *    والمستودعُ منفذٌ واحدٌ لا يُنسى. وما لا يحمل `dealId` يُبطل الذاكرةَ
+ *    كلَّها — ثانيةٌ من إعادة جلبٍ أرخصُ من تقييمٍ لا يراه صاحبُه.
+ */
+const bust = (dealId?: string) => invalidateRatings(dealId);
 
 export const ratingRepository = {
     listForDeal: async (dealId: string): Promise<Rating[]> => {
@@ -80,6 +92,7 @@ export const ratingRepository = {
         score: number;
         comment: string;
     }): Promise<Rating | 'duplicate' | 'rate_limited' | null> => {
+        bust(input.dealId);
         const id = (typeof crypto !== 'undefined' && (crypto as any).randomUUID)
             ? (crypto as any).randomUUID()
             : `rt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -112,6 +125,7 @@ export const ratingRepository = {
      * merchant can't swap the product and keep an old high rating hostage.
      */
     update: async (ratingId: string, score: number, comment: string): Promise<boolean> => {
+        bust(undefined);
         const { error } = await supabase.rpc('update_rating', {
             p_rating_id: ratingId,
             p_score: score,
@@ -125,6 +139,7 @@ export const ratingRepository = {
     },
 
     toggleLike: async (ratingId: string): Promise<{ likeCount: number; liked: boolean } | null> => {
+        bust(undefined);
         const { data, error } = await supabase.rpc('toggle_rating_like', { p_rating_id: ratingId });
         if (error) {
             console.warn('toggleLike RPC failed:', error.message);
@@ -136,6 +151,7 @@ export const ratingRepository = {
     },
 
     setReply: async (ratingId: string, reply: string): Promise<boolean> => {
+        bust(undefined);
         const { error } = await supabase.rpc('set_rating_reply', { p_rating_id: ratingId, p_reply: reply });
         if (error) {
             console.error('set_rating_reply failed:', error.message);
@@ -145,6 +161,7 @@ export const ratingRepository = {
     },
 
     remove: async (ratingId: string): Promise<boolean> => {
+        bust(undefined);
         const { error } = await supabase.rpc('delete_rating', { p_rating_id: ratingId });
         if (error) {
             console.error('delete_rating failed:', error.message);
