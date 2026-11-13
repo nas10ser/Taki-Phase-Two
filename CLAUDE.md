@@ -1113,6 +1113,39 @@ ssh ubuntu@207.127.99.122 "PREVIEW_DB_URL='<الرابط من ملف المفا�
 
 ---
 
+## 🪤 فخاخ أُضيفت في v16.27 (قياسُ عدد النداءات)
+
+- 🔴 **متصفّحُ الجلسة المدمج يقلب `visibilityState` كلَّ ٦ ثوانٍ** — قِيس
+  بسجلّ `visibilitychange` على صفحة الإنتاج: `visible` عند ٥٦٥٣٤ · ٦٢٥٣٥ ·
+  ٦٨٥٣٤ · ٧٤٥٣٣ · ٨٠٥٣٣ م.ث، وكلُّ ظهورٍ ~٥٠ م.ث ثمّ `hidden` ثانيةً.
+  والموقعُ يُعيد المزامنة عند كلّ عودةٍ من الخفاء (`requestRefresh('visibility')`
+  في `realtimeService` و`fetchNow({throttled})` في `useHomePayload`) ⇒ يظهر في
+  القياس زوجٌ متكرّرٌ من `deals` + `sellers_public` كلّ ٨–١٢ ثانية **بلا توقّف**.
+  وهذا **سلوكُ الأداة لا عيبُ الموقع**: صفحةٌ أمام مستخدمٍ حقيقيّ تبقى `visible`.
+  ⇒ **يُقاس أوّلُ دفقٍ وحده** (أقلّ من ثانيةٍ من بدء التحميل)، وأيُّ تكرارٍ
+  بعده **لا يُسمّى عيباً قبل قراءة سجلّ `visibilitychange`**:
+  ```js
+  window.__v=[];document.addEventListener('visibilitychange',
+    ()=>window.__v.push([Math.round(performance.now()),document.visibilityState]));
+  ```
+- 🔴 **وكِدتُ أتّهم الريل‑تايم كلَّه بسبب ذلك**: كلُّ فتحةٍ تطبع
+  `❌ Realtime global channel error: CHANNEL_ERROR` ومرّتين
+  «WebSocket is closed before the connection is established». والسببُ نفسُه —
+  تقليبُ الرؤية يستدعي `verifyAndReconnect` فيهدم القنوات ويعيد بناءها،
+  فيُغلق مقبساً ما زال `CONNECTING`. **والدليلُ القاطع مسبارٌ مستقلّ**: اتصالٌ
+  خامٌّ (`ws` من Node، ثمّ `new WebSocket` من داخل الصفحة نفسِها) إلى
+  `realtime:rt-global` بنفس الإعداد ونفس مفتاح `anon` يردّ
+  `{"status":"ok"}` في **١٤٩ م.ث**. ⇒ قبل اتّهام طبقةٍ كاملة بالسقوط، افتح
+  إليها **اتصالاً خاماً بنفس المعاملات**؛ رسالةُ الخطأ في الطبقة العليا تصف
+  العَرَض لا السبب.
+- **وخريطةُ النداءات العامّة بعد السلسلة** (مقيسة ١٣ نوفمبر، أوّلُ دفق):
+  الرئيسية **٨** · المتجر ١٠ · العرض ١٠ · المسابقات ٧ · `/deals` ٢ ·
+  `/nearby` ٢ · `/favorites` ١ · القانونيّة ٦. وستٌّ منها **طقمُ إقلاعٍ
+  مشترَك** يصحب كلَّ مسار: `deals` · `sellers_public` · `track_site_visit` ·
+  `sponsors` · `platform_settings` · `ratings`.
+
+---
+
 ## 🎯 الناقص (بالأولوية)
 1. ✅ ~~النشر التلقائي للبوت~~ — **يعمل** (٣ سبتمبر) عبر `.github/workflows/deploy-bot.yml` + سرّ `RENDER_DEPLOY_HOOK`. قِيس: البوت أعاد نشر نفسه وصار على `13.95.0`. **ملاحظة:** ربط Render↔GitHub ما زال ساقطاً، لكن لا أثر له — سير العمل ينادي رابط نشر Render مباشرة. سابقاً — قِيس ٢ سبتمبر: النشر اليدوي من لوحة Render **ينجح** لأن المستودع عام فالاستنساخ المجهول يعمل رغم تحذير «we don't have access to your repo»، لكن الدفع إلى `main` **لا يُطلق نشراً** (webhook من GitHub ساقط). الحل الدائم جاهز في `.github/workflows/deploy-bot.yml` وينتظر سرّاً واحداً: `RENDER_DEPLOY_HOOK` (من Render ← Settings ← Deploy ← Deploy Hook، يُضاف في GitHub ← Settings ← Secrets ← Actions). حتى ذلك الحين: كل تعديل على البوت يحتاج **Manual Deploy** من لوحة Render.
 1.5 ✅ ~~الصور اليتيمة~~ — حُذفت (v14.16)، والنسخة اليومية صارت تشمل الصور.
