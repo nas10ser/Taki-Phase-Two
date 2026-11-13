@@ -88,6 +88,30 @@ for (const f of ['logo512.png', 'logo192.png', 'apple-touch-icon.png',
         got ? `وجدتُ ${hex(got)} والمطلوب ${hex(want)} — أعِد: node scripts/build-logo.js` : err);
 }
 
+// ②ب `favicon.ico` — حاويةٌ تحمل PNGات، فيُقرأ أوّلُ PNG بداخلها
+// 🔴 وسببُ وجودها مقيس: `/favicon.ico` كان يردّ ٤٠٤، وسفاري يطلبه تلقائياً
+//    ثمّ يرتدّ إلى مخزونه القديم — فظهر المربّعُ الأخضر بحرف T في «Add
+//    Bookmark» بينما كلُّ أيقوناتنا الحيّة عنابيّة.
+{
+    let got = null, err = '';
+    try {
+        const ico = B('favicon.ico');
+        const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+        const at = ico.indexOf(sig);
+        if (at < 0) throw new Error('لا PNG داخل favicon.ico');
+        got = firstPixel(ico.slice(at));
+    } catch (e) { err = e.message; }
+    check('favicon.ico: بكسلُ الخلفية يطابق BRAND_BG',
+        !!got && got[0] === want[0] && got[1] === want[1] && got[2] === want[2],
+        got ? `وجدتُ ${hex(got)} والمطلوب ${hex(want)} — أعِد: node scripts/build-favicon.js` : err);
+}
+{
+    const cs = strip(R('scripts/copy-static.js'));
+    check('و`favicon.ico` ضمن ما يُنسخ إلى dist',
+        /'favicon\.ico'/.test(cs),
+        'بلا النسخ يبقى /favicon.ico يردّ ٤٠٤ ويعود سفاري إلى أيقونته القديمة');
+}
+
 // ③ البيان
 const man = JSON.parse(R('manifest.webmanifest'));
 for (const k of ['background_color', 'theme_color']) {
