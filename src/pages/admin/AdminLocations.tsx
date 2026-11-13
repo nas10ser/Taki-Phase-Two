@@ -100,7 +100,7 @@ const AdminLocations: React.FC = () => {
             await customAlert('❌ ' + m); return;
         }
         await load();
-        reloadGeo();           // reflect on the website immediately
+        reloadGeo({ force: true });  // v16.20 — يتخطّى المخزون: المحرِّرُ يرى تعديلَه فوراً
         setForm(null);
         await customAlert(t('✅ تم الحفظ', '✅ Saved'));
     };
@@ -111,7 +111,7 @@ const AdminLocations: React.FC = () => {
         const res = await adminService.deleteLocation(r.id);
         if (!res?.success) { await customAlert('❌ ' + t('فشل الحذف', 'Delete failed')); return; }
         await load();
-        reloadGeo();
+        reloadGeo({ force: true });
     };
 
     const mapCenter: [number, number] = [Number(form?.lat) || 24.7136, Number(form?.lng) || 46.6753];

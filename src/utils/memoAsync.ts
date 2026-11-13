@@ -28,6 +28,17 @@ const done = new Map<string, Entry<any>>();
 /** يُفرَّغ عند الخروج/الدخول: الجوابُ قد يعتمد على هويّة السائل. */
 export const clearAsyncMemo = (): void => { live.clear(); done.clear(); };
 
+/**
+ * يزرع جواباً **جُلب مع غيره** في نداءٍ واحد، فيصير سؤالُ المكوّنِ عنه
+ * إصابةً بلا شبكة. (v16.20: `taki_store_page` تُعيد سياسةَ المتجر وتوثيقَه
+ * وعددَ متابعيه مع بقيّة الصفحة، فتُزرع هنا بدل ثلاثة نداءاتٍ منفصلة.)
+ * 🪤 والمفتاحُ يجب أن يطابق مفتاحَ المنادي حرفاً بحرف — ومفتاحٌ مخالفٌ
+ *    يُنتج نداءً زائداً بلا أيّ خطأٍ ظاهر، وهو ما يحرسه `check-store-page.js`.
+ */
+export const primeAsyncMemo = <T>(key: string, value: T): void => {
+    done.set(key, { at: Date.now(), value });
+};
+
 export const memoAsync = <T>(key: string, ttlMs: number, run: () => Promise<T>): Promise<T> => {
     const hit = done.get(key);
     if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.value as T);

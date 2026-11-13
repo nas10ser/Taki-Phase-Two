@@ -21,6 +21,7 @@ import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
 import { clearAsyncMemo } from '../utils/memoAsync';
+import { readGeoCache, writeGeoCache, mapGeoRow } from '../utils/geoCache';
 import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt } from './ratingPrompts';
 import { mergeDealPages } from './dealMerge';
 import { useOpenOrdersBadge } from './useOpenOrdersBadge';
@@ -80,7 +81,7 @@ interface AppContextType {
     /** Bumps whenever the DB-managed malls/markets list is (re)loaded — lets
      *  consumers that read the bundled LOCATIONS array re-render. (v12.01) */
     geoVersion: number;
-    reloadGeo: () => Promise<void>;
+    reloadGeo: (opts?: { force?: boolean }) => Promise<void>;
     deals: Deal[];
     loading: boolean;
     /** True once the initial Supabase auth check resolves. Use this in
@@ -3353,22 +3354,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // on the website too — one source of truth. Falls back to the bundled list if
     // the fetch is empty/fails. (v12.01)
     const [geoVersion, setGeoVersion] = useState(0);
-    const reloadGeo = useCallback(async () => {
+    const reloadGeo = useCallback(async (opts?: { force?: boolean }) => {
+        // مخزونٌ طازج ⇒ صفرُ نداء. الشرحُ والقياسُ في `utils/geoCache.ts`.
+        if (!opts?.force) {
+            const hit = readGeoCache();
+            if (hit) { replaceLocations(hit as any); setGeoVersion(v => v + 1); return; }
+        }
         try {
             const { data, error } = await supabase
                 .from('locations')
                 .select('id,name,name_en,type,city_id,lat,lng');
             if (error || !data || data.length === 0) return;
-            const mapped: GeoLocation[] = data.map((r: any) => ({
-                id: String(r.id),
-                name: r.name,
-                nameEn: r.name_en || undefined,
-                type: r.type === 'market' ? 'market' : 'mall',
-                cityId: r.city_id,
-                lat: Number(r.lat),
-                lng: Number(r.lng),
-            }));
-            replaceLocations(mapped);
+            const mapped = data.map(mapGeoRow);
+            writeGeoCache(mapped);
+            replaceLocations(mapped as any);
             setGeoVersion(v => v + 1);
         } catch { /* keep the bundled fallback list */ }
     }, []);

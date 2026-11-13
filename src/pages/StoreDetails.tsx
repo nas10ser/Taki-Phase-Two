@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext';
 import { SellerTopBar } from '../components/SellerTopBar';
 import { userRepository } from '../repositories/userRepository';
 import { branchRepository, StoreBranch } from '../repositories/branchRepository';
+import { useStorePage } from '../hooks/useStorePage';
 import { dealService } from '../services/dealService';
 import ReportDialog from '../components/ReportDialog';
 import { blockService } from '../services/blockService';
@@ -270,32 +271,28 @@ const StoreDetails: React.FC = () => {
         return null;
     }, [id, user, deals]);
 
-    const [fetchedStore, setFetchedStore] = useState<any>(null);
-    const [storeFetchDone, setStoreFetchDone] = useState(false);
-
-    // v13.11 (طلب ناصر): نقرأ موقع المتجر المحفوظ فعلاً (إحداثيات + رابط خرائط
-    // + عنوان نصّي) — فالتاجر يحفظ موقعه من «لوحتي» ثم يظهر هنا في «صفحتي».
-    useEffect(() => {
-        if (!id) { setFetchedStore(null); setStoreFetchDone(true); return; }
-        let alive = true;
-        setStoreFetchDone(false);
-        userRepository.findById(id)
-            .then(u => {
-                if (!alive || !u) return;
-                setFetchedStore({
-                    id: u.id,
-                    name: u.shop || u.name || 'متجر',
-                    rating: 5,
-                    lat: (u as any).lat ?? 0,
-                    lng: (u as any).lng ?? 0,
-                    googleMapsLink: (u as any).googleMapsLink || '',
-                    address: u.address || ''
-                });
-            })
-            .catch(() => { /* الرسم المحلي يغطّي */ })
-            .finally(() => { if (alive) setStoreFetchDone(true); });
-        return () => { alive = false; };
-    }, [id]);
+    /**
+     * 🔴 v16.20 — حمولةُ صفحة المتجر في نداءٍ واحد بدل سبعة.
+     * وكان هنا `userRepository.findById(id)` ⇒ `users?select=*`، وقِيس أنها
+     * تعود **`[]` لكلّ زائر** (RLS تحصر `users` في صفّك أو الأدمن) — جولةُ
+     * شبكةٍ كاملةٌ في كلّ فتحةٍ بلا بايتٍ مفيد. الآن `owner` يأتي داخل
+     * الحمولة، وRLS تحكمه كما كانت تماماً: صفُّ المالك له، و`null` للزائر.
+     */
+    const page = useStorePage(id);
+    const storeFetchDone = page.ready;
+    const fetchedStore = React.useMemo(() => {
+        const u = page.owner;
+        if (!u) return null;
+        return {
+            id: u.id,
+            name: u.shop || u.name || 'متجر',
+            rating: 5,
+            lat: Number(u.lat) || 0,
+            lng: Number(u.lng) || 0,
+            googleMapsLink: u.google_maps_link || '',
+            address: u.address || '',
+        };
+    }, [page.owner]);
 
     const store = (fetchedStore && fetchedStore.id === id) ? fetchedStore : localStore;
     const loadingStore = !store && !storeFetchDone;
@@ -339,33 +336,19 @@ const StoreDetails: React.FC = () => {
     const [busyDealId, setBusyDealId] = useState<string | null>(null);
     // v13.17 — «صفحتي» تُجدّد/تُفعّل العروض أيضاً، فتحتاج سقف الباقة نفسه الذي
     // تقرؤه لوحة التاجر (store_profiles.max_branches) لتوائم المواقع قبل الحفظ.
+    // v16.20 — سقفُ الباقة يصل مع الحمولة؛ كان نداءً مستقلاً على `store_profiles`.
+    // 🪤 ويبقى حالةً لا قيمةً مشتقّة: `prepareDealForActivation` يُعيد قراءتَه
+    //    **من القاعدة لحظة الضغط** ويُحدّثه (درس v13.19) — وقيمةٌ مشتقّةٌ
+    //    لا تقبل ذلك التحديث.
     const [ownerMaxLocations, setOwnerMaxLocations] = useState<number>(DEFAULT_MAX_LOCATIONS);
     useEffect(() => {
-        if (!user?.id || user.id !== id) return;
-        let alive = true;
-        (async () => {
-            const { supabase } = await import('../services/supabaseClient');
-            const { data } = await supabase.from('store_profiles')
-                .select('max_branches').eq('store_id', user.id).maybeSingle();
-            if (alive && Number(data?.max_branches) > 0) setOwnerMaxLocations(Number(data!.max_branches));
-        })().catch(() => { /* الافتراضي يغطي */ });
-        return () => { alive = false; };
-    }, [user?.id, id]);
+        if (page.maxBranches && page.maxBranches > 0) setOwnerMaxLocations(page.maxBranches);
+    }, [page.maxBranches]);
 
-    // v13.61 — تحميل الفروع: المالك يحمّل قائمته كاملة (يحتاجها ليبدّل المعروض
-    // منها عند الطلب)، والزائر يحمّل المعروضة فقط مسقوفةً بحدّ الباقة.
-    useEffect(() => {
-        if (!id) return;
-        let alive = true;
-        (async () => {
-            const owner = !!user?.id && user.id === id;
-            const rows = owner
-                ? await branchRepository.listByMerchant(id)
-                : await branchRepository.listDisplayed(id);
-            if (alive) setBranches(rows.filter(b => b.isActive !== false));
-        })().catch(() => { if (alive) setBranches([]); });
-        return () => { alive = false; };
-    }, [id, user?.id]);
+    // v16.20 — الفروعُ تصل مع الحمولة، والقاعدةُ هي من يفرّق بين المالك
+    // والزائر (`taki_store_page`): المالكُ يرى كلَّ النشط، والزائرُ المعروضَ.
+    // 🪤 ويبقى `setBranches` حالةً لأن التاجر يبدّل المعروضَ منها محلّياً.
+    useEffect(() => { setBranches(page.branches); }, [page.branches]);
 
     /* v13.74 (أمر ناصر: «أظهر فقط موقعي المستخدم ضمن الباقة ولا تضيف الخيارات
      * الأخرى») — «صفحتي» صارت **مرآة لما يراه الزبون بالضبط**: المواقع المعروضة

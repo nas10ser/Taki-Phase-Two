@@ -23,6 +23,13 @@ export interface StoreBranch {
     updatedAt?: string;
 }
 
+/**
+ * v16.20 — يُصدَّر لأن `taki_store_page` تُعيد صفوفَ الفروع **خاماً** مع
+ * بقيّة حمولة الصفحة. ولو حُوِّلت هناك بنسخةٍ ثانية لانحرفت الصيغتان بأوّل
+ * عمودٍ يُضاف (نفسُ درس `sanitizeContestRow` في v16.16).
+ */
+export const branchFromRow = (r: any): StoreBranch => fromRow(r);
+
 const fromRow = (r: any): StoreBranch => ({
     id: r.id,
     merchantId: r.merchant_id,
