@@ -1273,7 +1273,7 @@ const StoreDetails: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                            )) : (
+                            )) : activeSearch.active ? null : (
                                 <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📦</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد عروض حالياً' : 'No active deals'}</div>
@@ -1318,7 +1318,7 @@ const StoreDetails: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-                            )) : (
+                            )) : pastSearch.active ? null : (
                                 <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📜</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد عروض سابقة' : 'No past deals'}</div>
@@ -1442,7 +1442,7 @@ const StoreDetails: React.FC = () => {
                                     )}
                                 </div>
                                 );
-                            }) : (
+                            }) : reviewSearch.active ? null : (
                                 <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>💬</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لا توجد تقييمات بعد' : 'No reviews yet'}</div>

@@ -365,7 +365,7 @@ const Profile: React.FC = () => {
                                     </div>
                                     <div style={{ color: 'var(--primary)', fontSize: '1.2rem' }}>{isRTL ? '←' : '→'}</div>
                                 </div>
-                            )) : (
+                            )) : followedSearch.active ? null : (
                                 <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
                                     <div style={{ fontSize: '3rem', marginBottom: 15 }}>🏪</div>
                                     <div style={{ fontWeight: 800 }}>{isRTL ? 'لم تتبع أي متاجر بعد' : 'Not following any stores yet'}</div>

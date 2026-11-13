@@ -118,5 +118,20 @@ for (const [file, name] of [
         '«لا سجلَّ عندك» أثناء بحثٍ لم يطابق تُرسل المستخدمَ خلف شيءٍ يظنّه ضائعاً');
 }
 
+// ── ⑥ ولا رسالتان معاً: «لا سجلَّ عندك» تُكتم أثناء البحث ────────────────
+// 🔴 قِيس على الإنتاج قبل الإصلاح: صفحةُ المتجر كانت تعرض «🔍 لا نتيجة تطابق
+//    بحثك» **و**«📦 لا توجد عروض حالياً» معاً — والثانيةُ كذبٌ على متجرٍ له
+//    سبعةُ عروض. فكلُّ فرعِ فراغٍ فوق قائمةٍ مُرشَّحة يُكتم أثناء البحث.
+for (const [file, name, needles] of [
+    ['src/pages/StoreDetails.tsx', 'صفحةُ المتجر',
+        ['activeSearch.active ? null : (', 'pastSearch.active ? null : (', 'reviewSearch.active ? null : (']],
+    ['src/pages/Profile.tsx', 'المتاجر المتابَعة', ['followedSearch.active ? null : (']],
+]) {
+    const src = strip(R(file));
+    check(`${name}: لا رسالةَ «لا سجلّ» أثناء البحث`,
+        needles.every(n => src.includes(n)),
+        'رسالتان متناقضتان على الشاشة نفسِها — وإحداهما كذب');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);
