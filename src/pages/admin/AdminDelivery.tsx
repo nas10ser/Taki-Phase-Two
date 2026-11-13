@@ -15,7 +15,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { supabase } from '../../services/supabaseClient';
-import { AdmError, AdmSkeleton, AdmEmpty, admNum } from '../../components/admin/ui';
+import { AdmError, AdmSkeleton, AdmEmpty, AdmSearch, admNum } from '../../components/admin/ui';
 import { admCount, MINUTES, SUSPENDED_STORES } from '../../components/admin/ui';
 
 /* 🪤 كانت `ar-SA` تطبع ١٢٬٣٤٥٫٥ بينما عدد الطلبات يُطبع 12345 — بطاقتان
@@ -61,12 +61,26 @@ const AdminDelivery: React.FC = () => {
      *   • و`!ov?.global_on` تساوي صحيحاً ما دامت `ov` عَدَماً، فيصرخ إنذار
      *     «التوصيل موقوف» في **كل فتحةٍ للشاشة** ثم يختفي.
      */
+    /**
+     * v16.29 — بحثٌ في طلبات التوصيل (إكمالُ أمر ناصر «كمل بقية الصفحات»).
+     * 🔴 والبحثُ على الخادم: القائمةُ مسقوفةٌ بـ`shown`، فترشيحٌ في المتصفّح
+     *    يبحث في المعروض وحده ويقول «لا نتائج» عن طلبٍ موجود.
+     * 🪤 والعدّادُ `total` يأتي مُرشَّحاً من نفس الدالّة — عدٌّ غيرُ مُرشَّح
+     *    فوق قائمةٍ مُرشَّحة يقول «٦ طلبات» ويعرض واحداً.
+     */
+    const [qInput, setQInput] = useState('');
+    const [q, setQ] = useState('');
+    useEffect(() => {
+        const t = window.setTimeout(() => setQ(qInput.trim()), 350);
+        return () => window.clearTimeout(t);
+    }, [qInput]);
+
     const load = useCallback(async () => {
         setBusy(true);
         setErr(null);
         const [a, b, c] = await Promise.all([
             supabase.rpc('admin_delivery_overview'),
-            supabase.rpc('admin_delivery_orders', { p_status: status || null, p_limit: shown, p_offset: 0 }),
+            supabase.rpc('admin_delivery_orders', { p_status: status || null, p_limit: shown, p_offset: 0, p_q: q || null }),
             supabase.rpc('admin_delivery_stores'),
         ]);
         const failed = [a.error, b.error, c.error].filter(Boolean);
@@ -82,7 +96,7 @@ const AdminDelivery: React.FC = () => {
         setStores(Array.isArray((c.data as any)?.rows) ? (c.data as any).rows : []);
         setBusy(false);
         setLoaded(true);
-    }, [status, shown]);
+    }, [status, shown, q]);
     useEffect(() => { load(); }, [load]);
 
     const toggleGlobal = async () => {
@@ -226,6 +240,11 @@ const AdminDelivery: React.FC = () => {
             <div className="bg-[var(--card-bg)] rounded-3xl p-4 border border-[var(--border-color)]">
                 <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                     <h3 className="font-black text-sm">📦 طلبات التوصيل ({total})</h3>
+                    <AdmSearch
+                        value={qInput}
+                        onChange={(v) => { setQInput(v); setShown(25); }}
+                        placeholder="ابحث برقم الطلب أو الفاتورة أو الجوّال أو المنتج…"
+                    />
                     <select
                         value={status}
                         onChange={e => { setStatus(e.target.value); setShown(25); }}
@@ -240,8 +259,11 @@ const AdminDelivery: React.FC = () => {
                 ) : orders.length === 0 ? (
                     <AdmEmpty
                         icon="🚚"
-                        title={status ? 'لا طلب توصيل بهذه الحالة' : 'لا طلبات توصيل بعد'}
-                        hint={status
+                        title={q ? 'لا طلب يطابق بحثك'
+                            : status ? 'لا طلب توصيل بهذه الحالة' : 'لا طلبات توصيل بعد'}
+                        hint={q
+                            ? 'جرّب رقم الطلب أو رقم الفاتورة أو جوّال المشتري أو اسم المنتج.'
+                            : status
                             ? 'جرّب حالةً أخرى من القائمة أعلاه، أو اختر «كل الحالات».'
                             : 'أول طلبِ توصيلٍ على المنصّة سيظهر هنا فور إنشائه.'}
                     />

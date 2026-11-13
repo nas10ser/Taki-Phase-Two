@@ -34,6 +34,11 @@ export const OrdersToolbar: React.FC<Props> = ({
     filter, onFilter, activeCount, pastCount, query, onQuery, resultCount, searching, isRTL,
 }) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* 🔴 الحقلُ **فوق** التبويبين (أمرُ ناصر بعد تجربته): أوّلُ ما يصل
+            إليه الإبهامُ عند فتح الشاشة، فالبحثُ هو الهدفُ ساعةَ الشكوى لا
+            اختيارُ التبويب. */}
+        <OrderSearchInput value={query} onChange={onQuery} isRTL={isRTL} />
+
         {/* التبويبان: «نشطة» للطلبات الجارية و«السجل» للمكتملة والملغاة. */}
         <div style={{ display: 'flex', gap: 8, padding: 6, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
             {(['active', 'history'] as const).map(f => {
@@ -67,8 +72,6 @@ export const OrdersToolbar: React.FC<Props> = ({
                 );
             })}
         </div>
-
-        <OrderSearchInput value={query} onChange={onQuery} isRTL={isRTL} />
 
         {searching && (
             <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', paddingInlineStart: 6 }}>

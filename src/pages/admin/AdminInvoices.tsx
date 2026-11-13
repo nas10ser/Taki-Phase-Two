@@ -344,14 +344,16 @@ const AdminInvoices: React.FC = () => {
                 />
             </div>
 
-            {/* v12.84 — البحث الفوري: رقم حجز / رقم عملية / مرجع بوابة */}
+            {/* v12.84 — البحث الفوري · v16.29: أُضيف **رقمُ الفاتورة** والجوّالُ
+                والاسم. 🔴 قِيس قبلها: من يشتكي بـ«فاتورتي TK-000054» لم يكن
+                لناصرَ سبيلٌ لإيجادها في اللوحة إطلاقاً. */}
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 20, padding: 16, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: '1.2rem' }}>🔎</span>
                 <input
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') setSearchTerm(searchInput); }}
-                    placeholder="ابحث برقم الحجز أو رقم العملية أو مرجع البوابة — وتظهر لك على الشاشة كفاتورة متكاملة"
+                    placeholder="ابحث برقم الفاتورة أو الطلب أو الجوّال أو الاسم أو مرجع البوابة — وتظهر لك كفاتورة متكاملة"
                     style={{ ...inputStyle, flex: 1, minWidth: 220 }}
                 />
                 <button onClick={() => setSearchTerm(searchInput)}
@@ -409,7 +411,7 @@ const AdminInvoices: React.FC = () => {
                                 <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>⏳ جاري التحميل…</td></tr>
                             ) : rows.length === 0 ? (
                                 <tr><td colSpan={10} style={{ padding: 32, textAlign: 'center', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                                    {searchTerm ? 'لا نتائج لهذا البحث — تأكد من رقم الحجز/العملية.' : 'لا توجد عمليات دفع بعد — بمجرد ربط أول تاجر بوابته ودفع أول عميل، تظهر العمليات هنا تلقائياً.'}
+                                    {searchTerm ? 'لا نتائج لهذا البحث — جرّب رقم الفاتورة أو الطلب أو جوّال المشتري.' : 'لا توجد عمليات دفع بعد — بمجرد ربط أول تاجر بوابته ودفع أول عميل، تظهر العمليات هنا تلقائياً.'}
                                 </td></tr>
                             ) : rows.map(r => (
                                 <tr key={r.id} style={{ borderTop: '1px solid var(--border-color)' }}>

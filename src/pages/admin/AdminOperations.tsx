@@ -274,7 +274,7 @@ const AdminOperations: React.FC = () => {
             <AdmSection
                 icon="🗒"
                 title="سجلّ العمليات"
-                desc="المرشِّح والبحث يحكمان هذه القائمة وحدها — والأرقام فوقها عن السجلّ كلّه. ابحث برقم الطلب لتصل إليه مباشرة."
+                desc="المرشِّح والبحث يحكمان هذه القائمة وحدها — والأرقام فوقها عن السجلّ كلّه. ابحث برقم الطلب أو الفاتورة أو الجوّال أو الاسم."
                 badge={loading ? undefined : { text: arCount(rows.length, OPERATIONS), tone: 'neutral' }}
             >
                 <div style={{ display: 'grid', gap: 12 }}>
@@ -282,7 +282,7 @@ const AdminOperations: React.FC = () => {
                         value={qInput}
                         onChange={setQInput}
                         label="بحث في سجلّ العمليات"
-                        placeholder="رقم الطلب، أو اسم متجرٍ أو مشترٍ…"
+                        placeholder="رقم الطلب أو الفاتورة أو الجوّال أو اسم متجرٍ أو مشترٍ…"
                     />
 
                     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>

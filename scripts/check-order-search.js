@@ -94,5 +94,49 @@ check('وعددُ النتائج يُصاغ بمحرّك الجمع لا بال�
     /arCount\(resultCount, RESULTS\)/.test(toolbar) && !/\$\{resultCount\} نتيجة/.test(toolbar),
     '«٣ نتيجة» خطأٌ عربيّ — المحرّكُ `arPlural` هو المكان الوحيد');
 
+// ── ⑥ بقيّةُ شاشات السجلّات (v16.29) ─────────────────────────────────────
+const mig29 = strip(R('supabase/JEDDAH_v16_29_admin_record_search.sql'));
+const inv = strip(R('src/pages/admin/AdminInvoices.tsx'));
+const ops = strip(R('src/pages/admin/AdminOperations.tsx'));
+const dlv = strip(R('src/pages/admin/AdminDelivery.tsx'));
+
+check('قاعدةُ المطابقة في دالّةٍ واحدة (`taki_search_key`)',
+    /CREATE OR REPLACE FUNCTION public\.taki_search_key/.test(mig29),
+    'نسخُ القاعدة في كلّ دالّة يضمن انحرافَها عند أوّل تعديل');
+for (const [name, fn] of [
+    ['المدفوعات', 'admin_payment_log'],
+    ['إدارة العمليات', 'admin_operations_log'],
+    ['التوصيل', 'admin_delivery_orders'],
+]) {
+    // 🪤 ويُقصّ الجسمُ عند **الدالّة التالية** لا بعددٍ ثابتٍ من المحارف:
+    //    نافذةُ ٦٠٠٠ محرفٍ كانت تبتلع الدالّةَ التي تليها، فمرّت كسرةٌ
+    //    حقيقيّة (حُذف فرعُ الفاتورة من «المدفوعات» ووجده الحارسُ في جارتها).
+    const i = mig29.indexOf(`FUNCTION public.${fn}`);
+    const nx = i > 0 ? mig29.indexOf('FUNCTION public.', i + 20) : -1;
+    const body = i > 0 ? mig29.slice(i, nx > 0 ? nx : undefined) : '';
+    check(`${name}: فرعُ الفاتورة في الدالّة`,
+        /order_invoices oi/.test(body) && /taki_search_key\(oi\.invoice_no\)/.test(body),
+        'الشاشةُ تَعِد بالبحث في الفاتورة والدالّةُ لا تبحث فيها');
+}
+// 🪤 والوعدُ يُقاس في **نصّ الحقل** لا في الملفّ كلِّه: جملةُ الفراغ تذكر
+//    «الفاتورة» أيضاً، فنزعُها من الـplaceholder كان يمرّ بلا أن يسقط شيء.
+const promises = (src) => /placeholder=\{?"[^"]*الفاتورة[^"]*"/.test(src);
+check('وحقولُ الإدارة الثلاثة تَعِد بالفاتورة',
+    promises(inv) && promises(ops) && promises(dlv),
+    'وعدٌ ناقصٌ في نصّ الحقل يُخفي ميزةً مبنيّة عن من يحتاجها');
+check('التوصيل يمرّر البحثَ إلى الخادم',
+    /p_q: q \|\| null/.test(dlv),
+    'ترشيحٌ في المتصفّح يبحث في المعروض وحده ويقول «لا نتائج» عن طلبٍ موجود');
+check('ونصُّ البحث ضمن اعتماد إعادة الجلب',
+    /\}, \[status, shown, q\]\);/.test(dlv),
+    'بلا `q` في الاعتماد لا يُعاد الجلبُ أبداً — حقلُ بحثٍ ميّتٌ بلا أيّ خطأ');
+check('وفراغُ البحث في التوصيل لا يقول «لا طلبات»',
+    /q \? 'لا طلب يطابق بحثك'/.test(dlv),
+    'نفسُ الكذبة في الشاشة الثالثة');
+check('والهجرةُ تُعيد صلاحيّاتِ دالّة التوصيل بعد DROP',
+    /REVOKE ALL ON FUNCTION public\.admin_delivery_orders[\s\S]{0,200}FROM anon;/.test(mig29)
+    && /GRANT EXECUTE ON FUNCTION public\.admin_delivery_orders[\s\S]{0,120}authenticated/.test(mig29),
+    'الدالّةُ الجديدة تُولد ممنوحةً لـanon في هذا المشروع — الـREVOKE هو ما يسدّها');
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);
