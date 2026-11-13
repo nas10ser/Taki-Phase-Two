@@ -1,4 +1,5 @@
 import { UserProfile, authService } from '../services/authService';
+import { memoAsync } from '../utils/memoAsync';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 import { withTimeout } from '../utils/helpers';
@@ -320,7 +321,9 @@ export const userRepository = {
         // anon/buyers be counted directly (PII lockdown), so a table read would
         // under-count. The RPC counts buyers who follow this store safely.
         try {
-            const { data, error } = await supabase.rpc('store_follower_count', { p_store_id: storeId });
+            const { data, error } = await memoAsync<{ data: any; error: any }>(
+                `store_follower_count:${storeId}`, 60_000,
+                async () => await supabase.rpc('store_follower_count', { p_store_id: storeId }));
             if (error) throw error;
             return Number(data) || 0;
         } catch (e) {

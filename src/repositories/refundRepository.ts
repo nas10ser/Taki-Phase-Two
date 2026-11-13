@@ -11,6 +11,7 @@
  * واحداً في `booking_refunds` مباشرة (لا سياسة كتابة عليها أصلاً).
  */
 
+import { memoAsync } from '../utils/memoAsync';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 
@@ -150,7 +151,9 @@ export const refundRepository = {
      */
     storePolicies: async (storeId: string): Promise<StorePoliciesResult> => {
         try {
-            const { data, error } = await supabase.rpc('store_policies', { p_store_id: storeId });
+            const { data, error } = await memoAsync<{ data: any; error: any }>(
+                `store_policies:${storeId}`, 60_000,
+                async () => await supabase.rpc('store_policies', { p_store_id: storeId }));
             if (error) { logger.warn('store_policies:', error.message); return { ok: false }; }
             const d: any = data || {};
             // v15.43 — ومعها مهلةُ **هذا المتجر** محسوبةً على القاعدة (استثناؤه

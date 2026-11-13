@@ -16,6 +16,7 @@
  * 🪤 ولا تُخترع هنا رسالةُ خطأ: الدوال تُرجع **رمزاً** (`NUMBER_TAKEN`…)
  *    والنصُّ في `SUBMIT_ERRORS` أدناه — مكانٌ واحد يقرؤه كل مَن يعرض الخطأ.
  */
+import { memoAsync } from '../utils/memoAsync';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
 
@@ -301,7 +302,9 @@ export const verificationRepository = {
     isVerified: async (storeId: string): Promise<boolean> => {
         if (!storeId) return false;
         try {
-            const { data, error } = await supabase.rpc('store_is_verified', { p_store_id: storeId });
+            const { data, error } = await memoAsync<{ data: any; error: any }>(
+                `store_is_verified:${storeId}`, 60_000,
+                async () => await supabase.rpc('store_is_verified', { p_store_id: storeId }));
             if (error) { logger.warn('store_is_verified:', error.message); return false; }
             return data === true;
         } catch { return false; }

@@ -20,6 +20,7 @@ import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
 import { supabase } from '../services/supabaseClient';
+import { clearAsyncMemo } from '../utils/memoAsync';
 import { RATE_DISMISS_KEY, loadRateDismissed, pickRatingPrompt } from './ratingPrompts';
 import { mergeDealPages } from './dealMerge';
 import { useOpenOrdersBadge } from './useOpenOrdersBadge';
@@ -957,6 +958,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             try {
                 const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
                     try {
+                        // 🔴 v16.17 — تُفرَّغ ذاكرةُ `memoAsync` عند **أيّ** تبدّلٍ
+                        // في الهويّة (دخولاً أو خروجاً أو انتحالاً أو تجديدَ
+                        // توكن). الأجوبةُ المحفوظةُ عامّةٌ اليوم، لكن ربطَها
+                        // بجلسةٍ ماضيةٍ هو بالضبط النمطُ الذي يُسلّم جوابَ
+                        // حسابٍ لحسابٍ آخر متى تفرّعت دالّةٌ على المنادي.
+                        // والكلفةُ صفر: نداءٌ أو نداءان يُعادان بعد الدخول.
+                        clearAsyncMemo();
                         // Explicit sign-out branch — without this, logging out
                         // left `user` populated until a full reload, so the UI
                         // showed the previous account on a guest session.

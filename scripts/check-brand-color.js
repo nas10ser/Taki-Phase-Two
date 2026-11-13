@@ -104,17 +104,38 @@ check('وكلُّها تطابق BRAND_BG',
     metas.length > 0 && metas.every(v => parse(v).every((c, i) => c === want[i])),
     `القيم: ${metas.join(' · ')}`);
 
-// ⑤ 🔴 بصمةُ الأيقونة في العنوان — وإلّا بقي القديمُ في المخازن والأجهزة.
+// ⑤ 🔴 **المُخرَج، لا المصدر: العناوينُ المبصومةُ وبكسلاتُها.**
+//    وهنا صُحِّح تشخيصٌ خاطئ لي: أضفتُ أوّلاً `?v=` إلى عناوين الأيقونات
+//    ظنّاً أن `max-age` يُبقي القديمة — ثمّ قِيس المُخرَجُ فإذا بارسل يبصم
+//    الاسمَ بنفسه ويُسقط `?v=` كلَّه. فالعقدُ الحقيقيُّ هو **بصمةُ الاسم**،
+//    وهذا ما يُفحص. (ويُتخطّى الفحصُ إن لم يُبنَ بعد — موضعُه سلسلةُ ما
+//    بعد `parcel build`، لا `npm test`.)
 {
-    const manSrc = (man.icons || []).map((i) => String(i.src || ''));
-    const htmlIcons = [...html.matchAll(/<link[^>]+rel="(?:apple-touch-icon|icon)"[^>]*href="([^"]+)"/g)]
-        .map((m) => m[1]);
-    const vOf = (u) => (/[?&]v=([0-9]+)/.exec(u) || [])[1];
-    const all = [...manSrc, ...htmlIcons];
-    check('كلُّ أيقونةٍ معلنةٍ تحمل بصمةَ نسخة', all.length >= 5 && all.every(vOf),
-        `بلا بصمة: ${all.filter((u) => !vOf(u)).join(' · ') || '—'}`);
-    const vs = [...new Set(all.map(vOf))];
-    check('والبصمةُ واحدةٌ في كلّ المواضع', vs.length === 1, `وجدتُ: ${vs.join(' · ')}`);
+    const distHtml = path.join(__dirname, '..', 'dist', 'index.html');
+    if (!fs.existsSync(distHtml)) {
+        check('المُخرَجُ مفحوص', false,
+            'لا dist/index.html — موضعُ هذا الحارس بعد parcel build في سلسلة البناء');
+    } else {
+        const out = fs.readFileSync(distHtml, 'utf8');
+        const outMan = JSON.parse(fs.readFileSync(
+            path.join(__dirname, '..', 'dist', 'manifest.webmanifest'), 'utf8'));
+        const refs = [
+            ...[...out.matchAll(/rel=(?:"?)(?:apple-touch-icon|icon)(?:"?)[^>]*href=(?:"?)(\/[^\s">]+\.png)/g)]
+                .map((m) => m[1]),
+            ...(outMan.icons || []).map((i) => String(i.src || '')),
+        ];
+        check('المُخرَجُ يشير إلى أيقوناتٍ مبصومة', refs.length >= 3
+            && refs.every((u) => /\/[\w-]+\.[0-9a-f]{8}\.png$/.test(u)),
+            `بلا بصمة: ${refs.filter((u) => !/\.[0-9a-f]{8}\.png$/.test(u)).join(' · ') || '—'}`);
+        for (const u of [...new Set(refs)]) {
+            const f = path.join(__dirname, '..', 'dist', u.replace(/^\//, ''));
+            let got = null, err = '';
+            try { got = firstPixel(fs.readFileSync(f)); } catch (e) { err = e.message; }
+            check(`${u.split('/').pop()}: لونُ الهويّة في المُخرَج`,
+                !!got && got.every((c, i) => c === want[i]),
+                got ? `وجدتُ ${hex(got)} والمطلوب ${hex(want)}` : err);
+        }
+    }
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
