@@ -10,7 +10,7 @@ import { useApp } from '../context/AppContext';
 import { dealService } from '../services/dealService';
 import { isDealExpiredByTime, interleaveSponsored, DisplayDeal } from '../utils/helpers';
 import { useDealBrowse } from '../hooks/useDealBrowse';
-import { useDealRail } from '../hooks/useDealRail';
+import { useHomePayload } from '../hooks/useHomePayload';
 import type { BrowseSort } from '../repositories/dealRepository';
 import { useNowTick } from '../utils/useNowTick';
 import LocationGate from '../components/LocationGate';
@@ -19,15 +19,14 @@ import { userRepository } from '../repositories/userRepository';
 import { UserProfile } from '../services/authService';
 import { useEffect, useCallback } from 'react';
 import BannerSlider from '../components/BannerSlider';
+import type { Banner } from '../repositories/bannerRepository';
 import SeasonHero from '../components/SeasonHero';
 import { getSeasonById, campaignPublicLive } from '../data/seasons';
-import { bannerRepository, Banner } from '../repositories/bannerRepository';
-import { contestRepository, isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
+import { isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
 
 // v13.04 — كاش وحدة للبنرات: يبقى بين إعادة تركيب الرئيسية (الرجوع من صفحة المنتج)
 // فيظهر شريط البنر **فوراً** بدل أن يبقى فارغاً منهاراً حتى ينتهي الجلب — كان اختفاؤه
 // ثوانٍ ثم عودته يزيح المحتوى ويربك استعادة موضع التمرير (بلاغ ناصر).
-let _homeBannersCache: Banner[] = [];
 
 const Home: React.FC = () => {
     const history = useHistory();
@@ -55,56 +54,16 @@ const Home: React.FC = () => {
     const [activeGender, setActiveGender] = useState<GenderTarget>('all');
     const [sortBy, setSortBy] = useState<'reliability' | 'discount' | 'price' | 'new'>('reliability');
     const [matchingStores, setMatchingStores] = useState<UserProfile[]>([]);
-    // v13.04 — يُبذَر من كاش الوحدة فيظهر البنر فوراً عند العودة للرئيسية (بلا وميض/اختفاء)
-    const [banners, setBanners] = useState<Banner[]>(() => _homeBannersCache);
     // Advances every ~15s while visible so time-expired deals drop out of the
     // live lists on their own — no data change or refetch needed. v12.06
     const nowTick = useNowTick(15000);
 
     const isRTL = language === 'ar';
 
-    // Image banners (admin) + live contests, surfaced together so shoppers
-    // discover contests in the same hero carousel. Contest slides lead, and a
-    // contest carries its own banner image when the owner uploaded one. (v11.49)
-    const loadBanners = useCallback(() => {
-        Promise.all([
-            bannerRepository.getActive('home_top'),
-            contestRepository.list(),
-        ]).then(([imgBanners, contests]) => {
-            const contestBanners: Banner[] = contests
-                .filter((c) => isContestLive(c) && contestMatchesAudience(c, user?.userType))
-                .map((c) => ({
-                id: `contest-${c.id}`,
-                kind: 'contest' as const,
-                contest: { id: c.id, title: c.title, prize: c.prize, banner_image: c.banner_image },
-                title_ar: c.title, title_en: c.title,
-                image_url: '', target_url: '/contests',
-                position: 'home_top', is_active: true, display_order: -1,
-            }));
-            const merged = [...contestBanners, ...imgBanners];
-            _homeBannersCache = merged; // v13.04 — حدّث الكاش ليظهر فوراً في العودة القادمة
-            setBanners(merged);
-        }).catch(() => { bannerRepository.getActive('home_top').then(b => { _homeBannersCache = b; setBanners(b); }); });
-    }, [user?.userType]);
-
-    // Initial fetch on mount. Deals tab-switch refetching is handled centrally in
-    // realtimeService; banners/contests are refreshed here on resume too, so an
-    // ended contest drops (and a new one appears) without a hard reload — this is
-    // why «البنر لا يتحدّث عند العودة» happened. (v11.49)
-    useEffect(() => {
-        refreshDeals();
-        loadBanners();
-        const onVisible = () => { if (document.visibilityState === 'visible') loadBanners(); };
-        document.addEventListener('visibilitychange', onVisible);
-        window.addEventListener('focus', onVisible);
-        window.addEventListener('pageshow', onVisible);
-        return () => {
-            document.removeEventListener('visibilitychange', onVisible);
-            window.removeEventListener('focus', onVisible);
-            window.removeEventListener('pageshow', onVisible);
-        };
-    }, [refreshDeals, loadBanners]);
-
+    // 🔴 v16.16 — البنراتُ والمسابقاتُ والأشرطةُ الأربعةُ صارت **نداءً واحداً**
+    //    (`useHomePayload`). وكان هنا `loadBanners` + أربعةُ `useDealRail`،
+    //    أي ستّةُ نداءاتٍ وحتّى اثنتا عشرةَ جولةَ شبكةٍ متتابعة. والتحديثُ
+    //    عند العودة للتطبيق صار داخل الخطّاف نفسِه.
     useEffect(() => {
         if (!searchQuery.trim()) {
             setMatchingStores([]);
@@ -149,10 +108,39 @@ const Home: React.FC = () => {
     // المول ليس نطاقاً في التوسّع — يُمرَّر كفلتر صريح حين يختاره المستخدم.
     const railMall = explicitLocationFilter ? (topLocation.mall || null) : null;
 
-    const { deals: trendingBase } = useDealRail(
-        { sort: 'reliability', limit: 8, mall: railMall, blocked: blockedMerchants }, railScope);
-    const { deals: discountBase } = useDealRail(
-        { sort: 'discount', limit: 8, mall: railMall, blocked: blockedMerchants }, railScope);
+
+    const seasonCampaign = platformSettings.seasonCampaign;
+    const seasonLive = campaignPublicLive(seasonCampaign);
+    const activeSeason = seasonCampaign ? getSeasonById(seasonCampaign.seasonId) : undefined;
+    /** الموسمُ لا يُستعلَم عنه إلّا إن كانت حملتُه حيّةً — وإلّا فصفرُ استعلام. */
+    const homeSeasonId = (seasonCampaign && seasonLive) ? (seasonCampaign.seasonId || null) : null;
+
+    const { payload: home } = useHomePayload({
+        city: railScope.city, region: railScope.region, expand: railScope.expand,
+        mall: railMall, seasonId: homeSeasonId, blocked: blockedMerchants,
+    });
+    /**
+     * شرائحُ المسابقات تتصدّر نفسَ الكاروسيل (v11.49) — وهذا دمجُها بعد أن
+     * صارت تصل مع البنرات في نفس النداء.
+     * 🪤 وكان هذا الدمجُ داخل `loadBanners`، فلمّا نُقل الجلبُ إلى الخطّاف
+     *    سقطت الشرائحُ سهواً ثمّ أُعيدت — ولذلك `check-home-payload.js`
+     *    يفحص بقاءَ الدمج لا بقاءَ النداء وحده.
+     */
+    const banners = useMemo<Banner[]>(() => {
+        const contestSlides: Banner[] = home.contests
+            .filter(c => isContestLive(c) && contestMatchesAudience(c, user?.userType))
+            .map(c => ({
+                id: `contest-${c.id}`,
+                kind: 'contest' as const,
+                contest: { id: c.id, title: c.title, prize: c.prize, banner_image: c.banner_image },
+                title_ar: c.title, title_en: c.title,
+                image_url: '', target_url: '/contests',
+                position: 'home_top', is_active: true, display_order: -1,
+            }));
+        return [...contestSlides, ...home.banners];
+    }, [home.contests, home.banners, user?.userType]);
+    const trendingBase = home.trending;
+    const discountBase = home.discount;
 
     const trendingDeals = useMemo(
         // v11.25 — sponsors lead this carousel too (gold first, then every 5).
@@ -167,19 +155,12 @@ const Home: React.FC = () => {
     // تداولاً / أقوى الخصومات». يظهر فقط أثناء النافذة العامة للحملة النشطة،
     // ويعرض العروض الموسومة بموسمها (deals.season_id) مرتّبة بالأقوى خصماً،
     // ورأس الشريط يفتح صفحة الموسم الكاملة (/seasonal).
-    const seasonCampaign = platformSettings.seasonCampaign;
-    const seasonLive = campaignPublicLive(seasonCampaign);
-    const activeSeason = seasonCampaign ? getSeasonById(seasonCampaign.seasonId) : undefined;
 
-    const { deals: seasonDeals } = useDealRail(
-        { sort: 'discount', limit: 12, mall: railMall, blocked: blockedMerchants, seasonId: seasonCampaign?.seasonId || null },
-        railScope,
-        !!(seasonCampaign && seasonLive));
+    const seasonDeals = home.season;
 
     // v11.20 — Coming Soon carousel: عروض تبدأ خلال ٧ أيام فقط (قاعدة ناصر
     // المعتمدة v12.60)، الأقرب إطلاقاً أولاً.
-    const { deals: comingSoonDeals } = useDealRail(
-        { sort: 'soon', mode: 'coming_soon', limit: 12, mall: railMall, blocked: blockedMerchants }, railScope);
+    const comingSoonDeals = home.coming;
 
     // الشبكة الرئيسية — بحث/تصنيف/ترتيب على القاعدة مع ترقيم keyset.
     // أثناء البحث ينتقل الترتيب تلقائياً إلى «أفضل مطابقة».

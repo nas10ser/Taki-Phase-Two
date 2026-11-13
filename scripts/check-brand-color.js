@@ -104,5 +104,18 @@ check('وكلُّها تطابق BRAND_BG',
     metas.length > 0 && metas.every(v => parse(v).every((c, i) => c === want[i])),
     `القيم: ${metas.join(' · ')}`);
 
+// ⑤ 🔴 بصمةُ الأيقونة في العنوان — وإلّا بقي القديمُ في المخازن والأجهزة.
+{
+    const manSrc = (man.icons || []).map((i) => String(i.src || ''));
+    const htmlIcons = [...html.matchAll(/<link[^>]+rel="(?:apple-touch-icon|icon)"[^>]*href="([^"]+)"/g)]
+        .map((m) => m[1]);
+    const vOf = (u) => (/[?&]v=([0-9]+)/.exec(u) || [])[1];
+    const all = [...manSrc, ...htmlIcons];
+    check('كلُّ أيقونةٍ معلنةٍ تحمل بصمةَ نسخة', all.length >= 5 && all.every(vOf),
+        `بلا بصمة: ${all.filter((u) => !vOf(u)).join(' · ') || '—'}`);
+    const vs = [...new Set(all.map(vOf))];
+    check('والبصمةُ واحدةٌ في كلّ المواضع', vs.length === 1, `وجدتُ: ${vs.join(' · ')}`);
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);

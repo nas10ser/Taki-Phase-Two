@@ -71,9 +71,19 @@
           لا يحتاجها زائرٌ عربيّ، ويزاحم حزمةَ جافاسكربت على النطاق. -->
   <link rel="preload" href="/fonts/tajawal-arabic-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/tajawal-arabic-900.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <!-- 🔴 v16.16 — **بصمةٌ في العنوان، وإلّا بقيت الأيقونةُ القديمة أبداً.**
+       بلاغُ ناصر: «حفظتُ الموقع كتطبيق ولم يظهر العنّابيّ». والسببُ مقيس:
+       الملفّات تُخدَم بـ`max-age=86400` واسمُها لا يتغيّر، فجهازٌ زارنا خلال
+       اليوم يقدّم القديمةَ من مخزنه. وأخطرُ منه أن **آيفون يطبع الأيقونةَ
+       لحظةَ «أضف إلى الشاشة الرئيسية» ولا يُراجعها بعدها أبداً** — فمن
+       أضاف التطبيقَ قبل التغيير يبقى على النيفي مهما نشرنا.
+       ⇒ `?v=` يجعل كلَّ أيقونةٍ جديدةٍ **عنواناً جديداً** لا يملك أحدٌ
+       نسخةً منه. ويُرفع الرقمُ متى تغيّرت البكسلات، ويحرسه
+       `scripts/check-brand-color.js`. (ومن أضافها قبلُ يلزمه حذفُها وإعادةُ
+       إضافتها — وهذا سلوكُ النظام لا خيارَ لنا فيه.) -->
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=16">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" type="image/png" href="/logo192.png">
+  <link rel="icon" type="image/png" href="/logo192.png?v=16">
   <style>
     /* ═══════════════════════════════════════════════════════════════════════
        🔴 ومضةٌ بيضاء لكلّ مستخدمٍ في الوضع الداكن — قِيس على الموقع الحيّ:

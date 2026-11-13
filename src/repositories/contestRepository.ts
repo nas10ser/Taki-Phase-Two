@@ -129,6 +129,13 @@ export const contestMatchesAudience = (c: Contest, userType?: string | null): bo
     return userType !== 'seller';
 };
 
+/**
+ * v16.16 — يُصدَّر لأن `taki_home_payload` تُعيد صفوفَ المسابقات **خاماً**
+ * مع بقيّة حمولة الرئيسية في نداءٍ واحد. فلو حُوِّلت هناك بنسخةٍ ثانية
+ * لانحرفت الصيغتان بأوّل عمودٍ يُضاف (درسُ «النسخةُ الثانية تنحرف»).
+ */
+export const sanitizeContestRow = (r: any): Contest => sanitize(r);
+
 const sanitize = (r: any): Contest => ({
     id: r.id,
     title: r.title || '',
