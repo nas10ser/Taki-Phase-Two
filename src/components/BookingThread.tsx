@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { arMessages } from '../utils/arPlural';
 import type { BookingMessage } from '../repositories/bookingRepository';
+import { isChatOpen, chatWindowEndsAt } from '../utils/chatWindow';
+import { minutesLabelGen, holdLabelGen } from '../utils/bookingHold';
 import { chatAttachments } from '../services/chatAttachments';
 import { blockService } from '../services/blockService';
 import { clickable } from '../utils/clickable';
@@ -87,6 +89,26 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
     const cap = platformSettings.chatLimits.perBooking;
 
     const booking = (bookings as any[]).find(b => b.barcode === barcode);
+
+    /**
+     * 🔴 v16.18 — **نافذةُ المحادثة بعد إغلاق الطلب** (بلاغُ ناصر: «الأسئلة
+     * تقول تواصل عبر الشات، والشاتُ يُقفل بعد الاستلام — فكيف يتواصل؟»).
+     * المحادثةُ تبقى مفتوحةً مدّةً مضبوطةً بعد الإغلاق، فيستطيع المشتري أن
+     * يطلب استرداداً أو يُبلّغ عن عيبٍ **في نفس المكان** الذي تَعِد به
+     * الوثيقة. والقاعدةُ هي الحَكَم (`taki_chat_window_open`) وهذه مرآتُها.
+     * 🪤 والقراءةُ تبقى بعد الإغلاق: ما يُقفل هو **الكتابة** وحدها، فالسجلّ
+     *    دليلُ الطرفين عند أيّ شكوى.
+     */
+    const chatOpen = isChatOpen({
+        status: booking?.status,
+        completedAt: booking?.completedAt,
+        expiryTime: booking?.expiryTime,
+    }, platformSettings.chatAfterCloseHours);
+    const windowEndsAt = chatWindowEndsAt({
+        status: booking?.status,
+        completedAt: booking?.completedAt,
+        expiryTime: booking?.expiryTime,
+    }, platformSettings.chatAfterCloseHours);
     const messages: BookingMessage[] = booking?.messages || [];
     const haveMessagesFetched = booking?.messages !== undefined;
 
@@ -453,6 +475,22 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                         </button>
                     </div>
                 )}
+                {!chatOpen ? (
+                    /* 🔴 v16.18 — انتهت نافذةُ ما بعد الإغلاق: القراءةُ تبقى
+                       والكتابةُ تُقفل، ويُقال **الطريقُ البديل** صراحةً بدل
+                       أن يُترك المستخدمُ أمام مربّعٍ لا يُرسل (درسُ v14.08:
+                       سطرٌ يقول الشرطَ خيرٌ من زرٍّ يرفضه الخادم). */
+                    <div style={{
+                        padding: '11px 14px', borderRadius: 14, background: 'var(--body-bg)',
+                        border: '1px dashed var(--border-color)', color: 'var(--text-secondary)',
+                        fontWeight: 800, fontSize: '0.78rem', textAlign: 'center',
+                    }}>
+                        {isRTL
+                            ? '🔒 انتهت مهلةُ الكتابة على هذا الطلب — والمحادثةُ محفوظةٌ للقراءة. لأيّ مشكلةٍ استعمل «📣 الشكاوى» داخل التطبيق.'
+                            : '🔒 The writing window for this order has ended — the thread stays readable. For any issue use “📣 Complaints” in the app.'}
+                    </div>
+                ) : (
+                <>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                     <input
                         ref={fileRef}
@@ -532,6 +570,25 @@ const BookingThread: React.FC<Props> = ({ barcode, myRole }) => {
                         {uploading ? (isRTL ? 'يرفع…' : 'Uploading…') : sending ? '…' : (isRTL ? 'إرسال' : 'Send')}
                     </button>
                 </div>
+                {windowEndsAt !== null && (
+                    /* المهلةُ تُصاغ من مصدرها الحيّ — ولا رقمَ يُكتب في شاشة. */
+                    <div style={{
+                        marginTop: 8, fontSize: '0.72rem', fontWeight: 800,
+                        color: 'var(--text-secondary)', textAlign: 'center',
+                    }}>
+                        {(() => {
+                            const leftMs = Math.max(0, windowEndsAt - Date.now());
+                            const label = leftMs >= 3600_000
+                                ? holdLabelGen(Math.round(leftMs / 3600_000), isRTL)
+                                : minutesLabelGen(Math.max(1, Math.ceil(leftMs / 60_000)), isRTL);
+                            return isRTL
+                                ? `⏳ الطلبُ مُغلق — تبقى الكتابةُ متاحةً ${label}`
+                                : `⏳ Order closed — writing stays open for ${label}`;
+                        })()}
+                    </div>
+                )}
+                </>
+                )}
                 </div>
             )}
         </div>

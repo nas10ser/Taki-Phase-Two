@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
 const BarcodeScanner = React.lazy(() => import('../components/BarcodeScanner'));
-import BookingThread from '../components/BookingThread';
+import OrderChatPanel from '../components/OrderChatPanel';
 const DualCalendarPicker = React.lazy(() => import('../components/DualCalendarPicker'));
 const ImageCropEditor = React.lazy(() => import('../components/ImageCropEditor'));
 const CameraCapture = React.lazy(() => import('../components/CameraCapture'));
@@ -5004,6 +5004,7 @@ const SellerDashboard: React.FC = () => {
                                                 للسجلّ بمسح الرمز أو بضغط المشتري «استلمت طلبي». فيبقى
                                                 المشتري ينتظر قراراً لا يرى التاجرُ مكانَه. */}
                                             {order.paidAt && <RefundPanel order={order} isRTL={isRTL} onChanged={refreshOrderLists} />}
+                                            <OrderChatPanel order={order} myRole="seller" hideWhenClosed />
                                         </div>
                                     );
                                 })
@@ -5216,10 +5217,7 @@ const SellerDashboard: React.FC = () => {
                                         {isRTL ? '❌ إلغاء الطلب' : '❌ Cancel Order'}
                                     </button>
                                 )}
-                                {/* Seller↔Buyer chat thread (3+3). Lives at the bottom of
-                                    each active order card so the seller sees buyer messages
-                                    and can reply without leaving the dashboard. */}
-                                <BookingThread barcode={order.barcode} myRole="seller" />
+                                <OrderChatPanel order={order} myRole="seller" />
                             </div>
                         )) : (
                             <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders'}</div>

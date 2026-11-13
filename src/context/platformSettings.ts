@@ -27,6 +27,14 @@ export interface PlatformSettings {
     seasonCampaign: SeasonCampaign | null;
     sponsorLayout: SponsorLayout;
     bannerSeconds: number;
+    /**
+     * كم ساعةً تبقى محادثةُ الطلب مفتوحةً **بعد إغلاقه**. ٠ = تُقفل فوراً.
+     * 🔴 v16.18 (بلاغُ ناصر): الأسئلةُ الشائعة تقول «تواصل مع التاجر عبر شات
+     *    الحجز» للاسترداد — والشاتُ كان يُقفل **في اللحظة نفسِها** التي
+     *    يكتشف فيها المشتري عيباً. والقاعدةُ هي الحَكَم
+     *    (`taki_chat_window_open`)، وهذه مرآةٌ لها لا حارس.
+     */
+    chatAfterCloseHours: number;
     /** v14.10 — مهلة الحجز بالساعات، مصدرها الوحيد صفّ `booking_holds`.
      *  الافتراضات هنا للعرض حتى يصل الصفّ، والقاعدة هي الحَكَم دائماً.
      *  v15.42 — و`selfCloseMinutes` كم دقيقةً بعد الحجز قبل أن يُسمح بالختم
@@ -91,6 +99,7 @@ export const PLATFORM_SETTING_KEYS = [
     'telegram_bot_enabled', 'whatsapp_bot_enabled', 'whatsapp_bot_number',
     'seasonal_theme', 'season_campaign', 'sponsor_layout',
     'banner_autoplay_seconds', 'booking_holds', 'merchant_vat',
+    'chat_after_close_hours',
     'chat_limits', 'verification', 'refund_window',
     'stock_link_enabled', 'image_cdn_host', 'contact_emails',
 ];
@@ -127,6 +136,7 @@ export const defaultPlatformSettings = (seasonalTheme = ''): PlatformSettings =>
     seasonCampaign: null,
     sponsorLayout: DEFAULT_SPONSOR_LAYOUT,
     bannerSeconds: 2,
+    chatAfterCloseHours: 72,
     bookingHolds: { pickupHours: 2, deliveryHours: 6, selfCloseMinutes: 10 },
     merchantVatRate: 15,
     chatLimits: { perBooking: 0, perHour: 120 },
@@ -253,6 +263,9 @@ export const applyPlatformSetting = (
             // 🪤 `=== true` لا `!== false`: البوتُ «يفشل مفتوحاً» لأنه خدمةٌ
             //    قائمة، وهذه ميزةٌ **لم تُؤكَّد بعد** فتفشل **مغلقة**.
             return prev => ({ ...prev, stockLinkEnabled: value === true });
+        case 'chat_after_close_hours':
+            // 🪤 صفرٌ قيمةٌ صالحةٌ («تُقفل فوراً») فالحدُّ الأدنى ٠ لا ١.
+            return prev => ({ ...prev, chatAfterCloseHours: num(value, 72, 0, 8760) });
         case 'banner_autoplay_seconds':
             // v12.71 — سرعة تنقّل بانر الرئيسية بيد المدير (الافتراضي ثانيتان).
             return prev => ({ ...prev, bannerSeconds: num(value, 2, 1, 120) });
