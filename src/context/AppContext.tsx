@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { flushSync } from 'react-dom';
 import { Deal, getLocation, CITIES, replaceLocations, Location as GeoLocation, findNearestCity } from '../data/mock';
 import { readRememberedFix, rememberFix, forgetFix, isFreshFix } from '../utils/geoMemory';
-import { PlatformSettings, PLATFORM_SETTING_KEYS, defaultPlatformSettings, applyPlatformSetting, applySeasonSkin } from './platformSettings';
+import { PlatformSettings, defaultPlatformSettings, applyPlatformSetting, applySeasonSkin, fetchPlatformSettingRows, invalidatePlatformSettings } from './platformSettings';
 import { getDistance, normalizeArabicNumerals, generateBarcode, getCurrentPositionSafe, Sponsor } from '../utils/helpers';
 import { arCount, DAYS, PIECES, MINUTES } from '../utils/arPlural';
 import { storageService } from '../services/storageService';
@@ -619,11 +619,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         (async () => {
             try {
-                const { data } = await supabase
-                    .from('platform_settings')
-                    .select('key, value')
-                    .in('key', PLATFORM_SETTING_KEYS);
-                (data || []).forEach((r: any) => apply(r.key, r.value));
+                // v16.25 — المنفذُ الواحد: من سبق يفتح الطلبَ والبقيّةُ تنضمّ.
+                const rows = await fetchPlatformSettingRows();
+                rows.forEach((r) => apply(r.key, r.value));
             } catch (e) {
                 console.warn('Platform settings fetch failed:', e);
             }

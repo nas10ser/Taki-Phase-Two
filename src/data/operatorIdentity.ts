@@ -20,7 +20,7 @@
  *    وهو الغرضُ كلُّه. ولا مفتاحَ جديد ⇒ لا هجرة ⇒ لا قاعدةَ «ثلاثةِ مواضع».
  */
 import { useEffect, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { fetchPlatformSetting } from '../context/platformSettings';
 import {
     normalizeOperatorIdentity,
     emptyOperatorIdentity,
@@ -100,9 +100,10 @@ export const applyOperatorIdentityToJsonLd = (id: OperatorIdentity): boolean => 
 
 const fetchIdentity = async (): Promise<OperatorIdentityState> => {
     try {
-        const { data } = await supabase.from('platform_settings')
-            .select('value').eq('key', 'tax_settings').maybeSingle();
-        const id = normalizeOperatorIdentity((data as any)?.value) as OperatorIdentity;
+        // v16.25 — من دفعة الإعدادات الواحدة لا بنداءٍ خاصّ (انظر
+        // `fetchPlatformSettingRows`): كلُّ صفحةٍ فيها تذييلٌ كانت تُطلقه.
+        const value = await fetchPlatformSetting('tax_settings');
+        const id = normalizeOperatorIdentity(value) as OperatorIdentity;
         const st: OperatorIdentityState = {
             ...id,
             complete: operatorIdentityIsComplete(id),

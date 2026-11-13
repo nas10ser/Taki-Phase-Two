@@ -28,6 +28,8 @@ import { CsvColumn } from '../../utils/csvExport';
 import { buildInvoiceHtml, openBlankWindow, fillPrintWindow, invoiceIsPaid, InvoiceCustomer, esc } from '../../utils/invoice';
 import { invoiceQrForPayment } from '../../utils/zatcaQr';
 import { invalidateVatMode } from '../../hooks/useVatMode';
+import { invalidatePlatformSettings } from '../../context/platformSettings';
+import { invalidateOperatorIdentity } from '../../data/operatorIdentity';
 import { normalizeArabicNumerals } from '../../utils/helpers';
 
 // ─── أنواع ───────────────────────────────────────────────────────────────────
@@ -295,6 +297,10 @@ const AdminTax: React.FC = () => {
         setDirty(false);
         // v13.38 — كل واجهات الضريبة تقرأ من useVatMode المخزّن؛ نُبطله هنا
         // فتظهر آثار التفعيل فوراً في كل الصفحات بلا إعادة تحميل.
+        // v16.25 — ويُبطَّل مخزونُ **دفعة الإعدادات** كذلك، وإلّا بقي
+        //          `tax_settings` القديمُ يُقدَّم لكلّ قارئٍ حتى تنتهي مهلتُه.
+        invalidatePlatformSettings();
+        invalidateOperatorIdentity();
         invalidateVatMode();
         await customAlert(settings.vat_enabled && settings.vat_number
             ? '✅ حُفظت الإعدادات — ضريبة الاشتراكات مفعّلة الآن وتظهر على فواتير الباقات. (فواتير طلبات المشترين لا تتأثّر — تلك ترتبط برقم كل تاجر الضريبي وحده.)'

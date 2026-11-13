@@ -1,3 +1,4 @@
+import { fetchPlatformSetting } from '../context/platformSettings';
 import React, { useState, useEffect } from 'react';
 import { useHistory } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
@@ -64,7 +65,7 @@ const MyInvoices: React.FC<{ userId: string; merchantName: string; isRTL: boolea
             .then(({ data }) => { if (alive && data) setRows(data as unknown as InvoicePayment[]); });
         // v12.75 — قراءة مباشرة (المفتاح ضمن القائمة العامة في سياسة RLS):
         // get_setting أُغلقت عن API لأنها كانت تتجاوز RLS وتكشف أي مفتاح.
-        supabase.from('platform_settings').select('value').eq('key', 'tax_settings').maybeSingle()
+        fetchPlatformSetting('tax_settings').then((value) => ({ data: { value } }))
             .then(({ data }) => { if (alive && data?.value && (data.value as any).entity_name) setTaxSettings(data.value as unknown as InvoiceTaxSettings); });
         return () => { alive = false; };
     }, [userId]);
@@ -131,7 +132,7 @@ const Subscription: React.FC = () => {
     const [taxSettings, setTaxSettings] = useState<InvoiceTaxSettings | null>(null);
     useEffect(() => {
         let alive = true;
-        supabase.from('platform_settings').select('value').eq('key', 'tax_settings').maybeSingle()
+        fetchPlatformSetting('tax_settings').then((value) => ({ data: { value } }))
             .then(({ data }) => { if (alive && data?.value) setTaxSettings(data.value as unknown as InvoiceTaxSettings); });
         return () => { alive = false; };
     }, []);

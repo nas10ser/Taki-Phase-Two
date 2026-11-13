@@ -28,6 +28,9 @@ const done = new Map<string, Entry<any>>();
 /** يُفرَّغ عند الخروج/الدخول: الجوابُ قد يعتمد على هويّة السائل. */
 export const clearAsyncMemo = (): void => { live.clear(); done.clear(); };
 
+/** يُبطل مفتاحاً بعينه — بعد حفظٍ يجب أن يسري أثرُه فوراً. */
+export const invalidateAsyncMemo = (key: string): void => { done.delete(key); live.delete(key); };
+
 /**
  * يزرع جواباً **جُلب مع غيره** في نداءٍ واحد، فيصير سؤالُ المكوّنِ عنه
  * إصابةً بلا شبكة. (v16.20: `taki_store_page` تُعيد سياسةَ المتجر وتوثيقَه

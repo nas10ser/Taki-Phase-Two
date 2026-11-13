@@ -1,3 +1,5 @@
+import { memoAsync, invalidateAsyncMemo } from '../utils/memoAsync';
+import { supabase } from '../services/supabaseClient';
 /**
  * platformSettings — إعدادات المنصّة: نوعُها وافتراضاتُها وقارئُها (v14.92)
  * ═══════════════════════════════════════════════════════════════════════════
@@ -102,7 +104,42 @@ export const PLATFORM_SETTING_KEYS = [
     'chat_after_close_hours',
     'chat_limits', 'verification', 'refund_window',
     'stock_link_enabled', 'image_cdn_host', 'contact_emails',
+    // 🔴 v16.25 — `tax_settings` أُضيف إلى **نفس الدفعة** لا إلى نداءٍ ثانٍ.
+    //    قِيس على الإنتاج: كلُّ صفحةٍ فيها تذييلٌ كانت تُطلق نداءً مستقلّاً
+    //    (`key=eq.tax_settings`) من `operatorIdentity`، وثالثاً من `useVatMode`
+    //    في شاشات التاجر. والمفتاحُ في قائمة سماح RLS أصلاً، فإضافتُه هنا
+    //    **صفرُ كلفة**: نفسُ الاستعلام بمفتاحٍ زائد.
+    'tax_settings',
 ];
+
+/**
+ * جلبُ صفوف الإعدادات — **منفذٌ واحدٌ يناديه الجميع** (v16.25).
+ *
+ * 🔴 وكان لكلّ قارئٍ نداؤه: `AppContext` دفعةً، و`operatorIdentity` مفتاحاً،
+ *    و`useVatMode` مفتاحاً، و`Subscription` مرّتين. فنفسُ الصفّ يُجلب ثلاثاً
+ *    في فتحةٍ واحدة. الآن أيُّهم سبق يفتح الطلبَ، والبقيّةُ تنضمّ إليه —
+ *    ومن يأتي خلال المهلة يُصيب المخزون بلا شبكة.
+ * 🪤 والمهلةُ قصيرةٌ عمداً: الإعداداتُ تتغيّر نادراً، لكنّ `AppContext` يشترك
+ *    على `platform_settings` لحظياً أصلاً، فالمخزونُ راحةٌ لا مصدرُ حقيقة.
+ * 🪤 ويُبطَّل صراحةً بعد أيّ حفظٍ من لوحة الإدارة (`invalidatePlatformSettings`).
+ */
+export const fetchPlatformSettingRows = async (): Promise<Array<{ key: string; value: any }>> =>
+    memoAsync('platform_settings:batch', 60_000, async () => {
+        const { data, error } = await supabase
+            .from('platform_settings').select('key, value').in('key', PLATFORM_SETTING_KEYS);
+        if (error) throw error;
+        return (data || []) as Array<{ key: string; value: any }>;
+    });
+
+/** قيمةُ مفتاحٍ واحدٍ من نفس الدفعة — بلا نداءٍ خاصٍّ به. */
+export const fetchPlatformSetting = async (key: string): Promise<any> => {
+    const rows = await fetchPlatformSettingRows();
+    return rows.find(r => r.key === key)?.value ?? null;
+};
+
+export const invalidatePlatformSettings = (): void => {
+    invalidateAsyncMemo('platform_settings:batch');
+};
 
 /**
  * رقمٌ ضمن مجال، وإلا الافتراضي. القيمة قد تصل نصّاً من jsonb.

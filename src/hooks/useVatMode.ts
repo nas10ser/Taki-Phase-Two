@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../services/supabaseClient';
+import { fetchPlatformSetting } from '../context/platformSettings';
 
 /**
  * useVatMode — وضع ضريبة القيمة المضافة للمنصة (v13.38)
@@ -31,9 +31,8 @@ let inflight: Promise<VatMode> | null = null;
 
 const fetchMode = async (): Promise<VatMode> => {
     try {
-        const { data } = await supabase.from('platform_settings')
-            .select('value').eq('key', 'tax_settings').maybeSingle();
-        const v = (data?.value || {}) as Record<string, unknown>;
+        // v16.25 — نفسُ دفعة الإعدادات، لا نداءٌ ثالثٌ لنفس الصفّ.
+        const v = ((await fetchPlatformSetting('tax_settings')) || {}) as Record<string, unknown>;
         const vatNumber = String(v.vat_number || '');
         return {
             // التفعيل وحده لا يكفي: بلا رقم ضريبي لا تُصدر فاتورة ضريبية صحيحة
