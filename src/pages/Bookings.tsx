@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useBookingBrowse } from '../hooks/useBookingBrowse';
+import OrderSearchInput, { emptyOrdersLabel } from '../components/OrderSearchInput';
 import InfiniteScrollSentinel from '../components/InfiniteScrollSentinel';
 import BottomNav from '../components/BottomNav';
 import PushOptIn from '../components/PushOptIn';
@@ -466,32 +467,9 @@ const Bookings: React.FC = () => {
                     <h1 style={{ color: 'white', fontSize: '1.25rem', fontWeight: 900, margin: 0 }}>{isRTL ? 'حجوزاتي 🎟️' : 'My Bookings 🎟️'}</h1>
                     <div style={{ width: 40 }} />
                 </div>
-                <div style={{ 
-                    background: 'rgba(100, 100, 100, 0.15)', 
-                    backdropFilter: 'blur(10px)',
-                    borderRadius: 16, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    border: '1px solid rgba(80, 80, 95, 0.2)'
-                }}>
-                    <input 
-                        placeholder={isRTL ? 'ابحث في حجوزاتك...' : 'Search your bookings...'}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ 
-                            direction: isRTL ? 'rtl' : 'ltr', 
-                            color: 'white', 
-                            flex: 1, 
-                            fontWeight: 600, 
-                            border: 'none', 
-                            background: 'transparent', 
-                            padding: '12px 16px',
-                            outline: 'none',
-                            fontSize: '0.9rem'
-                        }}
-                    />
-                    <div style={{ padding: '0 12px', color: 'white', opacity: 0.8 }}>🔍</div>
-                </div>
+                {/* v16.28 — نفسُ الحقل ونفسُ الوعد في لوحة التاجر (`OrderSearchInput`):
+                    رقمُ الطلب · الفاتورة · الجوّال · المنتج، بحثاً على الخادم. */}
+                <OrderSearchInput value={searchTerm} onChange={setSearchTerm} isRTL={isRTL} tone="header" />
             </div>
 
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
@@ -1064,10 +1042,14 @@ const Bookings: React.FC = () => {
                 )}
                 {!activeLoading && !pastLoading && filteredActive.length === 0 && filteredPast.length === 0 && (
                     <div style={{ textAlign: 'center', padding: '100px 20px' }}>
-                        <div style={{ fontSize: '4rem', marginBottom: 20 }}>🎟️</div>
-                        <div style={{ fontWeight: 800, color: 'var(--text-muted)', fontSize: '1.1rem' }}>{isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found'}</div>
-                        <button onClick={() => history.push('/')} style={{ marginTop: 24, padding: '14px 36px', borderRadius: 16, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900 }}>
-                            {isRTL ? 'تصفح العروض' : 'Browse Deals'}
+                        {/* v16.28 — فراغُ البحث ليس فراغَ الحساب: «لا حجوزات» مع
+                            زرّ «تصفّح العروض» كانت تكذب على من بحث فلم يجد. */}
+                        <div style={{ fontSize: '4rem', marginBottom: 20 }}>{searchTerm.trim() ? '🔍' : '🎟️'}</div>
+                        <div style={{ fontWeight: 800, color: 'var(--text-muted)', fontSize: '1.1rem' }}>
+                            {emptyOrdersLabel(!!searchTerm.trim(), false, isRTL ? 'لا توجد حجوزات حالياً' : 'No bookings found', isRTL)}
+                        </div>
+                        <button onClick={() => searchTerm.trim() ? setSearchTerm('') : history.push('/')} style={{ marginTop: 24, padding: '14px 36px', borderRadius: 16, background: 'var(--primary)', color: 'white', border: 'none', fontWeight: 900 }}>
+                            {searchTerm.trim() ? (isRTL ? 'مسح البحث' : 'Clear search') : (isRTL ? 'تصفح العروض' : 'Browse Deals')}
                         </button>
                     </div>
                 )}

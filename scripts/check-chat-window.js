@@ -87,8 +87,13 @@ try {
 
 // ⑤ التاجرُ يرى المحادثةَ في السجلّ
 const sd = strip(R('src/pages/SellerDashboard.tsx'));
-const pastIdx = sd.indexOf('[...pastOrders]');
-const activeIdx = sd.indexOf('activeOrders.map');
+// 🪤 والمرساةُ تقبل البادئة: v16.28 أعادت تسمية مصدرَي القائمتين إلى
+//    `shownPastOrders`/`shownActiveOrders` (بحثُ الطلبات) — فسقط الفحصان
+//    بلا أن يتغيّر سلوكٌ واحد. مرساةٌ بالاسم الحرفيّ تُفشل البناءَ على
+//    إعادة تسميةٍ سليمة، فتُدرَّب العينُ على تجاهل صراخها.
+const idxOf = (re) => { const m = re.exec(sd); return m ? m.index : -1; };
+const pastIdx = idxOf(/\[\.\.\.\w*[Pp]astOrders\]/);
+const activeIdx = idxOf(/\b\w*[Aa]ctiveOrders\.map/);
 check('محادثةُ الطلب تظهر في سجلّ التاجر أيضاً',
     pastIdx > 0 && activeIdx > pastIdx
     && /<OrderChatPanel[\s\S]{0,160}hideWhenClosed/.test(sd.slice(pastIdx, activeIdx)),

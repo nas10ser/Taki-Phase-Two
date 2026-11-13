@@ -44,7 +44,7 @@ import { splitInclusive, fmtSAR } from '../utils/vat';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
-import OrderCloseActions from '../components/seller/OrderCloseActions';
+import OrderCloseActions from '../components/seller/OrderCloseActions'; import OrdersToolbar, { emptyOrdersLabel } from '../components/seller/OrdersToolbar';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 const StoreLocationPicker = React.lazy(() => import('../components/seller/StoreLocationPicker'));
 
@@ -426,6 +426,7 @@ const SellerDashboard: React.FC = () => {
         } finally { setHoursSaving(false); }
     }, [user, updateStoreProfile, customAlert, isRTL]);
     const [ordersFilter, setOrdersFilter] = useState<'active' | 'history'>('active');
+    const [orderSearch, setOrderSearch] = useState('');   // v16.28 — بحثُ الطلبات
     // Reviews tab — inline reply state. activeReplyId picks
     // which rating is currently in "compose" mode; replyDrafts holds the
     // half-typed text per-rating so switching focus doesn't lose it.
@@ -2786,6 +2787,33 @@ const SellerDashboard: React.FC = () => {
     } = useBookingBrowse({ scope: 'seller', state: 'past' });
 
     /**
+     * v16.28 — بحثُ الطلبات: رقمُ الطلب · الفاتورة · الجوّال · المنتج.
+     * 🔴 قائمةٌ **ثالثةٌ مستقلّة** لا ترشيحٌ للقائمتين أعلاه: هما مصدرُ `myOrders`
+     *    الذي يُغذّي `SellerAnalytics` وعدّادَي اللوحة، فترشيحُهما كان يُبدّل
+     *    أرقامَ التاجر لمجرّد أنه يكتب في مربّع بحث. والبحثُ على الخادم لأن
+     *    القائمة مُرقَّمة: ترشيحٌ في المتصفّح يبحث في ٢٠ طلباً ويقول «لا نتائج»
+     *    عن طلبٍ موجود. و`enabled` يجعلها صفرَ نداءٍ ما دام الحقل فارغاً.
+     */
+    const orderQuery = orderSearch.trim();
+    const searchingOrders = orderQuery.length > 0;
+    const {
+        bookings: foundOrders, total: foundOrdersTotal, hasMore: foundOrdersMore,
+        loading: foundOrdersLoading, loadingMore: foundOrdersLoadingMore, loadMore: loadMoreFoundOrders,
+    } = useBookingBrowse(
+        { scope: 'seller', state: ordersFilter === 'active' ? 'active' : 'past', query: orderQuery },
+        { enabled: searchingOrders },
+    );
+
+    // ما تعرضه الشاشةُ فعلاً: نتائجُ البحث حين يبحث، وإلّا القائمةُ كما كانت.
+    const shownPastOrders = searchingOrders ? foundOrders : pastOrders;
+    const shownActiveOrders = searchingOrders ? foundOrders : activeOrders;
+    const onActiveTab = ordersFilter === 'active';
+    const shownOrdersMore = searchingOrders ? foundOrdersMore : (onActiveTab ? activeOrdersMore : pastOrdersMore);
+    const shownOrdersBusy = searchingOrders ? foundOrdersLoadingMore : (onActiveTab ? activeOrdersLoadingMore : pastOrdersLoadingMore);
+    const loadMoreShownOrders = searchingOrders ? loadMoreFoundOrders : (onActiveTab ? loadMoreActiveOrders : loadMorePastOrders);
+    const emptyOrdersText = (t: string) => emptyOrdersLabel(searchingOrders, foundOrdersLoading, t, isRTL);
+
+    /**
      * v13.71 (بلاغ ناصر: «الإلغاء أو الإتمام لا يحدث في نفس اللحظة ولا ينتقل
      * لسجل الطلبات السابقة — يعلّق»).
      *
@@ -4863,44 +4891,18 @@ const SellerDashboard: React.FC = () => {
                     </div>
                 ) : view === 'orders' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* Sub-tabs: نشطة (active) / السجل (history). History lets the
-                            merchant scroll back through completed + cancelled orders. */}
-                        <div style={{ display: 'flex', gap: 8, padding: 6, background: 'var(--card-bg)', borderRadius: 16, border: '1px solid var(--border-color)' }}>
-                            {(['active', 'history'] as const).map(f => {
-                                const count = f === 'active' ? activeOrdersTotal : pastOrdersTotal;
-                                const label = f === 'active'
-                                    ? (isRTL ? 'نشطة' : 'Active')
-                                    : (isRTL ? 'السجل' : 'History');
-                                const icon = f === 'active' ? '🔔' : '📜';
-                                const selected = ordersFilter === f;
-                                return (
-                                    <button
-                                        key={f}
-                                        type="button"
-                                        onClick={() => setOrdersFilter(f)}
-                                        style={{
-                                            flex: 1, padding: '10px 12px', borderRadius: 12, border: 'none',
-                                            background: selected ? 'var(--accent)' : 'transparent',
-                                            color: selected ? 'white' : 'var(--text-secondary)',
-                                            fontWeight: 900, fontSize: '0.85rem',
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                                            cursor: 'pointer', transition: 'all 0.2s ease',
-                                            boxShadow: selected ? '0 6px 14px rgba(0,0,0,0.15)' : 'none'
-                                        }}>
-                                        <span>{icon}</span>
-                                        <span>{label}</span>
-                                        <span style={{
-                                            background: selected ? 'rgba(255,255,255,0.25)' : 'var(--gray-100)',
-                                            color: selected ? 'white' : 'var(--text-primary)',
-                                            padding: '2px 8px', borderRadius: 10, fontSize: '0.75rem', fontWeight: 900
-                                        }}>{count}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        {/* التبويبان + البحث — `OrdersToolbar` (v16.28). */}
+                        <OrdersToolbar
+                            filter={ordersFilter} onFilter={setOrdersFilter}
+                            activeCount={activeOrdersTotal} pastCount={pastOrdersTotal}
+                            query={orderSearch} onQuery={setOrderSearch}
+                            searching={searchingOrders}
+                            resultCount={foundOrdersLoading ? null : foundOrdersTotal}
+                            isRTL={isRTL}
+                        />
                         {ordersFilter === 'history' ? (
-                            pastOrders.length > 0 ? (
-                                [...pastOrders].sort((a, b) => (b.bookedAt || 0) - (a.bookedAt || 0)).map(order => {
+                            shownPastOrders.length > 0 ? (
+                                [...shownPastOrders].sort((a, b) => (b.bookedAt || 0) - (a.bookedAt || 0)).map(order => {
                                     const isCompleted = order.status === 'completed';
                                     const statusLabel = isCompleted
                                         ? (isRTL ? 'مكتمل' : 'Completed')
@@ -5009,9 +5011,9 @@ const SellerDashboard: React.FC = () => {
                                     );
                                 })
                             ) : (
-                                <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا يوجد سجل طلبات بعد' : 'No order history yet'}</div>
+                                <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{emptyOrdersText(isRTL ? 'لا يوجد سجل طلبات بعد' : 'No order history yet')}</div>
                             )
-                        ) : activeOrders.length > 0 ? activeOrders.map(order => (
+                        ) : shownActiveOrders.length > 0 ? shownActiveOrders.map(order => (
                             <div
                                 key={order.barcode}
                                 id={`order-${order.barcode}`}
@@ -5220,21 +5222,21 @@ const SellerDashboard: React.FC = () => {
                                 <OrderChatPanel order={order} myRole="seller" />
                             </div>
                         )) : (
-                            <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders'}</div>
+                            <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>{emptyOrdersText(isRTL ? 'لا توجد طلبات نشطة حالياً' : 'No active orders')}</div>
                         )}
 
                         {/* v13.28 — الطلبات تصل صفحةً صفحة؛ هذا الزر يجلب التالية.
                             بدونه لا يرى التاجر إلا أول ٢٠ طلباً. */}
-                        {((ordersFilter === 'active' && activeOrdersMore) || (ordersFilter === 'history' && pastOrdersMore)) && (
+                        {shownOrdersMore && (
                             <button
-                                onClick={() => ordersFilter === 'active' ? loadMoreActiveOrders() : loadMorePastOrders()}
-                                disabled={ordersFilter === 'active' ? activeOrdersLoadingMore : pastOrdersLoadingMore}
+                                onClick={() => loadMoreShownOrders()}
+                                disabled={shownOrdersBusy}
                                 style={{
                                     width: '100%', marginTop: 14, padding: '14px', borderRadius: 16,
                                     background: 'var(--card-bg)', border: '1px solid var(--border-color)',
                                     fontWeight: 900, color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.95rem',
                                 }}>
-                                {(ordersFilter === 'active' ? activeOrdersLoadingMore : pastOrdersLoadingMore)
+                                {shownOrdersBusy
                                     ? (isRTL ? '⏳ جاري التحميل…' : '⏳ Loading…')
                                     : (isRTL ? '⬇️ تحميل طلبات أقدم' : '⬇️ Load older orders')}
                             </button>
