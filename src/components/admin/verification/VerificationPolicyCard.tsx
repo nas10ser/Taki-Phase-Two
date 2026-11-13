@@ -23,7 +23,7 @@ import { useApp } from '../../../context/AppContext';
 import { supabase } from '../../../services/supabaseClient';
 import { writePlatformSetting } from '../../../services/platformSettingWrite';
 import { normalizeArabicNumerals } from '../../../utils/helpers';
-import { holdLabelGen } from '../../../utils/bookingHold';
+import { holdLabelGen, hoursOrDaysGen } from '../../../utils/bookingHold';
 import { AdmSection, AdmButton, AdmStat, AdmStatGrid } from '../ui';
 import { verificationRepository } from '../../../repositories/verificationRepository';
 import type { VerificationStats } from '../../../repositories/verificationRepository';
@@ -155,7 +155,7 @@ export const VerificationPolicyCard: React.FC = () => {
             await customAlert('⚠️ المهلة بين ساعة واحدة و٧٢٠ ساعة (٣٠ يوماً).'); return;
         }
         if (await save({ sla_hours: n }, 'sla')) {
-            await customAlert(`✅ صار الوعد «نردّ خلال ${holdLabelGen(n, true)}».`);
+            await customAlert(`✅ صار الوعد «نردّ خلال ${hoursOrDaysGen(n, true)}».`);
         }
     };
 

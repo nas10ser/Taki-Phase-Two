@@ -10,6 +10,7 @@
 // ملاحظة نظامية: هذه فاتورة/سند طلب من «تاكي» لتسهيل التشغيل، وليست الفاتورة
 // الضريبية (زاتكا) — تلك يصدرها التاجر من نظامه لأن الدفع يتم على حسابه.
 
+import { buyerNoteFromNotes } from './buyerNote';
 import { code128SVG } from './barcode128';
 import { KSA_VAT_RATE, fmtSAR } from './vat';
 import { qrFromTlv, isValidSaudiVat } from './zatcaQr';
@@ -140,8 +141,10 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
     const totalAmount = serverTotal
         ?? (tm ? parseFloat(tm[1]) : (Number(order?.paidAmount) > 0 ? Number(order?.paidAmount) : undefined));
     const totalText = totalAmount != null ? `${totalAmount} ${isRTL ? 'ر.س' : 'SAR'}` : undefined;
-    const bn = notes.match(/📝\s*([\s\S]*?)(?:\n💰|$)/);
-    const buyerNote = bn && bn[1].trim() ? bn[1].trim() : undefined;
+    // v16.23 — القاعدةُ في `utils/buyerNote.ts` وحدها (وتوأمُها على القاعدة
+    // لفاتورة البوت). وكان هنا نمطٌ يشترط بادئة `📝` لم يعد يكتبها أحد،
+    // فسقطت **٦٠ ملاحظةً من ٦١** عن الورقة بلا أيّ أثرٍ ظاهر.
+    const buyerNote = buyerNoteFromNotes(notes);
     // v14.06 — التوصيل: الرسوم تدخل الإجمالي (كما يدفعها المشتري فعلاً). سطر
     // «الإجمالي» في الملاحظات يكتبه الموقع شاملاً الرسوم، فلا تُضاف مرتين.
     const fulfillment: 'pickup' | 'delivery' = order?.fulfillment === 'delivery' ? 'delivery' : 'pickup';

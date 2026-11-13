@@ -33,7 +33,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { normalizeArabicNumerals } from '../../utils/helpers';
-import { holdLabelGen } from '../../utils/bookingHold';
+import { holdLabelGen, hoursOrDaysGen } from '../../utils/bookingHold';
 import {
     verificationRepository, DOC_KINDS, docKindInfo, rejectReason, submitErrorText,
     DocKind, MyVerification,
@@ -130,8 +130,9 @@ const VerificationCard: React.FC = () => {
     const mode = st ? st.mode : (cfg?.vacation && setMode === 'required' ? 'advisory' : setMode);
     const slaRaw = Number(st ? st.slaHours : cfg?.slaHours);
     const sla = Number.isFinite(slaRaw) && slaRaw > 0 ? slaRaw : 24;
-    const slaAr = holdLabelGen(sla, true);
-    const slaEn = holdLabelGen(sla, false);
+    // v16.23 — تُصاغ أياماً حين تكون المهلةُ أياماً (٢٤٠ ساعة ⇒ «١٠ أيام»).
+    const slaAr = hoursOrDaysGen(sla, true);
+    const slaEn = hoursOrDaysGen(sla, false);
 
     /** لا نجلب إلا حين لا نعلم يقيناً أنها مُطفأة — فإعداداتٌ لم تصل ليست «off». */
     const shouldLoad = !!userId && (!platformSettingsReady || setMode !== 'off');

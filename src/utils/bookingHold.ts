@@ -15,7 +15,7 @@
 // والرسائلُ معاً. 🪤 وصُحِّح عيبٌ صامت كان هنا: `n <= 10` تشمل **الكسور**
 // وما دون الواحد، فـ«٠٫٥ ساعات» و«٢٫٥ ساعات» كانتا تُكتبان جمعَ قلّة —
 // ومهلة الحجز تقبل كسوراً فوق أرضيّتها (١٫٥). `arCount` تعامل الكسر معاملة المفرد.
-import { arCount, HOURS, MINUTES, enCount } from './arPlural';
+import { arCount, HOURS, MINUTES, DAYS, enCount } from './arPlural';
 
 const arHours = (n: number): string => arCount(n, HOURS);
 const arHoursGen = (n: number): string => arCount(n, HOURS, true);
@@ -28,6 +28,26 @@ export const holdLabel = (n: number, isRTL: boolean): string =>
 /** نصّ المهلة بعد حرف جرّ: «خلال ساعتين» / «within two hours». */
 export const holdLabelGen = (n: number, isRTL: boolean): string =>
     isRTL ? arHoursGen(n) : enHours(n);
+
+/**
+ * مدّةٌ بالساعات تُصاغ **أياماً حين تستحقّ ذلك** (v16.23).
+ *
+ * 🔴 سببُها مقيس (سؤالُ ناصر ١٣ نوفمبر): مهلةُ مراجعة التوثيق إعدادٌ بالساعات
+ *    (١–٧٢٠)، وأراد أن يجعلها عشرة أيام. فلو كتب ٢٤٠ لقال النصُّ للتاجر
+ *    «نراجع الطلب خلال ٢٤٠ ساعة» — رقمٌ صحيحٌ وصياغةٌ لا يقولها بشر.
+ * ⇒ مضاعفُ اليوم الكامل من يومين فأكثر يُصاغ أياماً، وما دونه يبقى ساعات.
+ * 🪤 ولا يُمسّ `holdLabelGen`: مهلُ الحجز ساعاتٌ قليلةٌ (٢ · ٦) وتغييرُ
+ *    صياغتها يمسّ نصوصاً قانونيّةً لا علاقة لها بهذا السؤال.
+ * 🪤 و«٢٤ ساعة» تبقى ساعاتٍ عمداً: هي الوعدُ القائم اليوم، وتحويلُها إلى
+ *    «يوم واحد» تغييرُ نصٍّ ظاهرٍ لم يطلبه أحد.
+ */
+export const hoursOrDaysGen = (n: number, isRTL: boolean): string => {
+    const days = n / 24;
+    if (n >= 48 && Number.isInteger(days)) {
+        return isRTL ? arCount(days, DAYS, true) : enCount(days, 'day', 'days');
+    }
+    return holdLabelGen(n, isRTL);
+};
 
 // ── v15.42 — مهلةُ الختم بلا كود، بالدقائق ─────────────────────────────────
 // 🪤 ولماذا دالّةٌ هنا لا نصٌّ في الشاشة: العربيّةُ تحتاج خمسَ صيغٍ للمعدود،
