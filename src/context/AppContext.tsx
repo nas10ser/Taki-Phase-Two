@@ -408,7 +408,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // اشتراكات تُسجّل مرة واحدة، ولو أُعيد بناؤها لاحتجنا إعادة الاشتراك كلّه.
     const userIdRef = useRef<string | undefined>(undefined);
     /** آخرُ هويّةٍ رآها مستمعُ المصادقة — التفريغُ على تبدّلها وحده (v16.25). */
-    const lastAuthUidRef = useRef<string | null | undefined>(undefined);
+    /** آخرُ هويّةٍ رآها المستمع — يبدأ `null` لأن المجهولَ يصل بـ`null`. */
+    const lastAuthUidRef = useRef<string | null>(null);
     const languageRef = useRef<'ar' | 'en'>('ar');
     const ratingPromptRef = useRef<{ barcode: string; dealId: string; storeId: string; storeName: string; myVote?: boolean | null } | null>(null);
     const ingestDealsRef = useRef<(incoming: Deal[]) => void>(() => {});
