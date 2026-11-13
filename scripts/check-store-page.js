@@ -43,7 +43,11 @@ for (const [n, re] of [
     ['لا قراءةَ لسقف الباقة مستقلّة', /select\(\s*['"]max_branches['"]/],
 ]) check(n, !re.test(page), 'عاد نداءٌ مستقلٌّ — والعقدُ نداءٌ واحد');
 
-// ② الزرعُ بمفاتيح المنادين حرفاً بحرف
+// ② 🔴 **الحجزُ بمفاتيح المنادين حرفاً بحرف، وأثناء التصيير لا بعده.**
+//    قِيس على الإنتاج أن الزرعَ **بعد** وصول الحمولة لا يُسقط شيئاً: React
+//    يُشغّل آثارَ الأبناء **قبل** أثر الأب، فتخرج نداءاتُهم الثلاثةُ أوّلاً.
+//    (١٦ نداءً وفيها السياسةُ والتوثيقُ والمتابعون كاملةً.) فالعقدُ ثلاثةٌ:
+//    مفتاحٌ مطابق · وحجزٌ بوعدٍ طائر · ويقع في `useMemo` (تصيير) لا `useEffect`.
 const keys = [
     ['store_policies', 'src/repositories/refundRepository.ts'],
     ['store_is_verified', 'src/repositories/verificationRepository.ts'],
@@ -52,21 +56,17 @@ const keys = [
 for (const [k, file] of keys) {
     const caller = strip(R(file));
     const used = new RegExp('`' + k + ':\\$\\{storeId\\}`').test(caller);
-    const primed = new RegExp('primeAsyncMemo\\(\\s*`' + k + ':\\$\\{storeId\\}`').test(hook);
-    check(`«${k}» يُزرع بنفس مفتاح منادِيه`, used && primed,
-        `المنادي=${used} · الزرع=${primed} — ومفتاحٌ مخالفٌ يُنتج نداءً زائداً بلا خطأ`);
+    const held = new RegExp('reserveAsyncMemo\\(\\s*`' + k + ':\\$\\{storeId\\}`').test(hook);
+    check(`«${k}» يُحجز بنفس مفتاح منادِيه`, used && held,
+        `المنادي=${used} · الحجز=${held} — ومفتاحٌ مخالفٌ يُنتج نداءً زائداً بلا خطأ`);
 }
-// 🪤 ويُقاس داخل **كتلة النجاح** وحدها: `setData` ترد قبلها مرّتين (التصفير
-//    ومسارُ الخطأ)، فمقارنةُ أوّلِ ورودٍ في الملفّ كانت تمرّ دائماً — كسرةُ
-//    «انقل الزرعَ بعد التصيير» مرّت خضراء حتى ضُيِّق المدى.
-{
-    const ok = hook.indexOf('const row: any = p;');
-    const body = ok > 0 ? hook.slice(ok) : '';
-    check('والزرعُ يسبق التصيير',
-        ok > 0 && body.indexOf('primeAsyncMemo') > 0
-        && body.indexOf('primeAsyncMemo') < body.indexOf('setData({'),
-        'لو صُيِّر قبل الزرع لسبق مكوّنٌ الزرعَ بنداءٍ من عنده');
-}
+check('والحجزُ يقع أثناء التصيير (useMemo) لا في أثرٍ',
+    /useMemo\(\s*\n?\s*\(\)\s*=>\s*\(storeId \? startStorePage\(storeId\)/.test(hook)
+    && hook.indexOf('reserveAsyncMemo') < hook.indexOf('useEffect('),
+    'أثرُ الأب يأتي بعد آثار الأبناء — فالحجزُ فيه يصل متأخّراً');
+check('ولكلّ مفتاحٍ ارتدادٌ إلى ندائه عند فشل الحمولة',
+    (hook.match(/\.catch\(\(\) => fall\('/g) || []).length === 3,
+    'بلا ارتدادٍ يُسقط فشلُ نداءٍ واحدٍ السياسةَ والتوثيقَ والمتابعين معاً');
 
 // ③ عقدُ صفّ المالك
 const ownerMatch = /'owner',\s*\(SELECT jsonb_build_object\(([\s\S]*?)\)\s*FROM public\.users/.exec(sql);

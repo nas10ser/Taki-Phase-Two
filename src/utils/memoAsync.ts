@@ -39,6 +39,26 @@ export const primeAsyncMemo = <T>(key: string, value: T): void => {
     done.set(key, { at: Date.now(), value });
 };
 
+/**
+ * يحجز مفتاحاً بـ**وعدٍ طائر** قبل أن يُسأل عنه — لا بجوابٍ جاهز.
+ *
+ * 🔴 ولماذا لا يكفي `primeAsyncMemo` (قِيس على الإنتاج ١٣ نوفمبر ٢٠٢٦):
+ *    React يُشغّل آثارَ **الأبناء قبل الأب**. فـ`StorePolicies` و
+ *    `VerifiedBadge` يسألان في أثرِهما، و`useStorePage` في أثرِ الأب —
+ *    أي **بعدهما**. فالزرعُ بعد وصول الحمولة يصل متأخّراً، وقد خرجت
+ *    نداءاتُهما الثلاثة أصلاً. (قِيس: ١٦ نداءً وفيها الثلاثةُ كاملة.)
+ * ⇒ الحجزُ يقع **أثناء تصيير الأب** (داخل `useMemo`)، فيجد الابنُ وعداً
+ *   قائماً ينضمّ إليه بدل أن يفتح نداءً ثانياً.
+ * 🪤 ولا يدهس طلباً قائماً ولا جواباً حيّاً — من سبق فهو أحدثُ أو مساوٍ.
+ */
+export const reserveAsyncMemo = <T>(key: string, p: Promise<T>): void => {
+    if (live.has(key) || done.has(key)) return;
+    const wrapped = p
+        .then((v) => { done.set(key, { at: Date.now(), value: v }); return v; })
+        .finally(() => { live.delete(key); });
+    live.set(key, wrapped);
+};
+
 export const memoAsync = <T>(key: string, ttlMs: number, run: () => Promise<T>): Promise<T> => {
     const hit = done.get(key);
     if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.value as T);

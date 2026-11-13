@@ -22,9 +22,9 @@
  *    أجوبتُها في `memoAsync` بنفس مفاتيحها، فيصير سؤالُها إصابةً بلا شبكة.
  *    وهذا أقلُّ خطراً من إعادة توصيل ثلاثة مكوّناتٍ تعمل.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { primeAsyncMemo } from '../utils/memoAsync';
+import { reserveAsyncMemo } from '../utils/memoAsync';
 import { branchFromRow } from '../repositories/branchRepository';
 import type { StoreBranch } from '../repositories/branchRepository';
 
@@ -43,22 +43,53 @@ const EMPTY: StorePageData = {
     isOwner: false, store: null, owner: null, branches: [], maxBranches: null, ready: false,
 };
 
+/**
+ * يُطلق الحمولةَ **مرّةً واحدةً لكلّ متجر** ويحجز مفاتيحَ الثلاثة فوراً.
+ * 🪤 خريطةُ الطائر تُنظَّف عند الحسم: بقاؤها يجعل كلَّ فتحةٍ لاحقةٍ تُقدَّم
+ *    من جوابٍ قديمٍ أبداً — وهو عيبٌ أهدأ من النداء المكرَّر وأسوأ منه.
+ * 🪤 وكلُّ مفتاحٍ محجوزٍ له **ارتدادٌ إلى ندائه المستقلّ** عند فشل الحمولة،
+ *    وإلّا سقطت السياسةُ والتوثيقُ والمتابعون معاً بسقوط نداءٍ واحد.
+ */
+const inflight = new Map<string, Promise<any>>();
+
+const startStorePage = (storeId: string): Promise<any> => {
+    const hit = inflight.get(storeId);
+    if (hit) return hit;
+    // 🪤 ومُنشئُ سوبابيس «شبيهُ وعد» (`PromiseLike`) لا وعدٌ كامل: بلا
+    //    `Promise.resolve` لا `catch` ولا `finally` عليه.
+    const p: Promise<any> = Promise.resolve(
+        supabase.rpc('taki_store_page', { p_store_id: storeId }) as any,
+    ).then(({ data, error }: any) => { if (error) throw error; return data || {}; });
+    inflight.set(storeId, p);
+    void p.catch(() => undefined).finally(() => { inflight.delete(storeId); });
+
+    const fall = async (fn: string): Promise<any> => await supabase.rpc(fn, { p_store_id: storeId });
+    reserveAsyncMemo(`store_policies:${storeId}`,
+        p.then((r: any) => ({ data: r.policies ?? null, error: null }))
+         .catch(() => fall('store_policies')));
+    reserveAsyncMemo(`store_is_verified:${storeId}`,
+        p.then((r: any) => ({ data: r.verified === true, error: null }))
+         .catch(() => fall('store_is_verified')));
+    reserveAsyncMemo(`store_follower_count:${storeId}`,
+        p.then((r: any) => ({ data: Number(r.followers) || 0, error: null }))
+         .catch(() => fall('store_follower_count')));
+    return p;
+};
+
 export const useStorePage = (storeId?: string | null): StorePageData => {
     const [data, setData] = useState<StorePageData>(EMPTY);
 
+    // 🔴 أثناء **التصيير** لا في الأثر: آثارُ الأبناء تسبق أثرَ الأب، فلو
+    //    انتظرنا الأثرَ لخرجت نداءاتُهم الثلاثةُ قبل أن نحجز شيئاً.
+    const promise = useMemo(
+        () => (storeId ? startStorePage(storeId) : null), [storeId]);
+
     useEffect(() => {
-        if (!storeId) { setData({ ...EMPTY, ready: true }); return; }
+        if (!promise) { setData({ ...EMPTY, ready: true }); return; }
         let alive = true;
         setData(EMPTY);
-        (async () => {
-            const { data: p, error } = await supabase.rpc('taki_store_page', { p_store_id: storeId });
+        promise.then((row: any) => {
             if (!alive) return;
-            if (error || !p) { setData({ ...EMPTY, ready: true }); return; }
-            const row: any = p;
-            // تُزرع قبل التصيير، فلا يسبق مكوّنٌ الزرعَ بنداءٍ من عنده.
-            primeAsyncMemo(`store_policies:${storeId}`, { data: row.policies ?? null, error: null });
-            primeAsyncMemo(`store_is_verified:${storeId}`, { data: row.verified === true, error: null });
-            primeAsyncMemo(`store_follower_count:${storeId}`, { data: Number(row.followers) || 0, error: null });
             setData({
                 isOwner: row.is_owner === true,
                 store: row.store ?? null,
@@ -67,9 +98,9 @@ export const useStorePage = (storeId?: string | null): StorePageData => {
                 maxBranches: Number.isFinite(Number(row.max_branches)) ? Number(row.max_branches) : null,
                 ready: true,
             });
-        })().catch(() => { if (alive) setData({ ...EMPTY, ready: true }); });
+        }).catch(() => { if (alive) setData({ ...EMPTY, ready: true }); });
         return () => { alive = false; };
-    }, [storeId]);
+    }, [promise]);
 
     return data;
 };

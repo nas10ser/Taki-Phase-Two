@@ -25,7 +25,7 @@ try {
     console.error('✗ تعذّرت ترجمةُ memoAsync.ts:', String(e.stdout || e.message).slice(0, 400));
     process.exit(1);
 }
-const { memoAsync, clearAsyncMemo } = require(path.join(out, 'memoAsync.js'));
+const { memoAsync, clearAsyncMemo, reserveAsyncMemo, primeAsyncMemo } = require(path.join(out, 'memoAsync.js'));
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => {
@@ -78,6 +78,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     clearAsyncMemo();
     await memoAsync('z', 5000, z);
     check('clearAsyncMemo يُفرّغ فعلاً', zruns === 2, `zruns=${zruns}`);
+
+    // ⑦ الحجزُ بوعدٍ طائر — وهو ما يُسقط نداءات الأبناء فعلاً
+    clearAsyncMemo();
+    let childRuns = 0;
+    let settle; const bundle = new Promise((r) => { settle = r; });
+    reserveAsyncMemo('k2', bundle.then((v) => ({ data: v })));
+    const childAsk = memoAsync('k2', 5000, async () => { childRuns++; return { data: 'own' }; });
+    settle('bundled');
+    const got = await childAsk;
+    check('⑦ الابنُ ينضمّ للوعد المحجوز ولا يفتح نداءه',
+        childRuns === 0 && got.data === 'bundled', `runs=${childRuns} got=${JSON.stringify(got)}`);
+
+    // ⑧ ولا يدهس الحجزُ جواباً حيّاً
+    // 🪤 ويُقرأ **بعد** أن يُحسم وعدُ الحجز: القراءةُ الفوريّة تُصيب `done`
+    //    فتمرّ ولو كان الحجزُ قد داس — والدهسُ يقع عند الحسم لا عند الحجز.
+    clearAsyncMemo();
+    primeAsyncMemo('k3', { data: 'الأقدمُ حيّ' });
+    reserveAsyncMemo('k3', Promise.resolve({ data: 'الوافدُ' }));
+    await new Promise((r) => setTimeout(r, 20));
+    const keep = await memoAsync('k3', 5000, async () => ({ data: 'نداءٌ' }));
+    check('⑧ ولا يدهس الحجزُ جواباً حيّاً', keep.data === 'الأقدمُ حيّ', JSON.stringify(keep));
+
+    // ⑨ وبعد الحسم يُخزَّن فيُصيب السائلُ المتأخّر بلا شبكة
+    clearAsyncMemo();
+    let lateRuns = 0;
+    reserveAsyncMemo('k4', Promise.resolve({ data: 'جاهز' }));
+    await memoAsync('k4', 5000, async () => { lateRuns++; return { data: 'x' }; });
+    await new Promise((r) => setTimeout(r, 10));
+    const late = await memoAsync('k4', 5000, async () => { lateRuns++; return { data: 'x' }; });
+    check('⑨ والسائلُ المتأخّرُ يُصيب المخزون', lateRuns === 0 && late.data === 'جاهز', `runs=${lateRuns}`);
 
     fs.rmSync(out, { recursive: true, force: true });
     console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
