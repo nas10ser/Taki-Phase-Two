@@ -82,5 +82,15 @@ check('شريطُ الموسم مشروطٌ بوجود موسم',
     /COALESCE\(p_season_id, ''\)\s*=\s*''\s*THEN\s*'\[\]'::jsonb/.test(sql)
     && /seasonCampaign\s*&&\s*seasonLive/.test(home));
 
+// ⑥ 🔴 **كابحٌ على إعادة الجلب** — قِيس أنها خرجت ستَّ مرّاتٍ في فتحةٍ
+//    واحدة لأن `visibilitychange` و`focus` و`pageshow` تقع متتابعةً عند كلّ
+//    عودة، وهي أثقلُ نداءٍ في الصفحة.
+check('إعادةُ الجلب مكبوحةٌ بمهلة',
+    /REFETCH_MIN_MS/.test(hook) && /throttled:\s*true/.test(hook),
+    'بلا كابحٍ تُعيد كلُّ عودةٍ للتطبيق جلبَ الأشرطة الأربعة والبنرات والمسابقات');
+check('والجلبةُ الأولى وتغيّرُ النطاق يتجاوزانه',
+    /lastAtRef\.current = 0;/.test(hook),
+    'وإلّا بقيت الصفحةُ على نطاقٍ تركه المستخدم');
+
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -70,7 +70,21 @@ export const useHomePayload = (p: HomePayloadParams): {
     const paramsRef = useRef(p);
     paramsRef.current = p;
 
-    const fetchNow = useCallback(async () => {
+    /**
+     * 🔴 v16.21 — **كابحٌ على إعادة الجلب عند العودة** (قِيس على الإنتاج:
+     * `taki_home_payload` خرجت **ستَّ مرّات** في فتحةٍ واحدة). السببُ أن
+     * `visibilitychange` و`focus` و`pageshow` تقع متتابعةً عند كلّ عودةٍ
+     * إلى التطبيق — وكلُّها كانت تُطلق الحمولةَ كاملةً بلا أيّ مهلة.
+     * وهي أثقلُ نداءٍ في الصفحة (أربعةُ أشرطةٍ + بنرات + مسابقات).
+     * 🪤 والكابحُ على **إعادة** الجلب وحدها: الجلبةُ الأولى وتغيُّرُ النطاق
+     *    يمرّان دائماً، وإلّا بقيت الصفحةُ على نطاقٍ تركه المستخدم.
+     */
+    const lastAtRef = useRef(0);
+    const REFETCH_MIN_MS = 30_000;
+
+    const fetchNow = useCallback(async (opts?: { throttled?: boolean }) => {
+        if (opts?.throttled && Date.now() - lastAtRef.current < REFETCH_MIN_MS) return;
+        lastAtRef.current = Date.now();
         const mine = sigRef.current;
         const q = paramsRef.current;
         const { data, error } = await supabase.rpc('taki_home_payload', {
@@ -100,10 +114,13 @@ export const useHomePayload = (p: HomePayloadParams): {
 
     useEffect(() => {
         setLoading(true);
+        lastAtRef.current = 0;   // تغيّرُ النطاق يتجاوز الكابح دائماً
         void fetchNow();
         // العودةُ إلى التطبيق تُجدّد المسابقةَ المنتهيةَ والبنرَ الجديد —
         // وهو سببُ وجود هذه المستمعات منذ v11.49، وقد صارت نداءً واحداً.
-        const onVisible = () => { if (document.visibilityState === 'visible') void fetchNow(); };
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') void fetchNow({ throttled: true });
+        };
         document.addEventListener('visibilitychange', onVisible);
         window.addEventListener('focus', onVisible);
         window.addEventListener('pageshow', onVisible);
