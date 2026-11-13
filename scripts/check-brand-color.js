@@ -79,7 +79,8 @@ const want = [Number(m[1]), Number(m[2]), Number(m[3])];
 console.log(`     المرجع: ${hex(want)}`);
 
 // ② البكسلُ المحروقُ في الأيقونات — قياسٌ لا نصّ
-for (const f of ['logo512.png', 'logo192.png', 'apple-touch-icon.png']) {
+for (const f of ['logo512.png', 'logo192.png', 'apple-touch-icon.png',
+                 'logo512-maskable.png', 'logo192-maskable.png']) {
     let got = null, err = '';
     try { got = firstPixel(B(f)); } catch (e) { err = e.message; }
     check(`${f}: بكسلُ الخلفية يطابق BRAND_BG`,
@@ -95,14 +96,27 @@ for (const k of ['background_color', 'theme_color']) {
         && parse(v).every((c, i) => c === want[i]), `${k} = ${v}`);
 }
 
-// ④ index.html
+// ④ 🔴 **الفصلُ المقصود** (أمرُ ناصر ١٣ نوفمبر): لونُ الهويّة للتطبيق،
+//    والموقعُ على لون سطحه. فـ`theme-color` يلوّن شريطَ المتصفّح **وأنت
+//    تتصفّح الموقع** ⇒ يتبع خلفيّةَ الموقع؛ و`msapplication-TileColor`
+//    بلاطةُ التطبيق ⇒ لونُ الهويّة. وخلطُهما يُعيد العيبَ الذي رفضه ناصر.
 const html = strip(R('index.html'));
-const metas = [...html.matchAll(/<meta\s+name="(?:theme-color|msapplication-TileColor)"\s+content="(#[0-9a-fA-F]{6})"/g)]
-    .map(x => x[1]);
-check('index.html فيه وسومُ اللون الثلاثة', metas.length === 3, `وجدتُ ${metas.length}`);
-check('وكلُّها تطابق BRAND_BG',
-    metas.length > 0 && metas.every(v => parse(v).every((c, i) => c === want[i])),
-    `القيم: ${metas.join(' · ')}`);
+const tile = (/<meta\s+name="msapplication-TileColor"\s+content="(#[0-9a-fA-F]{6})"/.exec(html) || [])[1];
+check('بلاطةُ التطبيق تحمل لونَ الهويّة',
+    !!tile && parse(tile).every((c, i) => c === want[i]), `TileColor = ${tile}`);
+
+const themeDark = (/<meta\s+name="theme-color"\s+content="(#[0-9a-fA-F]{6})"\s+media="\(prefers-color-scheme: dark\)"/.exec(html) || [])[1];
+const themeLight = (/<meta\s+name="theme-color"\s+content="(#[0-9a-fA-F]{6})"\s+media="\(prefers-color-scheme: light\)"/.exec(html) || [])[1];
+check('وسمَا theme-color موجودان', !!themeDark && !!themeLight,
+    `داكن=${themeDark} فاتح=${themeLight}`);
+// ويطابقان **خلفيّةَ الموقع المعلنة في نفس الملفّ** — لا رقمَين يُكتبان بيد.
+const bodyLight = (/body\s*\{[^}]*background-color:\s*(#[0-9a-fA-F]{6})/.exec(html) || [])[1];
+const bodyDark = (/prefers-color-scheme:\s*dark\)\s*\{\s*body\s*\{\s*background-color:\s*(#[0-9a-fA-F]{6})/.exec(html) || [])[1];
+check('ويتبعان خلفيّةَ الموقع لا لونَ الهويّة',
+    !!bodyLight && !!bodyDark
+    && themeLight.toLowerCase() === bodyLight.toLowerCase()
+    && themeDark.toLowerCase() === bodyDark.toLowerCase(),
+    `theme(${themeLight}/${themeDark}) مقابل body(${bodyLight}/${bodyDark})`);
 
 // ⑤ 🔴 **المُخرَج، لا المصدر: العناوينُ المبصومةُ وبكسلاتُها.**
 //    وهنا صُحِّح تشخيصٌ خاطئ لي: أضفتُ أوّلاً `?v=` إلى عناوين الأيقونات
@@ -136,6 +150,22 @@ check('وكلُّها تطابق BRAND_BG',
                 got ? `وجدتُ ${hex(got)} والمطلوب ${hex(want)}` : err);
         }
     }
+}
+
+// ⑥ 🔴 **`any` و`maskable` ملفّان مختلفان، لا ملفٌّ واحدٌ بوسمين.**
+//    حين يُعلَن الملفُّ نفسُه للاثنين تُجبَر الرسمةُ على مساحةِ أمان القناع
+//    (٠٫٦٨) فتظهر صغيرةً في وسط فراغٍ على كلّ جهازٍ **لا** يقصّ — وهو أغلبُ
+//    المواضع. (قِيس بالنظر عند ٦٠ بكسلاً: ٠٫٨٢ تُقرأ و٠٫٦٨ لا.)
+{
+    const anyIcons = (man.icons || []).filter((i) => String(i.purpose) === 'any').map((i) => i.src);
+    const maskIcons = (man.icons || []).filter((i) => String(i.purpose) === 'maskable').map((i) => i.src);
+    check('البيانُ يُعلن `any` و`maskable`', anyIcons.length >= 2 && maskIcons.length >= 2,
+        `any=${anyIcons.length} maskable=${maskIcons.length}`);
+    check('وهما ملفّان مختلفان لا ملفٌّ واحد',
+        anyIcons.every((u) => !maskIcons.includes(u)),
+        `تداخل: ${anyIcons.filter((u) => maskIcons.includes(u)).join(' · ')}`);
+    check('وملفُّ القناع موسومٌ باسمه', maskIcons.every((u) => /-maskable\.png$/.test(u)),
+        maskIcons.join(' · '));
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);
