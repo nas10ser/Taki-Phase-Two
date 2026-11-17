@@ -49,6 +49,15 @@ const messageKey = (reason) => KEYS[reason] || KEYS.not_verified;
 function hoursLabel(n, lang) {
     const h = Number(n);
     const v = Number.isFinite(h) && h >= 1 ? Math.round(h) : 24;
+    // v16.33 — تُصاغ أياماً حين تستحقّ، **بنفس شرط الموقع حرفاً**
+    // (`hoursOrDaysGen` في `src/utils/bookingHold.ts`: من ٤٨ فأعلى عند
+    // مضاعفِ يومٍ كامل). وقبلها كان البوت يقول «٧٢ ساعة» بينما بطاقةُ
+    // التاجر على الموقع تقول «٣ أيام» — وعدٌ واحدٌ بنصّين.
+    // 🪤 و«٢٤ ساعة» تبقى ساعاتٍ عمداً هنا أيضاً: هي الوعدُ القائم اليوم.
+    if (v >= 48 && Number.isInteger(v / 24)) {
+        const d = v / 24;
+        return lang === 'en' ? enCount(d, 'day', 'days') : arCount(d, 'days', true);
+    }
     return lang === 'en' ? enCount(v, 'hour', 'hours') : arCount(v, 'hours', true);
 }
 

@@ -32,6 +32,10 @@ import type {
     AdminVerificationRow, VerificationStats, VerificationStatus,
 } from '../../repositories/verificationRepository';
 import { arCount, HOURS } from '../../utils/arPlural';
+// v16.33 — نفسُ صائغِ بطاقة التاجر. وكان هنا `arCount(slaHours, HOURS)` وحده،
+// فعند مضاعفِ يومٍ كامل كانت الشاشتان تقولان رقمين مختلفين لنفس الوعد:
+// التاجرُ يقرأ «٣ أيام» والمديرُ يقرأ «٧٢ ساعة». والصياغةُ مصدرٌ واحد.
+import { hoursOrDaysGen } from '../../utils/bookingHold';
 
 const PAGE = 25;
 
@@ -139,7 +143,7 @@ const AdminVerification: React.FC = () => {
                 icon="🕐"
                 scope={oldest === null
                     ? 'لا طلب معلَّق الآن'
-                    : `المهلة المعلنة ${arCount(slaHours, HOURS)}`}
+                    : `المهلة المعلنة ${hoursOrDaysGen(slaHours, true)}`}
                 title="عمر أقدم طلبٍ لم يُبتّ فيه. تجاوزُه المهلة المعلنة يعني أننا أخلفنا وعداً مكتوباً في لوحة التاجر."
             />
             <AdmStat

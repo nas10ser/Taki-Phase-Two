@@ -8,7 +8,8 @@ import { authService, MIN_AGE } from '../services/authService';
 import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals, maskEmail } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
-import TurnstileWidget from '../components/TurnstileWidget';
+import TurnstileWidget, { preloadTurnstile } from '../components/TurnstileWidget';
+preloadTurnstile(); // v16.33 — جذرُ حزمة التسجيل: يُسخَّن سكربتُ التحقّق والمستخدمُ ما زال على شاشة البداية (السببُ المقيس في `TurnstileWidget.tsx`).
 import PasswordField, { pwIsStrong, pwChecks } from '../components/PasswordField';
 import { isPasswordRecovery, markPasswordRecovery, clearPasswordRecovery } from '../utils/passwordRecovery';
 
@@ -97,8 +98,7 @@ const Register: React.FC = () => {
     // التعيين يقيناً بدل أن يمرّ المستخدم إلى الرئيسية.
     const [mode, setMode] = useState<'landing' | 'login' | 'type' | 'form' | 'verify' | 'reset'>(
         () => (isPasswordRecovery() ? 'reset' : 'landing'));
-    const [newPw, setNewPw] = useState('');
-    const [newPw2, setNewPw2] = useState('');
+    const [newPw, setNewPw] = useState(''); const [newPw2, setNewPw2] = useState('');
     const [resetCode, setResetCode] = useState('');
     /**
      * v14.04 — 🔴 السؤال الوحيد الذي يحدّد ظهور حقل الرمز هو **«هل الهوية

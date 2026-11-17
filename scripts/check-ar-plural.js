@@ -59,6 +59,9 @@ const formsFromTs = (name) => {
 const tsMessages = formsFromTs('MESSAGES');
 const tsHours = formsFromTs('HOURS');
 const tsMinutes = formsFromTs('MINUTES');
+// v16.33 — «أيام»: أضافها وعدُ مراجعة التوثيق حين صار يُصاغ أياماً
+// (الموقع `hoursOrDaysGen` · البوت `publishGate.hoursLabel`).
+const tsDays = formsFromTs('DAYS');
 
 // ── ٣) الصيغ يجب أن تتطابق حرفاً بحرف ─────────────────────────────────────
 const cmp = (label, a, b) => {
@@ -72,6 +75,7 @@ const cmp = (label, a, b) => {
 cmp('messages', tsMessages, shared.FORMS.messages);
 cmp('hours', tsHours, shared.FORMS.hours);
 cmp('minutes', tsMinutes, shared.FORMS.minutes);
+cmp('days', tsDays, shared.FORMS.days);
 
 // ── ٣٫٥) 🔴 v15.81 — وخوارزميّةُ الموقع نفسُها تُقرأ، لا صيغُه وحدها ────────
 // 🔴 ثقبٌ قِيس بالتنفيذ قبل سدّه: كان القسمُ ٤ يقارن **إعادةَ تنفيذٍ مكتوبةً
@@ -135,7 +139,7 @@ NUMS.push(0.25, 0.5, 1.5, 2.5, 8760, NaN, Infinity);
 
 let checked = 0;
 for (const n of NUMS) {
-    for (const [label, tsF, shKey] of [['messages', tsMessages, 'messages'], ['hours', tsHours, 'hours'], ['minutes', tsMinutes, 'minutes']]) {
+    for (const [label, tsF, shKey] of [['messages', tsMessages, 'messages'], ['hours', tsHours, 'hours'], ['minutes', tsMinutes, 'minutes'], ['days', tsDays, 'days']]) {
         for (const gen of [false, true]) {
             const a = tsArCount(n, tsF, gen);
             const b = shared.arCount(n, shKey, gen);
@@ -366,7 +370,7 @@ const sqlDays = {};
     Object.assign(sqlDays, { one: one[1], two: two[1], few: few[1], many: many[1] });
 }
 
-const tsDays = formsFromTs('DAYS');
+// (تُقرأ `tsDays` مرّةً واحدةً أعلى الملفّ — القسم ٣ يقارنها بالبوتين وهنا بالقاعدة.)
 for (const k of ['one', 'two', 'few', 'many']) {
     if (tsDays[k] !== sqlDays[k]) {
         fail(`صيغة «days.${k}» مختلفة:\n     الواجهة: ${JSON.stringify(tsDays[k])}\n     القاعدة : ${JSON.stringify(sqlDays[k])}`);

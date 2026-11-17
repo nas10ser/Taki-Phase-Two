@@ -46,6 +46,15 @@ export const VerificationPolicyCard: React.FC = () => {
     const { customAlert, customConfirm } = useApp();
     const [p, setP] = useState<Policy | null>(null);
     const [sla, setSla] = useState('');
+    /**
+     * v16.33 — وحدةُ الإدخال (طلبُ ناصر: «اجعلني احدد يوم او ساعه»).
+     *
+     * 🪤 وهي **وحدةُ إدخالٍ لا وحدةُ تخزين**: المخزَّن يبقى `sla_hours` وحده،
+     *    فلا هجرةَ ولا مفتاحَ إعداداتٍ جديد (وذاك يلزمه ثلاثةُ مواضع ومنها
+     *    قائمةُ السماح في RLS)، ولا مصدرَ حقيقةٍ ثانٍ ينحرف عن الأوّل.
+     *    والعرضُ يُشتقّ أصلاً بـ`hoursOrDaysGen` منذ v16.23.
+     */
+    const [slaUnit, setSlaUnit] = useState<'hour' | 'day'>('hour');
     const [stats, setStats] = useState<VerificationStats | null>(null);
     const [busy, setBusy] = useState('');
     /** '' = ما زالت تُقرأ · نصٌّ = تعذّرت القراءة ومعها سببها. */
@@ -75,7 +84,14 @@ export const VerificationPolicyCard: React.FC = () => {
             mode: v.mode, sla_hours: Number(v.sla_hours) || 24,
             vacation: v.vacation === true, show_badge: v.show_badge === true,
         });
-        setSla(String(Number(v.sla_hours) || 24));
+        // v16.33 — تُفتح الشاشةُ على الوحدة التي **يقرأ بها التاجرُ** الوعدَ
+        // نفسَه: `hoursOrDaysGen` يصوغ أياماً من ٤٨ فأعلى عند مضاعفِ يومٍ
+        // كامل، فتُطابقه الوحدةُ هنا حرفياً — وإلّا رأى ناصر «٧٢ ساعة» بينما
+        // بطاقةُ التاجر تقول «٣ أيام»، وهو عينُ الانحراف الذي يُصلحه هذا.
+        const h = Number(v.sla_hours) || 24;
+        const asDays = h >= 48 && Number.isInteger(h / 24);
+        setSlaUnit(asDays ? 'day' : 'hour');
+        setSla(String(asDays ? h / 24 : h));
         if (s.ok && s.stats) setStats(s.stats);
     }, []);
 
@@ -150,9 +166,21 @@ export const VerificationPolicyCard: React.FC = () => {
     };
 
     const saveSla = async () => {
-        const n = parseFloat(normalizeArabicNumerals(sla));
-        if (!Number.isFinite(n) || n < 1 || n > 720) {
-            await customAlert('⚠️ المهلة بين ساعة واحدة و٧٢٠ ساعة (٣٠ يوماً).'); return;
+        const typed = parseFloat(normalizeArabicNumerals(sla));
+        // 🪤 الكسورُ تُرفض هنا عمداً وإن كانت تمرّ قبلُ: الخادمُ يقصّها
+        //    (`floor` في `taki_verification_policy`) فتُخزَّن ١ ويبقى الموقعُ
+        //    يعرض «١٫٥ ساعة» — رقمان مختلفان لنفس الوعد. ولا معنى لنصفِ يوم.
+        if (!Number.isInteger(typed) || typed < 1) {
+            await customAlert(slaUnit === 'day'
+                ? '⚠️ اكتب عددَ أيامٍ صحيحاً (١ فأكثر) — بلا كسور.'
+                : '⚠️ اكتب عددَ ساعاتٍ صحيحاً (١ فأكثر) — بلا كسور.');
+            return;
+        }
+        const n = slaUnit === 'day' ? typed * 24 : typed;
+        // والسقفُ يبقى ٧٢٠ ساعةً لأنه سقفُ الخادم نفسِه
+        // (`GREATEST(1, LEAST(720, …))`)، فلا نقبل ما سيُقصّ عندنا بصمت.
+        if (n > 720) {
+            await customAlert('⚠️ أقصى مهلة ٣٠ يوماً (٧٢٠ ساعة).'); return;
         }
         if (await save({ sla_hours: n }, 'sla')) {
             await customAlert(`✅ صار الوعد «نردّ خلال ${hoursOrDaysGen(n, true)}».`);
@@ -298,16 +326,45 @@ export const VerificationPolicyCard: React.FC = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
                             <span style={{ fontSize: '.8rem', fontWeight: 800, color: 'var(--adm-fg)' }}>نراجع خلال</span>
                             <input
-                                type="number" min={1} max={720} step={1} inputMode="numeric" dir="ltr"
+                                type="number" min={1} max={slaUnit === 'day' ? 30 : 720} step={1} inputMode="numeric" dir="ltr"
                                 value={sla} onChange={e => setSla(normalizeArabicNumerals(e.target.value))}
-                                aria-label="مهلة مراجعة التوثيق بالساعات" className="adm-focusable"
+                                aria-label={slaUnit === 'day' ? 'مهلة مراجعة التوثيق بالأيام' : 'مهلة مراجعة التوثيق بالساعات'}
+                                className="adm-focusable"
                                 style={{
                                     width: 88, padding: '9px 10px', textAlign: 'center', fontWeight: 800,
                                     borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
                                     background: 'var(--adm-surface)', color: 'var(--adm-fg)', fontSize: '.9rem',
                                 }}
                             />
-                            <span style={{ fontSize: '.8rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>ساعة</span>
+                            {/* 🪤 خياراتٌ بأسماءٍ مفردةٍ مجرّدة («ساعة» · «يوم») لا بعددٍ
+                                ومعدود: صياغةُ العدد مكانها `hoursOrDaysGen` وحدها، وأيُّ
+                                «٣ أيام» تُكتب هنا تصير نصّاً ثانياً ينحرف. */}
+                            <select
+                                value={slaUnit}
+                                onChange={e => {
+                                    const u = e.target.value as 'hour' | 'day';
+                                    // التحويلُ عند التبديل يحفظ **المعنى** لا الرقم: ٧٢ ساعة
+                                    // تصير «٣» أياماً، فلا يتحوّل الوعدُ بضغطةٍ بلا قصد.
+                                    const cur = parseFloat(normalizeArabicNumerals(sla));
+                                    if (Number.isFinite(cur) && cur > 0) {
+                                        if (u === 'day' && slaUnit === 'hour') {
+                                            setSla(Number.isInteger(cur / 24) ? String(cur / 24) : '1');
+                                        } else if (u === 'hour' && slaUnit === 'day') {
+                                            setSla(String(Math.min(720, cur * 24)));
+                                        }
+                                    }
+                                    setSlaUnit(u);
+                                }}
+                                aria-label="وحدةُ مهلة المراجعة" className="adm-focusable"
+                                style={{
+                                    padding: '9px 10px', fontWeight: 800, borderRadius: 'var(--adm-r-sm)',
+                                    border: '1px solid var(--adm-border)', background: 'var(--adm-surface)',
+                                    color: 'var(--adm-fg)', fontSize: '.8rem',
+                                }}
+                            >
+                                <option value="hour">ساعة</option>
+                                <option value="day">يوم</option>
+                            </select>
                             <AdmButton variant="primary" disabled={!!busy} onClick={saveSla}>
                                 {busy === 'sla' ? 'جاري الحفظ…' : '💾 حفظ'}
                             </AdmButton>
