@@ -40,7 +40,7 @@ import NumericField from '../components/NumericField';
 import { printOrderInvoice, buildBookingInvoice } from '../utils/printInvoice';
 // v14.06 — رابط الملاحة إلى عنوان التوصيل (قاعدة روابط الخرائط الموحّدة)
 import { directionsLink } from '../utils/mapLinks';
-import { splitInclusive, fmtSAR } from '../utils/vat';
+import DealPriceFields from '../components/seller/DealPriceFields';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
 import StorePoliciesCard from '../components/seller/StorePoliciesCard';
@@ -3774,80 +3774,14 @@ const SellerDashboard: React.FC = () => {
                         </div>
 
 
-                        <div style={inputGroupStyle}>
-                            <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>{isRTL ? 'السعر الأصلي (شامل الضريبة)' : 'Original Price (VAT incl.)'}</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    disabled={variantsDriving}
-                                    style={{
-                                        ...fieldInputStyle,
-                                        opacity: variantsDriving ? 0.55 : 1,
-                                        borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
-                                        boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
-                                    }}
-                                    placeholder={isRTL ? 'مثال: 16.50' : 'e.g. 16.50'}
-                                    value={originalPrice}
-                                    onChange={e => setOriginalPrice(sanitizeDecimalInput(normalizeArabicNumerals(e.target.value)))}
-                                />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <label style={labelStyle}>{isRTL ? 'السعر بعد الخصم (شامل الضريبة)' : 'Final Price (VAT incl.)'}</label>
-                                <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    disabled={variantsDriving}
-                                    style={{
-                                        ...fieldInputStyle,
-                                        opacity: variantsDriving ? 0.55 : 1,
-                                        borderColor: priceInvalid ? 'var(--danger)' : (fieldInputStyle as any).borderColor,
-                                        boxShadow: priceInvalid ? '0 0 0 1px var(--danger) inset' : (fieldInputStyle as any).boxShadow
-                                    }}
-                                    placeholder={isRTL ? 'مثال: 12.34' : 'e.g. 12.34'}
-                                    value={discountedPrice}
-                                    onChange={e => setDiscountedPrice(sanitizeDecimalInput(normalizeArabicNumerals(e.target.value)))}
-                                />
-                            </div>
-                        </div>
-                        {/* v13.30 — حاسبة ضريبة القيمة المضافة (طلب ناصر): السعر يُدخل
-                            شاملاً (نظام العرض السعودي)، والحاسبة تستخرج الضريبة المضمّنة
-                            لحظياً، ونفس القيمة تظهر على فاتورة الطلب تلقائياً. */}
-                        {(() => {
-                            const sell = Number(normalizedDiscountedPrice) || 0;
-                            if (!(sell > 0)) return null;
-                            // v14.17 — النسبة من مصدرها الوحيد لا من ثابتٍ في الكود،
-                            // والحاسبة تظهر فقط للتاجر المسجَّل ضريبياً: غير المسجَّل
-                            // لا يجوز له تحصيل ضريبة، وكانت البطاقة تَعِده بأنها
-                            // «تُطبع تلقائياً على فاتورة كل طلب» وهي لا تُطبع له.
-                            if (!vatRegistered) return null;
-                            const rate = platformSettings.merchantVatRate;
-                            const s = splitInclusive(sell, rate);
-                            return (
-                                <div style={{
-                                    margin: '-12px 0 16px', padding: '10px 14px', borderRadius: 12,
-                                    background: 'rgba(13, 148, 136, 0.08)', border: '1px solid rgba(13, 148, 136, 0.35)',
-                                    color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 800, lineHeight: 1.8,
-                                }}>
-                                    🧾 {isRTL
-                                        ? <>حاسبة الضريبة ({rate}٪): سعر البيع <b>{fmtSAR(s.total)}</b> ر.س شامل الضريبة = الأساس <b>{fmtSAR(s.base)}</b> ر.س + ضريبة <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> ر.س — تُطبع تلقائياً على فاتورة كل طلب.</>
-                                        : <>VAT calculator ({rate}%): selling price <b>{fmtSAR(s.total)}</b> SAR incl. VAT = base <b>{fmtSAR(s.base)}</b> + VAT <b style={{ color: '#0d9488' }}>{fmtSAR(s.vat)}</b> — shown automatically on every order invoice.</>}
-                                </div>
-                            );
-                        })()}
-                        {/* v12.62 — عندما توجد نسخ: السعران العامان يُضبطان تلقائياً
-                            على أرخص نسخة حتى لا يلتبس التاجر بين سعرين. */}
-                        {variantsDriving && (
-                            <div style={{
-                                margin: '-12px 0 16px', padding: '10px 14px', borderRadius: 12,
-                                background: 'var(--notif-unread-bg)', border: '1px solid var(--primary-light)',
-                                color: 'var(--text-primary)', fontSize: '0.76rem', fontWeight: 700, lineHeight: 1.6,
-                            }}>
-                                🧬 {isRTL
-                                    ? 'الأسعار تُدار الآن من «أنواع المنتج» بالأسفل — هذان الحقلان يُضبطان تلقائياً على أرخص نوع، والبطاقة ستعرض «يبدأ من».'
-                                    : 'Prices are now managed by the product versions below — these two fields auto-follow the cheapest version, and the card will show “From …”.'}
-                            </div>
-                        )}
+                        <DealPriceFields
+                            isRTL={isRTL}
+                            originalPrice={originalPrice} setOriginalPrice={setOriginalPrice}
+                            discountedPrice={discountedPrice} setDiscountedPrice={setDiscountedPrice}
+                            discount={discount} variantsDriving={variantsDriving} priceInvalid={priceInvalid}
+                            vatRegistered={vatRegistered} vatRate={platformSettings.merchantVatRate}
+                            inputGroupStyle={inputGroupStyle} labelStyle={labelStyle} fieldInputStyle={fieldInputStyle}
+                        />
                         {priceInvalid && (
                             <div
                                 role="alert"
