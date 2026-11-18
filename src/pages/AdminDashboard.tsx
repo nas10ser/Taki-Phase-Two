@@ -478,6 +478,57 @@ const AdminDashboard: React.FC = () => {
                 onClose={() => setPaletteOpen(false)}
                 onNavigate={(t) => goTab(t as AdminTabId)}
             />
+
+            {/* ── شريطُ الإبهام (v16.36 — بلاغُ ناصر ١٧ نوفمبر) ──────────────
+                «زر الرجوع جدا مرتفع مما يعيق عملية الرجوع للخلف، وايضا اريد
+                 هناك اختصار يدخلني عالمتجر مباشره».
+                وزرُّ الرجوع في الرأس يبقى مكانه (هو الموضعُ المتعارَف عليه على
+                الحاسوب)، ويُضاف هنا توأمٌ **في متناول الإبهام** ومعه مدخلُ
+                المتجر. والمساحةُ محجوزةٌ أصلاً: جسمُ الشاشة ينتهي بحشوٍ سفليٍّ
+                ٩٠ بكسل، ولا شريطَ تنقّلٍ ولا تذييلَ على `/admin` (كلاهما
+                يُخفي نفسه هنا عمداً) — فلا شيء يُغطّى.
+                🪤 ولا `transform: translateZ(0)` ولا `will-change` معه: على
+                   iOS يبقى العنصرُ الثابتُ عند موضعه القديم حين يتغيّر منفذُ
+                   العرض فيهبط الشريطُ إلى منتصف الشاشة (درسُ v16.14). */}
+            <div
+                style={{
+                    position: 'fixed', insetInline: 0,
+                    bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+                    zIndex: 25, display: 'flex', justifyContent: 'center',
+                    gap: 8, paddingInline: 14, pointerEvents: 'none',
+                }}
+            >
+                <button
+                    onClick={handleBack}
+                    aria-label="رجوع"
+                    className="adm-focusable"
+                    style={{
+                        pointerEvents: 'auto', height: 44, paddingInline: 18,
+                        borderRadius: 999, border: '1px solid var(--adm-border)',
+                        background: 'var(--adm-surface)', color: 'var(--adm-fg)',
+                        fontSize: '.85rem', fontWeight: 900, cursor: 'pointer',
+                        boxShadow: '0 6px 18px rgba(0,0,0,.14)',
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                    }}
+                >
+                    <span aria-hidden="true">→</span> رجوع
+                </button>
+                <button
+                    onClick={() => history.push('/seller')}
+                    aria-label="متجري"
+                    className="adm-focusable"
+                    style={{
+                        pointerEvents: 'auto', height: 44, paddingInline: 18,
+                        borderRadius: 999, border: '1px solid var(--adm-accent)',
+                        background: 'var(--adm-accent)', color: '#fff',
+                        fontSize: '.85rem', fontWeight: 900, cursor: 'pointer',
+                        boxShadow: '0 6px 18px rgba(0,0,0,.18)',
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                    }}
+                >
+                    <span aria-hidden="true">🏪</span> متجري
+                </button>
+            </div>
         </div>
     );
 };

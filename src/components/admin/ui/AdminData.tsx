@@ -8,6 +8,7 @@
  */
 
 import React, { memo, useMemo } from 'react';
+import { AdmNumber } from './AdmNumber';
 import { AdmEmpty, AdmSkeleton } from './AdminKit';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -166,6 +167,10 @@ export interface AdmRange { from: string; to: string }
 /** اختصاراتٌ يقيسها الجميع بنفس الطريقة (اليوم = آخر ٠ أيام، أي اليوم نفسه). */
 export const RANGE_PRESETS: Array<{ id: string; label: string; days: number }> = [
     { id: 'd1', label: 'اليوم', days: 0 },
+    // v16.36 — «يومان» و«٣ أيام»: بلاغُ ناصر أن الفترات تقفز من اليوم إلى
+    // الشهر فلا يرى حركةَ يومين أو ثلاثة.
+    { id: 'd2', label: 'يومان', days: 1 },
+    { id: 'd3', label: '٣ أيام', days: 2 },
     { id: 'd7', label: '٧ أيام', days: 6 },
     { id: 'd30', label: '٣٠ يوماً', days: 29 },
     { id: 'd90', label: '٩٠ يوماً', days: 89 },
@@ -204,6 +209,15 @@ export const AdmDateRange: React.FC<{
     // 🪤 التاريخان معكوسين يُنتجان فترةً فارغة بصمت — تُصحَّح هنا لا في كل مُنادٍ.
     const invalid = useMemo(() => !!value.from && !!value.to && value.from > value.to, [value.from, value.to]);
 
+    /** عددُ الأيام الذي تمثّله الفترةُ الحالية — ليُظهر الحقلُ الحرّ ما هو مطبَّق. */
+    const daysBack = useMemo(() => {
+        if (!value.from || !value.to) return 1;
+        const a = new Date(`${value.from}T00:00:00`);
+        const b = new Date(`${value.to}T00:00:00`);
+        const n = Math.round((b.getTime() - a.getTime()) / 864e5) + 1;
+        return Number.isFinite(n) && n > 0 ? n : 1;
+    }, [value.from, value.to]);
+
     const setPreset = (days: number) => {
         onChange(rangeFromDays(days, new Date()));
     };
@@ -227,6 +241,23 @@ export const AdmDateRange: React.FC<{
                     </button>
                 ))}
             </div>
+            {/* v16.36 — «عدد الأيام التي أريدها» (بلاغُ ناصر): الاختصاراتُ
+                وحدها لا تكفي، والتاريخان يحتاجان حسابَ يومٍ بيد المستخدم.
+                🪤 `commitOnly` لأن تغييرَ الفترة يُطلق استعلاماً. */}
+            <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>آخر (يوماً)</span>
+                <AdmNumber
+                    value={daysBack} min={1} max={maxDays ?? 3650} commitOnly
+                    onChange={(n) => onChange(rangeFromDays(Math.max(0, n - 1), new Date()))}
+                    aria-label="عدد الأيام"
+                    className="adm-focusable"
+                    style={{
+                        width: 78, padding: '6px 9px', fontSize: '.8rem', fontWeight: 700, textAlign: 'center',
+                        borderRadius: 'var(--adm-r-sm)', border: '1px solid var(--adm-border)',
+                        background: 'var(--adm-surface)', color: 'var(--adm-fg)',
+                    }}
+                />
+            </label>
             <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
                 <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>من</span>
                 <input

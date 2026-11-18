@@ -42,6 +42,7 @@ import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
     AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, admNum,
     admCount, DAYS, BOOKINGS, CITIES as CITY_F,
+    AdmNumber,
 } from '../../components/admin/ui';
 import type { AdmColumn } from '../../components/admin/ui';
 
@@ -355,12 +356,11 @@ const AdminAudience: React.FC = () => {
                     {mallObj && (
                         <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
                             <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>النطاق حول السوق (كم)</span>
-                            <input
-                                type="number"
+                            <AdmNumber
                                 min={1}
                                 max={100}
                                 value={radiusKm}
-                                onChange={e => setRadiusKm(Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
+                                onChange={setRadiusKm}
                                 className="adm-focusable"
                                 style={{
                                     width: 90, padding: '7px 10px', fontSize: '.82rem', fontWeight: 700,

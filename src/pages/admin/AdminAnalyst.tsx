@@ -46,7 +46,9 @@ import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
     AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, AdmToolbar,
     AdmDateRange, admNum, admCount, DAYS, MERCHANTS, VIEWS, BOOKINGS, DEALS, ACTIVE_DEALS, BUYERS, ACTIVE_BUYERS, EMAILS, DIAGNOSES, PIECES, SEARCHES, CATEGORIES as CATEGORY_F,
+    AdmNumber,
 } from '../../components/admin/ui';
+import { AnalystPeriodBar } from '../../components/admin/AnalystPeriodBar';
 import type { Tone } from '../../components/admin/ui';
 
 // ─── أنواع البيانات القادمة من الـRPC ───────────────────────────────────────
@@ -952,31 +954,13 @@ const AdminAnalyst: React.FC = () => {
     return (
         <div dir="rtl" style={{ display: 'grid', gap: 14 }}>
 
-            {/* ── فترة التحليل: زرٌّ واحد يحكم كل الأقسام ───────────────────── */}
-            <AdmCard>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>فترة التحليل</span>
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {[7, 30, 90].map((d) => (
-                            <button key={d} type="button" aria-pressed={days === d} className="adm-focusable"
-                                onClick={() => { setDays(d); setCuStart(isoDay(-d)); setCuEnd(isoDay(0)); }}
-                                style={{
-                                    padding: '6px 13px', fontSize: '.78rem', fontWeight: 800, borderRadius: 999, cursor: 'pointer',
-                                    border: `1px solid ${days === d ? 'transparent' : 'var(--adm-border)'}`,
-                                    background: days === d ? 'var(--adm-accent)' : 'var(--adm-surface-2)',
-                                    color: days === d ? '#ffffff' : 'var(--adm-fg-2)',
-                                }}>
-                                {admNum(d)} يوماً
-                            </button>
-                        ))}
-                    </div>
-                    <span style={{ flex: 1 }} />
-                    <AdmButton onClick={load} size="sm" title="إعادة جلب كل الأقسام">🔄 تحديث</AdmButton>
-                </div>
-                <p style={{ ...noteStyle, marginTop: 9 }}>
-                    تسري على كل الأقسام، وتُزامِن تواريخ «المحلل المخصّص» معها — فلا يتعارض رقمان.
-                </p>
-            </AdmCard>
+            {/* فترةُ التحليل — خرجت إلى `AnalystPeriodBar` (v16.36): هذا ملفٌّ
+                مُعلَنٌ ضخماً والسقّافةُ تمنع نموَّه، فالتوسعةُ تُبنى في ملفّها. */}
+            <AnalystPeriodBar
+                days={days}
+                onPick={(d) => { setDays(d); setCuStart(isoDay(-d)); setCuEnd(isoDay(0)); }}
+                onRefresh={load}
+            />
 
             {/* ── ١) الخلاصة التنفيذية: صحة المنصّة + المؤشرات + القرار ──────── */}
             <AdmSection title="الخلاصة التنفيذية" icon="📋" badge={{ text: `${admNum(diagnosis.health)}٪ صحة`, tone: healthTone }}
@@ -1234,9 +1218,9 @@ const AdminAnalyst: React.FC = () => {
                                 />
                                 <label style={{ display: 'inline-flex', flexDirection: 'column', gap: 3 }}>
                                     <span style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--adm-fg-3)' }}>حد أدنى للحجوزات</span>
-                                    <input
-                                        type="number" min={0} value={worstMin}
-                                        onChange={(e) => setWorstMin(Math.max(0, Number(e.target.value) || 0))}
+                                    <AdmNumber
+                                        min={0} value={worstMin}
+                                        onChange={setWorstMin}
                                         className="adm-focusable"
                                         style={{
                                             width: 84, padding: '7px 10px', fontSize: '.82rem', fontWeight: 700, textAlign: 'center',

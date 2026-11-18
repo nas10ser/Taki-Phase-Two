@@ -14,26 +14,15 @@ import { useEscClose } from '../../hooks/useEscClose';
 // v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
 import { useBackClose } from '../../hooks/useBackClose';
 import { promoRepository } from '../../repositories/promoRepository';
+// v16.36 — شكلُ المسودّة وبذرُها في وحدةٍ خالصةٍ تُختبر بالتنفيذ.
+import { seedCampaign, emptyCampaign } from './campaignSeed';
+import type { CampaignDraft } from './campaignSeed';
 import { fieldStyle, labelStyle, hintStyle, AUDIENCE_LABELS, Field,
          modalShell, modalHead, modalFoot, toLocalDateInput } from './modalKit';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // نافذة الحملة الترويجية
 // ═══════════════════════════════════════════════════════════════════════════
-
-type CampaignDraft = {
-    title_ar: string; title_en: string; body_ar: string; body_en: string;
-    target_audience: 'all' | 'buyer' | 'seller';
-    target_city: string; target_region: string;
-    image_url: string; action_url: string;
-    action_label_ar: string; action_label_en: string;
-    starts_at: string; ends_at: string;
-    priority: number; is_active: boolean;
-    /** v12.27 — إعادة بث تلقائية: none/daily/every_3_days/weekend/weekly/monthly */
-    recurrence: string;
-    /** ساعة الإرسال بتوقيت الرياض (0–23) */
-    recurrence_hour: number;
-};
 
 // خيارات التكرار — الكرون الساعي في القاعدة يعيد البثّ حسبها (بتوقيت الرياض)
 const RECURRENCE_OPTIONS: { v: string; label: string; icon: string }[] = [
@@ -47,14 +36,6 @@ const RECURRENCE_OPTIONS: { v: string; label: string; icon: string }[] = [
 export const RECURRENCE_LABELS: Record<string, string> = Object.fromEntries(
     RECURRENCE_OPTIONS.map((o) => [o.v, o.label])
 );
-
-const emptyCampaign: CampaignDraft = {
-    title_ar: '', title_en: '', body_ar: '', body_en: '',
-    target_audience: 'all', target_city: '', target_region: '',
-    image_url: '', action_url: '', action_label_ar: '', action_label_en: '',
-    starts_at: '', ends_at: '', priority: 0, is_active: true,
-    recurrence: 'none', recurrence_hour: 10,
-};
 
 /** زرّ اختيارٍ واحد داخل مجموعة (جمهور / تكرار). */
 const PickButton: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
@@ -80,16 +61,12 @@ export const CampaignModal: React.FC<{
     const { customAlert } = useApp();
     const isEdit = Boolean(initial?.id);
     const [form, setForm] = useState<CampaignDraft>(() => ({
-        ...emptyCampaign,
-        ...(initial ?? {}),
+        ...seedCampaign(initial),
+        // التاريخان وحدهما يحتاجان تحويلاً لصيغة حقل `date` المحلّي.
         starts_at: initial?.starts_at ? toLocalDateInput(initial.starts_at) : '',
         ends_at: initial?.ends_at ? toLocalDateInput(initial.ends_at) : '',
-        target_audience: (initial?.target_audience as any) ?? 'all',
-        target_city: initial?.target_city ?? '',
-        target_region: initial?.target_region ?? '',
-        priority: initial?.priority ?? 0,
-        is_active: initial?.is_active ?? true,
-        recurrence: initial?.recurrence ?? 'none',
+        // 🪤 وساعةُ البثّ تبقى على فحص النوع: عمودٌ نصّيٌّ من القاعدة يجعل
+        //    حقلَ الرقم غيرَ متحكَّمٍ فيه، فتقفز القيمة تحت يد المستخدم.
         recurrence_hour: typeof initial?.recurrence_hour === 'number' ? initial.recurrence_hour : 10,
     }));
     const [saving, setSaving] = useState(false);

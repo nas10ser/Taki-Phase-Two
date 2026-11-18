@@ -49,6 +49,7 @@ import {
     AdmPill, AdmEmpty, AdmSkeleton, AdmButton,
     admNum, toneFg, toneBg,
     admCount, DAYS, ROWS, SHOWN_M, FILED_REPORTS, RECEIVED_REPORTS, REPORTERS, REPLIES, OPEN_SESSIONS,
+    AdmNumber,
 } from '../../components/admin/ui';
 import type { Tone } from '../../components/admin/ui';
 
@@ -669,9 +670,9 @@ const AdminReports: React.FC = () => {
                                     <FilterChip active={warnMin === 1} onClick={() => setWarnMin(1)} label="الكل" icon="•" />
                                     <FilterChip active={warnMin === 2} onClick={() => setWarnMin(2)} label="مرتين فأكثر" icon="⚠️" />
                                     <FilterChip active={warnMin === 3} onClick={() => setWarnMin(3)} label="3 فأكثر (خطر)" icon="🔴" />
-                                    <input
-                                        type="number" min={1} value={warnMin}
-                                        onChange={(e) => setWarnMin(Math.max(1, Number(e.target.value) || 1))}
+                                    <AdmNumber
+                                        min={1} value={warnMin}
+                                        onChange={setWarnMin}
                                         title="اكتب رقم الإنذارات — يعرض من هذا العدد فأكثر"
                                         aria-label="أقل عدد إنذارات"
                                         className="adm-focusable"

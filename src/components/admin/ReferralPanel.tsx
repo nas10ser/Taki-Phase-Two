@@ -12,6 +12,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+// v16.36 — حقلٌ رقميٌّ يُمسح ويقبل العربية (كان `Number(v)||1` يمنع المسح).
+import { AdmNumber } from './ui';
 import { REGIONS, CITIES, LOCATIONS } from '../../data/mock';
 
 interface StoreRow { store_id: string; shop: string | null; code: string | null; refs: number; seller_refs: number; }
@@ -95,8 +97,8 @@ export const ReferralPanel: React.FC = () => {
             {preset === 'days' && (
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-[var(--text-secondary)]">آخر</span>
-                    <input type="number" min={1} max={3650} value={days}
-                        onChange={e => setDays(Math.max(1, Math.min(3650, Number(e.target.value) || 1)))}
+                    <AdmNumber min={1} max={3650} value={days}
+                        onChange={setDays}
                         className="w-24 px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-center text-[var(--text-primary)]" />
                     <span className="text-xs font-bold text-[var(--text-secondary)]">يوماً</span>
                 </div>
@@ -146,8 +148,8 @@ export const ReferralPanel: React.FC = () => {
 
             <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs font-bold text-[var(--text-secondary)]">أعلى</span>
-                <input type="number" min={1} max={2000} value={limit}
-                    onChange={e => setLimit(Math.max(1, Math.min(2000, Number(e.target.value) || 1)))}
+                <AdmNumber min={1} max={2000} value={limit}
+                    onChange={setLimit}
                     className="w-24 px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm font-bold text-center text-[var(--text-primary)]" />
                 <span className="text-xs font-bold text-[var(--text-secondary)]">متجر</span>
                 {LIMIT_CHIPS.map(n => (

@@ -18,5 +18,9 @@ export {
 } from './AdminData';
 export type { AdmColumn, AdmRange } from './AdminData';
 
+// v16.36 — حقلٌ رقميٌّ يُمسح ويقبل الأرقام العربية (بلاغُ ناصر).
+//    النمطُ القديم `Number(e.target.value) || 1` كان يمنع المسحَ في ١٩ موضعاً.
+export { AdmNumber } from './AdmNumber';
+
 // معدوداتُ اللوحة — مصدرٌ واحد لصيغ الجمع العربي (v15.81)
 export * from './adminForms';
