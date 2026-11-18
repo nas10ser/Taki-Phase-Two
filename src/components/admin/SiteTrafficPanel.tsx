@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 import { arCount } from '../../utils/arPlural';
 import type { ArForms } from '../../utils/arPlural';
-import { VISITORS, BOOKINGS } from './ui';
+import { VISITORS, BOOKINGS, NEW_BUYERS, STORES } from './ui';
 
 /**
  * SiteTrafficPanel — «من أين يأتي الزوّار؟» (v14.80)
@@ -109,6 +109,15 @@ const SiteTrafficPanel: React.FC = () => {
 
     const t = data?.totals || {};
     const sessions = Number(t.sessions) || 0;
+    // v16.37 — المسجَّلون والزوّار بلا حساب: الأوّلُ يصل من القاعدة، والثاني
+    // هو الباقي. ويُقصّ عند الصفر فلا يظهر رقمٌ سالبٌ لو تأخّر صفٌّ عن آخر.
+    const signedIn = Number(t.signed_in) || 0;
+    const guests = Math.max(0, sessions - signedIn);
+    // v16.37 — من سجّل فعلاً في الفترة (من `admin_site_traffic`، هجرةُ
+    // JEDDAH_v16_37). 🪤 حسابٌ مستقلٌّ عن الجلسات: جلسةٌ تبدأ بلا حساب ثمّ
+    // يُسجّل صاحبُها — فالتسجيلُ لا يُقرأ من `site_sessions`.
+    const su = data?.signups || {};
+    const signups = Number(su.total) || 0;
     const channels: any[] = data?.channels || [];
     const exits: any[] = data?.exits || [];
     const landing: any[] = data?.landing || [];
@@ -141,6 +150,8 @@ const SiteTrafficPanel: React.FC = () => {
                 </div>
             )}
 
+            {/* v16.37 — «بلا حساب» = الجلسات ناقص المسجَّلين. يُحسب هنا لا في
+                القاعدة: الرقمان يصلان بالفعل، وطرحُهما في الشاشة لا يحتاج هجرة. */}
             {loading ? (
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 700, padding: 20, textAlign: 'center' }}>جارِ الحساب…</div>
             ) : sessions === 0 && !err ? (
@@ -158,7 +169,17 @@ const SiteTrafficPanel: React.FC = () => {
                             { k: 'الزوّار', v: sessions, hint: 'جلسة تصفّح' },
                             { k: 'حجزوا', v: Number(t.booked) || 0, hint: `${pct(Number(t.booked) || 0, sessions)}٪ من الزوّار` },
                             { k: 'غادروا فوراً', v: Number(t.bounced) || 0, hint: `${pct(Number(t.bounced) || 0, sessions)}٪ صفحة واحدة` },
-                            { k: 'مسجّلون', v: Number(t.signed_in) || 0, hint: 'لديهم حساب' },
+                            /* 🔴 v16.37 — طلبُ ناصر: «اريد تحليل كامل لزائرين الموقع
+                               غير المسجلين على غرار المسجلين … والمجموع الذي دخلوا
+                               اليوم أو أي عدد أيام، سواء كان مسجلاً في الموقع أو لا».
+                               والرقمان كانا في البيانات أصلاً ولا يُعرض إلّا أحدهما:
+                               `signed_in` يصل من `admin_site_traffic` منذ وُجدت،
+                               و«بلا حساب» هو الباقي — وهو **الأكثر** (قِيس على جدة
+                               ١٨ نوفمبر: ٦٦٨ من ٧٩٢ جلسة بلا حساب، أي ٨٤٪).
+                               فكان أكثرُ زوّار الموقع غيرَ ظاهرين في شاشته. */
+                            { k: 'مسجّلون', v: signedIn, hint: `${pct(signedIn, sessions)}٪ لديهم حساب` },
+                            { k: 'بلا حساب', v: guests, hint: `${pct(guests, sessions)}٪ زوّار` },
+                            { k: 'سجّلوا', v: signups, hint: `${arCount(Number(su.buyers) || 0, NEW_BUYERS)} · ${arCount(Number(su.stores) || 0, STORES)}` },
                             { k: 'من التطبيق', v: Number(t.pwa) || 0, hint: 'مثبَّت على الجوال' },
                         ].map(c => (
                             <div key={c.k} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 14, padding: '10px 12px' }}>

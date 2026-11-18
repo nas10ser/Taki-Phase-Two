@@ -1,4 +1,5 @@
 import { Rating } from '../data/mock';
+import { searchableOwnerName } from '../utils/storePrivacy';
 
 /**
  * Canonical text normalizer shared by every search surface (Home, DealsList,
@@ -227,9 +228,11 @@ export const dealService = {
             // Name fields are what a shopper actually types — weight them far
             // above bio/address so "N15" beats a store that merely mentions
             // "n15" somewhere in its description.
+            // 🔴 v16.36 — لا يُبحث بالاسم الشخصيّ لصاحب المتجر متى كان للمتجر
+            //    اسمٌ ظاهر (أمرُ ناصر). التفصيلُ في `utils/storePrivacy.ts`.
             const score = Math.max(
                 computeScore(query, shop) * 1.0,
-                computeScore(query, name) * 0.95,
+                computeScore(query, searchableOwnerName(s)) * 0.95,
                 computeScore(query, bio) * 0.4,
                 computeScore(query, address) * 0.35,
             );

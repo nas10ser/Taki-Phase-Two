@@ -1,4 +1,5 @@
 import { UserProfile, authService } from '../services/authService';
+import { matchesPublicly } from '../utils/storePrivacy';
 import { memoAsync } from '../utils/memoAsync';
 import { supabase } from '../services/supabaseClient';
 import { logger } from '../utils/logger';
@@ -424,7 +425,14 @@ export const userRepository = {
                     .or(`shop.ilike.%${sanitized}%,name.ilike.%${sanitized}%`)
                     .limit(10);
                 publicDirectoryAvailable = !viaView.error;
-                if (!viaView.error) return (viaView.data as any[] || []).map(mapUserRowToProfile);
+                // 🔴 v16.36 — الاستعلامُ يطابق `name` أيضاً (لا سبيل للتعبير عن
+                //    «إلّا إن كان المتجرُ بلا اسم» في PostgREST)، فتُصفّى النتيجةُ
+                //    هنا: لا يظهر متجرٌ طابق اسمُ **صاحبه** وله اسمُ متجرٍ ظاهر.
+                if (!viaView.error) {
+                    return (viaView.data as any[] || [])
+                        .filter((row) => matchesPublicly(row, query))
+                        .map(mapUserRowToProfile);
+                }
             }
 
             const { data, error } = await supabase

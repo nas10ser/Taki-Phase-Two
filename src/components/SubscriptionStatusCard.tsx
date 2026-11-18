@@ -62,7 +62,57 @@ const SubscriptionStatusCard: React.FC<Props> = ({ compact = false, refreshKey =
     if (loading) {
         return <div style={{ height: compact ? 56 : 150, borderRadius: 18, background: 'var(--gray-100)' }} className="animate-pulse" />;
     }
-    if (!sub) return null;
+    /**
+     * 🔴 v16.36 — بلاغُ ناصر (١٧ نوفمبر): «في حال قرر الادمن ان الموقع اصبح
+     *    او سيصبح باشتراك وليس مجاني بالكامل، اظهر الباقات لجميع التجار حتى
+     *    في حالة الاشتراك في حال اراد الترقيه».
+     *
+     *    وكان `if (!sub) return null` يُسقط البطاقةَ كاملةً عن **كلّ تاجرٍ
+     *    لا صفَّ اشتراكٍ له** — وهم بالضبط من يُراد أن يشتركوا. فالتاجرُ
+     *    الجديد لا يرى في لوحته أيَّ طريقٍ إلى الباقات، ولا يعرف أصلاً أن
+     *    ثمّة باقات. (وصفحةُ `/subscription` تعرضها كلَّها بالفعل وتقول
+     *    «الترقية أو تغيير الباقة» للمشترك — الناقصُ كان **المدخل**.)
+     *
+     * 🪤 والمُنادي هو الذي يقرّر الظهور: لوحةُ التاجر تُركّب النسخة المختصرة
+     *    خلف `isPaymentEnabled` (أي `platform_settings.payment_gateway_enabled`)
+     *    — فحين يكون الموقعُ مجّانياً بالكامل لا تظهر البطاقةُ أصلاً، وهذا
+     *    هو المقصود. ولا يُكرَّر الشرطُ هنا فيصير مصدرَ حقيقةٍ ثانياً.
+     *
+     * 🪤 وفي النسخة الكاملة (صفحةُ الاشتراك) يبقى الارتدادُ `null`: قائمةُ
+     *    الباقات مرسومةٌ تحتها مباشرةً، فبطاقةُ دعوةٍ فوقها تكرارٌ لا فائدة فيه.
+     */
+    if (!sub) {
+        if (!compact) return null;
+        return (
+            <button
+                type="button"
+                onClick={() => history.push('/subscription')}
+                style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    margin: '12px 16px 0', width: 'calc(100% - 32px)',
+                    padding: '12px 14px', borderRadius: 16, cursor: 'pointer',
+                    background: 'var(--card-bg)', border: '1.5px solid var(--primary)',
+                    boxShadow: 'var(--shadow)', textAlign: isRTL ? 'right' : 'left',
+                }}
+            >
+                <span style={{ fontSize: '1.4rem' }}>🚀</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                        {t('باقات الاشتراك', 'Subscription plans')}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, marginTop: 2 }}>
+                        {t('اطّلع على الباقات واختر ما يناسب عدد مواقعك.', 'See the plans and pick what fits your locations.')}
+                    </div>
+                </div>
+                <span style={{
+                    fontSize: '0.75rem', fontWeight: 900, color: 'white', background: 'var(--primary)',
+                    padding: '6px 12px', borderRadius: 10, whiteSpace: 'nowrap',
+                }}>
+                    {t('عرض الباقات', 'View plans')}
+                </span>
+            </button>
+        );
+    }
 
     const now = Date.now();
     const exp = sub.expiresAt ? new Date(sub.expiresAt).getTime() : null;
