@@ -9,6 +9,7 @@ import { supabase } from '../services/supabaseClient';
 import { normalizeArabicNumerals, maskEmail } from '../utils/helpers';
 import { isTelegramMiniApp, loginViaTelegram } from '../services/telegramMiniApp';
 import TurnstileWidget, { preloadTurnstile } from '../components/TurnstileWidget';
+import SignupDemographics, { type Gender, type AgeBand } from '../components/auth/SignupDemographics';
 preloadTurnstile(); // v16.33 — جذرُ حزمة التسجيل: يُسخَّن سكربتُ التحقّق والمستخدمُ ما زال على شاشة البداية (السببُ المقيس في `TurnstileWidget.tsx`).
 import PasswordField, { pwIsStrong, pwChecks } from '../components/PasswordField';
 import { isPasswordRecovery, markPasswordRecovery, clearPasswordRecovery } from '../utils/passwordRecovery';
@@ -141,12 +142,9 @@ const Register: React.FC = () => {
     const [code, setCode] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [emailError, setEmailError] = useState('');
-    const [phoneError, setPhoneError] = useState('');
-    const [emailChecking, setEmailChecking] = useState(false);
-    const [phoneChecking, setPhoneChecking] = useState(false);
-    const [emailSuccess, setEmailSuccess] = useState(false);
-    const [phoneSuccess, setPhoneSuccess] = useState(false);
+    const [emailError, setEmailError] = useState(''); const [phoneError, setPhoneError] = useState('');
+    const [emailChecking, setEmailChecking] = useState(false); const [phoneChecking, setPhoneChecking] = useState(false);
+    const [emailSuccess, setEmailSuccess] = useState(false); const [phoneSuccess, setPhoneSuccess] = useState(false);
     const [resending, setResending] = useState(false);
     // v11.2 — explicit consent to terms+privacy+refund is now a hard
     // prerequisite for signup. The checkbox below records consent and
@@ -161,7 +159,7 @@ const Register: React.FC = () => {
     // v12.30 — «من أين سمعت عن تاكي؟» (اختياري) + رمز دعوة المتجر من الرابط.
     // ?ref=CODE يُلتقط فور فتح الصفحة ويثبت في sessionStorage حتى لو تنقّل
     // المستخدم بين الشاشات قبل إكمال التسجيل — فلا يفقد المتجر إحالته.
-    const [heardFrom, setHeardFrom] = useState('');
+    const [heardFrom, setHeardFrom] = useState(''); const [gender, setGender] = useState<Gender | ''>(''); const [ageBand, setAgeBand] = useState<AgeBand | ''>('');  // v16.39 — سؤالا الجنس والفئة العمرية (اختياريان)
     const [heardStoreName, setHeardStoreName] = useState('');
     const [refCode] = useState<string>(() => {
         try {
@@ -658,6 +656,7 @@ const Register: React.FC = () => {
                 // v13.92 — اللغة المختارة في الواجهة تُحفظ في بيانات الحساب،
                 // فيصل بريد التأكيد بلغة المستخدم لا بالإنجليزية دائماً.
                 lang: language,
+                gender: gender || null, age_band: ageBand || null,  // v16.39 — اختياريان؛ قائمةُ السماح في `handle_new_user`
             };
 
             const response = await authService.signUpWithEmail(trimmedEmail, password, userData, captchaToken);
@@ -1374,6 +1373,7 @@ const Register: React.FC = () => {
                             )
                         )}
 
+                        {!isLogin && <SignupDemographics isRTL={isRTL} gender={gender} ageBand={ageBand} onGender={setGender} onAgeBand={setAgeBand} />}
                         {/* Legal consent — required for new registrations only.
                             Records intent to be bound (digital signature) before
                             we collect any further details. Without this tick,

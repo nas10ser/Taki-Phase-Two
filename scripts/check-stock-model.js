@@ -340,7 +340,16 @@ if (/api_key_hash|webhook_secret/.test(card)) {
 if (!/blockedReason/.test(card)) {
     fail('الشاشة لا تعرض سببَ تعذّر قطاعٍ (الفنادق) — تصنيفٌ بلا إفصاحٍ وعدٌ بما لا يُنفَّذ.');
 }
-if (!/StockLinkCard/.test(read('src/pages/SellerDashboard.tsx'))) {
+// 🪤 v16.38 — المرساةُ تتبع **شجرةَ التركيب** لا ملفّاً بعينه: خرجت بطاقاتُ
+//    التهيئة إلى `SellerSetupCards` (السقّافةُ تمنع نموَّ اللوحة)، فسقط هذا
+//    الحارسُ على إعادةِ تنظيمٍ **لم تغيّر سلوكاً واحداً**. ووُسّعت المرساةُ
+//    لا الشرط: البطاقةُ مركَّبةٌ إن وُجدت في اللوحة أو في مكوّنٍ **تُركّبه
+//    اللوحةُ فعلاً** — فتبقى «واجهةٌ لا يصلها أحد» ممنوعةً كما كانت.
+const sellerDash = read('src/pages/SellerDashboard.tsx');
+const setupCards = read('src/components/seller/SellerSetupCards.tsx');
+const mountedInDash = (re) => re.test(sellerDash)
+    || (/<SellerSetupCards/.test(sellerDash) && re.test(setupCards));
+if (!mountedInDash(/<StockLinkCard[\s/>]/)) {
     fail('الشاشة غيرُ مركَّبة في لوحة التاجر — واجهةٌ لا يصلها أحد.');
 }
 const m10 = code(read('supabase/JEDDAH_v15_10_integration_doors.sql'));

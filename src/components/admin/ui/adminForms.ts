@@ -230,6 +230,12 @@ export const SESSIONS: ArForms = {
     one: 'جلسة واحدة', two: 'جلستان', twoGen: 'جلستين', few: 'جلسات', many: 'جلسة',
 };
 
+// v16.38 — صفحاتُ الجلسة في «النشطون الآن». وهي صيغةُ لوحةٍ وحدها: لا يقولها
+// بوتٌ ولا قاعدة، فلا نسخةَ لها في `shared/` ولا في `taki_ar_messages()`.
+export const PAGES: ArForms = {
+    one: 'صفحة واحدة', two: 'صفحتان', twoGen: 'صفحتين', few: 'صفحات', many: 'صفحة',
+};
+
 export const OPEN_SESSIONS: ArForms = {
     one: 'جلسة واحدة مفتوحة', two: 'جلستان مفتوحتان', twoGen: 'جلستين مفتوحتين',
     few: 'جلسات مفتوحة', many: 'جلسة مفتوحة',

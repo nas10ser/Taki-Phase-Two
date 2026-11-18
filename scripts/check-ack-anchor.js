@@ -224,8 +224,14 @@ check('ونصُّ وقتٍ مكان الرقم لا يُقبل صامتاً',
     //    المحذوفة، فحارسٌ ساذج يتّهم النصَّ الذي يحرسه (v15.22 · v15.40).
     check('ولا نصَّ يُحيل إلى بطاقةٍ لم تعد تظهر',
         !/بطاقة «طريقة الحساب»/.test(strip(R('src/components/seller/DeliveryCard.tsx'))));
+    // 🪤 v16.38 — تتبع شجرةَ التركيب: خرجت البطاقاتُ إلى `SellerSetupCards`
+    //    (السقّافة)، والمرساةُ هناك الآن. والشرطُ كما هو: اللوحةُ تُركّب
+    //    المكوّن، والمكوّنُ يحمل المرساة — فلا تُقبل مرساةٌ في ملفٍّ يتيم.
+    const dashSrc = R('src/pages/SellerDashboard.tsx');
+    const cardsSrc = R('src/components/seller/SellerSetupCards.tsx');
     check('ومرساةُ قائمة الانطلاق باقية',
-        /id="setup-pay"/.test(R('src/pages/SellerDashboard.tsx')));
+        /id="setup-pay"/.test(dashSrc)
+        || (/<SellerSetupCards/.test(dashSrc) && /id="setup-pay"/.test(cardsSrc)));
 
     console.log(`${fail ? '❌' : '✅'} ساعةُ التأكيد وطريقةُ الحساب: ${pass + fail} فحصاً`);
     process.exit(fail ? 1 : 0);

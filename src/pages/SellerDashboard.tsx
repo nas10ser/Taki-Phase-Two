@@ -8,19 +8,14 @@ const ImageCropEditor = React.lazy(() => import('../components/ImageCropEditor')
 const CameraCapture = React.lazy(() => import('../components/CameraCapture'));
 const ReportDialog = React.lazy(() => import('../components/ReportDialog'));
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-const WorkingHoursEditor = React.lazy(() => import('../components/WorkingHoursEditor'));
-const ReferralCard = React.lazy(() => import('../components/seller/ReferralCard'));
-const GatewayCard = React.lazy(() => import('../components/seller/GatewayCard'));
-const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard')); const StockLinkCard = React.lazy(() => import('../components/seller/StockLinkCard'));   // v15.10 — ربطُ نظام التاجر (كسولةٌ ومدموجة: الحزمة ٣٠٠/٣٠٠ والسقّافة ٥٦٧٥)
+const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard'));
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
-import PaymentDeclarationCard from '../components/seller/PaymentDeclarationCard';
 import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText, allZeroText } from '../utils/locationQty';
 import LocationQtyGroups from '../components/seller/LocationQtyGroups';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
 import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 const DeliveryTrackerCard = React.lazy(() => import('../components/seller/DeliveryTrackerCard'));
-import VatStatusCard from '../components/seller/VatStatusCard';
 const SellerAnalytics = React.lazy(() => import('../components/seller/SellerAnalytics'));
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { isDealSoldOut } from '../utils/dealAvailability'; import { SoldOutButton } from '../components/seller/SoldOutButton';   // v15.07 — سطرٌ واحد: الملفّ عند سقف السقّافة تماماً
@@ -43,7 +38,8 @@ import { directionsLink } from '../utils/mapLinks';
 import DealPriceFields from '../components/seller/DealPriceFields';
 import { isValidSaudiVat } from '../utils/zatcaQr';
 import RefundPanel from '../components/seller/RefundPanel';
-import StorePoliciesCard from '../components/seller/StorePoliciesCard';
+import SellerSetupCards from '../components/seller/SellerSetupCards';
+import { useVerifyLock, VerifyLock } from '../components/seller/VerifyLock';
 import OrderCloseActions from '../components/seller/OrderCloseActions'; import OrdersToolbar, { emptyOrdersLabel } from '../components/seller/OrdersToolbar'; import DealsToolbar from '../components/seller/DealsToolbar'; import ListSearchRow from '../components/ListSearchRow'; import useListSearch from '../hooks/useListSearch';
 import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
 const StoreLocationPicker = React.lazy(() => import('../components/seller/StoreLocationPicker'));
@@ -442,6 +438,8 @@ const SellerDashboard: React.FC = () => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [editingDealId, setEditingDealId] = useState<string | null>(null);
     const [isPaymentEnabled, setIsPaymentEnabled] = useState(false);
+    // v16.38 — قفلُ التوثيق: مطابقٌ لما يرفضه الخادمُ حرفاً (التفصيل في `VerifyLock`).
+    const { locked: verifyLocked } = useVerifyLock();
     const [isSubscriptionValid, setIsSubscriptionValid] = useState(true);
     // The store's location package size (store_profiles.max_branches): 1/3/6/10.
     // Admin-controlled from Admin → Sellers. Falls back to the base 3.
@@ -3129,33 +3127,18 @@ const SellerDashboard: React.FC = () => {
                 {/* v14.45 — نواقص الإعداد فوق كل تبويب، لا في تبويب الإضافة وحده:
                     التاجر الذي يعيش في «طلباتي» كان لا يمرّ ببطاقاتها أصلاً. */}
                 {user && <SetupPath userId={user.id} isRTL={isRTL} onGo={goToSetupStep} />}
-                {/* ساعات عمل المحل — بطاقة مستقلة أعلى تبويب الإضافة (تُحفظ في الملف لا في العرض) */}
+                {/* بطاقاتُ التهيئة — خرجت إلى `SellerSetupCards` (v16.38): هذا ملفٌّ
+                    مُعلَنٌ ضخماً والسقّافةُ تمنع نموَّه، وقفلُ التوثيق يحتاج غلافاً.
+                    و`locked` يُحسب مرّةً واحدةً أعلى المكوّن ويُمرَّر للنموذج أيضاً. */}
                 {view === 'form' && user && (
-                    <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
-                        {/* v14.08 (بلاغ ناصر: «متجر لم يضع طريقة الحساب وأستطيع الحجز») —
-                            الإقرار أولاً وفوق كل شيء: بلا جوابٍ عليه ترفض القاعدة كل حجز
-                            على هذا المتجر، فلا معنى لأن يملأ التاجر نموذج منتج قبله. */}
-                        <div id="setup-pay"><PaymentDeclarationCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /></div>
-                        <div id="setup-hours"><WorkingHoursEditor value={myWorkingHours} isRTL={isRTL} saving={hoursSaving} onSave={handleSaveHours} /></div>
-                        {/* v14.18 — سياسة الاسترداد والاستبدال وشروط المتجر: تُعرض
-                            للمشتري في صفحة المتجر وفي صفحة العرض **قبل الحجز**.
-                            صفحة الاسترداد كانت تَعِد المشتري بأن يقرأها هناك، ولم يكن
-                            في النظام حقلٌ يكتبها فيه أصلاً. */}
-                        <div id="setup-refund"><StorePoliciesCard /></div>
-                        {/* v13.38 — الوضع الضريبي للتاجر: يحدّد شكل فواتير طلباته،
-                            ويُظهر فائدة الاسترداد تلقائياً متى فعّلت المنصة الضريبة */}
-                        <div id="setup-vat"><VatStatusCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /></div>
-                        {/* v12.81 — الدفع المباشر لحساب التاجر (0% عمولة): ربط بوابة الدفع الخاصة */}
-                        <GatewayCard userId={user.id} isRTL={isRTL} onAlert={customAlert} /> <StockLinkCard />   {/* v15.10 — اربط مخزونك بنظامك: بعد بوّابة الدفع، فكلاهما ربطٌ بنظامٍ خارجيّ */}
-                        {/* v14.08 — بطاقة التوصيل نزلت إلى **آخر الصفحة** (بلاغ ناصر:
-                            «المفروض يحط موقع المحل أولاً ثم يحدد أماكن التوصيل وليس
-                            العكس»): نطاق التوصيل يُرسم حول موقع المحل، فرسمه قبل أن
-                            يوجد موقعٌ أصلاً ترتيبٌ مقلوب. */}
-                        {/* v12.30 — رابط دعوة العملاء + باركود QR (الإحالة تُنسب للمتجر) */}
-                        <ReferralCard isRTL={isRTL} onAlert={customAlert} />
-                    </div>
+                    <SellerSetupCards
+                        userId={user.id} isRTL={isRTL} onAlert={customAlert}
+                        workingHours={myWorkingHours} hoursSaving={hoursSaving}
+                        onSaveHours={handleSaveHours} locked={verifyLocked}
+                    />
                 )}
                 {view === 'form' && (!isPaymentEnabled || isSubscriptionValid) ? (
+                    <VerifyLock locked={verifyLocked} note="لا يُنشر عرضٌ جديد إلا من متجرٍ موثّق — يُفتح النموذجُ فور اعتماد التوثيق.">
                     <form id="setup-dealform" onSubmit={(e) => { e.preventDefault(); submitAction(false); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 24, padding: '24px 20px', boxShadow: 'var(--shadow-lg)' }}>
                         {submitted && <div style={{ background: 'var(--gray-100)', color: 'var(--primary)', padding: '12px', borderRadius: 16, marginBottom: 20, textAlign: 'center', fontWeight: 700 }}>✅ {isRTL ? 'تم الحفظ بنجاح' : 'Saved Successfully'}</div>}
                         
@@ -4747,7 +4730,7 @@ const SellerDashboard: React.FC = () => {
                                     </button>
                                 )}
                             </div>
-                    </form>
+                    </form></VerifyLock>
                 ) : view === 'products' ? (
                     <div>
                         <DealsToolbar

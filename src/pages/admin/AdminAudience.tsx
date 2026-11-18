@@ -38,6 +38,8 @@ import { useHistory } from 'react-router-dom';
 import { adminService } from '../../services/adminService';
 import { REGIONS, CITIES, LOCATIONS } from '../../data/mock';
 import SiteTrafficPanel from '../../components/admin/SiteTrafficPanel';
+// v16.38 — النشطون الآن (طلبُ ناصر): لحظيّاً، بالساعة، وبالتفصيل.
+import LiveNowPanel from '../../components/admin/LiveNowPanel';
 import {
     AdmCard, AdmSection, AdmStat, AdmStatGrid, AdmPill, AdmEmpty,
     AdmSkeleton, AdmError, AdmButton, AdmTable, AdmSelect, admNum,
@@ -672,6 +674,7 @@ const AdminAudience: React.FC = () => {
                         badge={{ text: 'كل الموقع — بلا تصفية جغرافية', tone: 'info' }}
                         desc="قسمٌ بمقياسٍ مختلفٍ تماماً عمّا فوقه: يعدّ جلسات التصفّح (ومنها زوّارٌ بلا حساب)، وله فترتُه الخاصّة، ولا تصفّيه مرشِّحات المنطقة والمدينة أعلاه. بداخله: القنوات والحملات والمواقع المُحيلة والأجهزة وآخر صفحةٍ قبل المغادرة."
                     >
+                        <LiveNowPanel />
                         <SiteTrafficPanel />
                     </AdmSection>
                 </>

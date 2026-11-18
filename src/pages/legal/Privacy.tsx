@@ -108,6 +108,7 @@ const Privacy: React.FC = () => {
                 </Paragraph>
                 <Bullets items={isRTL ? [
                     <><strong>بيانات الهوية والاتصال</strong>: الاسم، رقم الجوّال، البريد الإلكتروني، نوع الحساب (مشترٍ أو تاجر).</>,
+                    <><strong>بيانات اختيارية تُسأل عند التسجيل</strong>: الجنس (ذكر/أنثى) و<strong>الفئة العمرية</strong> ضمن نطاقاتٍ واسعة (١٨–٢٤، ٢٥–٣٤، ٣٥–٤٤، ٤٥–٥٤، ٥٥–٦٤، ٦٥ فأكثر). <strong>لا نَطلب تاريخ ميلادك</strong>، والإجابة اختيارية تماماً ويمكنك تخطّيها والتسجيل كالمعتاد. نستعملها مجمّعةً لفهم جمهور المنصّة وتحسين ما يُعرض عليك، ولا تظهر لأي تاجر ولا لأي مستخدم آخر. وتُمحى مع بقيّة بياناتك عند حذف حسابك.</>,
                     <><strong>بيانات التاجر</strong>: اسم المتجر، فئة النشاط، الموقع، الفروع، الصور، وما يَلزم للتحقّق من النشاط التجاري.</>,
                     <><strong>بيانات المعاملات</strong>: تفاصيل الحجوزات والعروض والتفاعلات على المنصّة.</>,
                     <><strong>بيانات الاستخدام والبيانات الفنّية</strong>: الصفحات التي تَزورها، الأنشطة على المنصّة، نوع الجهاز ونظام التشغيل، إعدادات اللغة، عنوان بروتوكول الإنترنت (IP).</>,
@@ -120,6 +121,7 @@ const Privacy: React.FC = () => {
                     <><strong>بيانات الموافقات القانونية</strong>: تاريخ ووقت موافقتك على الشروط والسياسات، وإصدار الوثائق الذي وافقت عليه، وإقرارك بالسنّ، وعنوان الإنترنت ونوع المتصفّح وقت الموافقة — دليلاً على التوقيع الإلكتروني.</>,
                 ] : [
                     <><strong>Identity and contact data</strong>: name, mobile number, email, account type (buyer or merchant).</>,
+                    <><strong>Optional data asked at sign-up</strong>: gender (male/female) and an <strong>age range</strong> in broad bands (18-24, 25-34, 35-44, 45-54, 55-64, 65+). <strong>We do not ask for your date of birth</strong>; answering is entirely optional and you can skip it and register as usual. We use it in aggregate to understand the platform's audience and improve what you are shown; it is never visible to any merchant or other user, and it is erased with the rest of your data when you delete your account.</>,
                     <><strong>Merchant data</strong>: store name, activity category, location, branches, images, and what is needed to verify the commercial activity.</>,
                     <><strong>Transaction data</strong>: details of bookings, offers and interactions on the platform.</>,
                     <><strong>Usage and technical data</strong>: pages you visit, activity on the platform, device type and operating system, language settings, and IP address.</>,
