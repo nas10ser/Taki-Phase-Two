@@ -195,14 +195,13 @@ BEGIN
             jsonb_build_object('audience','admin', 'complaintId', NEW.id,
                                'actionUrl', '/admin?tab=reports',
                                'action_url', '/admin?tab=reports'));
-    -- البريد هو القناة الوحيدة التي تصل ناصر وهو خارج التطبيق وبلا إشعارات مثبَّتة.
-    BEGIN
-      PERFORM public.taki_queue_email(a.id, 'admin_complaint',
-        '📮 شكوى جديدة على تاكي',
-        '<div dir="rtl" style="font-family:system-ui"><h2>📮 شكوى جديدة</h2><p>'
-        || coalesce(v_body,'') || '</p><p><a href="https://www.takisa.net/admin?tab=reports">فتح لوحة البلاغات</a></p></div>');
-    EXCEPTION WHEN others THEN NULL;  -- تعذّر البريد لا يمنع الشكوى من الوصول
-    END;
+    -- 🔴 v16.50 — **عُدِّل هذا الملفُّ المطبَّق عمداً** (أمرُ ناصر، ١٩ نوفمبر
+    --    ٢٠٢٦): كان هنا `taki_queue_email` فيُرسل نسخةً ثانيةً إلى بريد
+    --    **حساب** كلّ أدمن (`users.email` = جيميل ناصر) مع كلّ شكوى. وتوجيهُ
+    --    v15.93 إلى `complain@` / `info@` أُضيف **بجانبه** لا بدلاً منه،
+    --    فصارت لكلّ شكوى رسالتان. وهذه الملفّاتُ قابلةٌ لإعادة التنفيذ،
+    --    فتركُه هنا كان يعني عودةَ العيب عند أيّ إعادة تشغيل.
+    --    الجرسُ أعلاه يبقى — هو طابورُ عمل الأدمن.
   END LOOP;
   RETURN NEW;
 END $$;
