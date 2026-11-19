@@ -94,5 +94,44 @@ check('مهلةٌ فارغة ⇒ قفل', computeVerifyLock(S('required', false,
 check('مهلةٌ تنتهي في هذه اللحظة ⇒ قفل',
     computeVerifyLock(S('required', false, iso(0)), NOW) === true);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// جدولُ «هل يُطالَب بالدفع؟» — بعبارة ناصر حرفاً
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔴 تأكيدُ ناصر (١٩ نوفمبر ٢٠٢٦): «طبعاً في حال التوثيق ليس إلزامياً وتم وضع
+//    إلزام الدفع، فإنه **يلزم الدفع**».
+//    أي أن تأجيلَ الدفع ليس عاماً: هو مقصورٌ على من **يمنعه التوثيقُ من
+//    النشر**. ومن يستطيع النشرَ يدفع.
+//
+// 🪤 والرابطُ في `SellerDashboard.checkSub` سطرٌ واحد:
+//        if (verifyLocked) { setIsSubscriptionValid(true); return; }
+//    فـ«الدفعُ مؤجَّل» ⇔ `computeVerifyLock(...) === true` بالضبط. ولذلك
+//    يُفحص الجدولُ هنا بعبارة الدفع لا بعبارة القفل: لو انقلب المعنى يوماً
+//    سقط هذا القسمُ وإن بقي قسمُ القفل أخضر.
+const paymentDeferred = (state, userType) => computeVerifyLock(state, NOW, userType);
+
+console.log('\n  — هل يُطالَب التاجرُ بالدفع؟ (إلزامُ الدفع مفعَّل) —');
+
+// ① التوثيقُ **ليس** إلزامياً ⇒ يلزم الدفع (نصُّ تأكيد ناصر)
+check('التوثيق مُطفأ (off) + غيرُ موثّق ⇒ **يلزم الدفع**',
+    paymentDeferred(S('off', false), 'seller') === false);
+check('التوثيق «نصيحة» (advisory) + غيرُ موثّق ⇒ **يلزم الدفع**',
+    paymentDeferred(S('advisory', false), 'seller') === false);
+check('التوثيق «نصيحة» ولو انتهت مهلتُه ⇒ **يلزم الدفع**',
+    paymentDeferred(S('advisory', false, iso(-864e5)), 'seller') === false);
+
+// ② التوثيقُ إلزاميٌّ وهو موثّق ⇒ يستطيع النشر ⇒ يلزم الدفع
+check('إلزاميّ + موثّق ⇒ **يلزم الدفع**',
+    paymentDeferred(S('required', true), 'seller') === false);
+check('إلزاميّ + مهلةٌ انتقاليّةٌ سارية (يستطيع النشر) ⇒ **يلزم الدفع**',
+    paymentDeferred(S('required', false, iso(864e5)), 'seller') === false);
+
+// ③ الحالةُ الوحيدة التي يُؤجَّل فيها: ممنوعٌ من النشر بسبب التوثيق
+check('إلزاميّ + غيرُ موثّق + بلا مهلة ⇒ يُؤجَّل الدفع وحدها',
+    paymentDeferred(S('required', false, null), 'seller') === true);
+
+// ④ والأدمن لا يُطالَب أصلاً (ليس تاجراً يدفع)
+check('الأدمن: لا قفلَ ولا مطالبة',
+    paymentDeferred(S('required', false, null), 'admin') === false);
+
 console.log(`\n${fail ? '❌' : '✅'} قفلُ التوثيق: ${pass} ناجحاً · ${fail} فاشلاً`);
 process.exit(fail ? 1 : 0);
