@@ -52,6 +52,18 @@ const NOW = Date.UTC(2026, 10, 18, 12, 0, 0);          // ١٨ نوفمبر ٢٠
 const iso = (deltaMs) => new Date(NOW + deltaMs).toISOString();
 const S = (mode, verified, graceUntil = null) => ({ mode, verified, graceUntil });
 
+// ── ⓪ الأدمن: لا رماد عليه إطلاقاً (أمرُ ناصر ١٩ نوفمبر) ─────────────────
+// 🔴 وهذا أوّلُ ما يُفحص: متجرُ «تاكي» مملوكٌ لحساب أدمن، وترميدُ لوحته
+//    يُطفئ كتالوجَ المنصّة نفسَه.
+check('أدمن + required + غيرُ موثّق ⇒ لا قفل',
+    computeVerifyLock(S('required', false, null), NOW, 'admin') === false);
+check('أدمن ولو انتهت مهلتُه ⇒ لا قفل',
+    computeVerifyLock(S('required', false, iso(-864e5)), NOW, 'admin') === false);
+check('والتاجرُ في نفس الحالة **يُقفل** (الاستثناءُ للأدمن وحده)',
+    computeVerifyLock(S('required', false, null), NOW, 'seller') === true);
+check('ونوعٌ غيرُ معروفٍ لا يُعفى',
+    computeVerifyLock(S('required', false, null), NOW, undefined) === true);
+
 // ── ① المسموحُ يبقى مفتوحاً — وهذه هي الحالاتُ التي تُعطّل متجراً لو أخطأنا ──
 check('الحالةُ لم تُحسم بعد ⇒ لا قفل', computeVerifyLock(null, NOW) === false);
 check('الوضع off ⇒ لا قفل', computeVerifyLock(S('off', false), NOW) === false);

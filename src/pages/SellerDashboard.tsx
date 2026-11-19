@@ -524,9 +524,19 @@ const SellerDashboard: React.FC = () => {
         const activeOk = !!sub && (sub.status === 'active' || sub.status === 'gifted')
             && (!sub.current_period_end || new Date(sub.current_period_end).getTime() > now);
 
+        // 🔴 v16.42 (أمرُ ناصر ١٩ نوفمبر): «لا تُلزم الدفع إلا بعد توثيق
+        //    التسجيل، حتى يتسنّى منه الاستفادة الكاملة من مدّة الشهر».
+        //    ومتجرٌ غيرُ موثّقٍ **لا يستطيع النشر أصلاً** (مشغّلُ `deals` يرفضه)،
+        //    فمطالبتُه بالدفع تبيعه شهراً يبدأ عدُّه وهو لا يملك أن ينتفع به.
+        //    ⇒ ما دام القفلُ قائماً فلا مطالبةَ باشتراك؛ ويبدأ الطلبُ فور
+        //      اعتماد التوثيق، فتبدأ مدّتُه كاملةً من يومها.
+        //    🪤 ولا يفتح هذا باباً للنشر مجّاناً: النموذجُ نفسُه مرمَّدٌ ومعطَّل
+        //       بـ`VerifyLock`، والقاعدةُ ترفض من ورائه.
+        if (verifyLocked) { setIsSubscriptionValid(true); return; }
+
         // Unlock on ANY positive signal (billing row OR admin-written mirror).
         setIsSubscriptionValid(Boolean(trialOk || activeOk || mirrorOk));
-    }, [user]);
+    }, [user, verifyLocked]);
 
     React.useEffect(() => {
         checkSub();
@@ -5368,10 +5378,16 @@ const SellerDashboard: React.FC = () => {
                     التوصيل من أي واجهة.
                     v14.08 — موضعها الآن **آخر تبويب الإضافة، بعد نموذج المنتج**: التاجر
                     يثبّت موقع محلّه أولاً ثم يرسم حوله نطاق توصيله. */}
+                {/* 🔴 v16.42 (بلاغُ ناصر ١٩ نوفمبر): «إدارة التوصيل بالأسفل لا زال
+                    كما هو ولم يتحوّل إلى رمادي». وسببُه أنها **خارج** كتلة
+                    البطاقات: موضعُها آخرُ التبويب بعد نموذج المنتج (v14.08)،
+                    فلم يشملها الغلاف. وهي من «ما تحتها» في أمره. */}
                 {view === 'form' && user && (
-                    <div style={{ marginTop: 16 }}>
-                        <DeliveryCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
-                    </div>
+                    <VerifyLock locked={verifyLocked} note="تُفتح إدارةُ التوصيل بعد توثيق متجرك — وبطاقةُ التوثيق أعلى الصفحة.">
+                        <div style={{ marginTop: 16 }}>
+                            <DeliveryCard userId={user.id} isRTL={isRTL} onAlert={customAlert} />
+                        </div>
+                    </VerifyLock>
                 )}
             </div>
 

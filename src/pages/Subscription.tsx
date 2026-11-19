@@ -8,6 +8,8 @@ import { useApp } from '../context/AppContext';
 import { paymentService } from '../services/paymentService';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
+// v16.42 — نفسُ قفل لوحة التاجر: مصدرٌ واحد لمعنى «غيرُ موثّق».
+import { useVerifyLock } from '../components/seller/VerifyLock';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import StoreSubscription from '../components/seller/StoreSubscription';
 import { iapIsStoreFlow } from '../native/iap';
@@ -131,6 +133,7 @@ const Subscription: React.FC = () => {
     // أرقام المبالغ: أرقام عربية-هندية في الواجهة العربية، لاتينية في الإنجليزية.
     const nf = (n: number) => n.toLocaleString(isRTL ? 'ar-SA' : 'en-US');
     const pkgName = (p: LocationPackage) => (isRTL ? p.ar : (p.en || p.ar));
+    const { locked: verifyLocked } = useVerifyLock();
     const [packages, setPackages] = useState<LocationPackage[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -233,7 +236,18 @@ const Subscription: React.FC = () => {
         }
     };
 
-    if (!user || user.userType !== 'seller') {
+    /**
+     * 🔴 v16.42 (بلاغُ ناصر ١٩ نوفمبر): «عند النقر على الباقة المجانية يظهر
+     *    غير مصرَّح به — والمفروض يظهر باقته والباقات الأخرى إذا أراد يسوّي
+     *    أبقريد». وكان الشرطُ `userType !== 'seller'`.
+     *
+     * 🪤 وهذا هو الفخُّ المسجَّل في قواعد المشروع حرفاً: **كلُّ مرشِّح
+     *    `user_type='seller'` يُخفي متجرَ ناصر** المملوكَ لحساب أدمن —
+     *    فيُستعمل «ليس مشترياً» (`neq('buyer')`). وقد أُصلح في
+     *    `SubscriptionStatusCard` في v15.53 **وبقي هنا سنةً** لأن الإصلاح
+     *    وقتها عالج البطاقةَ ولم يُجرَد بقيّةُ مواضع نفس النمط.
+     */
+    if (!user || user.userType === 'buyer') {
         return <div className="p-8 text-center text-red-500 font-tajawal">{t('غير مصرح لك بالدخول لهذه الصفحة.', 'You are not allowed to open this page.')}</div>;
     }
 
@@ -320,6 +334,21 @@ const Subscription: React.FC = () => {
                     <>Pick the plan that matches how many locations you cover. <b className="text-amber-600">Every plan is monthly</b> — pay monthly, cancel any time, with <b className="text-emerald-600">zero commission</b> on bookings.</>
                 )}
             </p>
+
+            {/* 🔴 v16.42 (أمرُ ناصر): «لا تُلزم الدفع إلا بعد توثيق التسجيل حتى
+                يتسنّى منه الاستفادة الكاملة من مدّة الشهر». فالمتجرُ غيرُ الموثّق
+                لا يُطالَب باشتراك — ويُقال له ذلك هنا صراحةً بدل أن يدفع ثمّ
+                يكتشف أن شهره يمضي وهو لا يستطيع النشر. والباقاتُ تبقى معروضةً
+                ليطّلع عليها ويختار متى شاء. */}
+            {verifyLocked && (
+                <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-[var(--text-primary)]">
+                    <div className="font-extrabold text-sm mb-1">⏳ {t('لا داعي للدفع الآن', 'No need to pay yet')}</div>
+                    <div className="text-xs font-semibold leading-relaxed">
+                        {t('متجرك قيد التوثيق، والنشر مغلق حتى يُعتمد. لن نطالبك باشتراك قبل ذلك — فتبدأ مدّة اشتراكك كاملةً من يوم اعتماد التوثيق.',
+                           'Your store is pending verification and publishing is closed until it is approved. We will not ask you to subscribe before then — so your subscription period starts in full on the day you are approved.')}
+                    </div>
+                </div>
+            )}
 
             {/* Current subscription status + cancel/resume (v11.38) */}
             <SubscriptionStatusCard />

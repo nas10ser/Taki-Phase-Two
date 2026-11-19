@@ -705,6 +705,16 @@ export const adminService = {
      * seller (used by the "Free for all" / "Paid for all" platform-mode
      * buttons). Returns counts of OK / failed.
      */
+    /**
+     * v16.42 — إلزامُ الاشتراك كما طلبه ناصر: يُوقف النشاط ويترك التاجر يختار.
+     * `dryRun` يُرجع الأعداد بلا كتابةٍ واحدة — فيُعرض على الأدمن قبل الضغط.
+     */
+    async enforceSubscriptionChoice(dryRun: boolean): Promise<Record<string, any> | null> {
+        const { data, error } = await supabase.rpc('admin_enforce_subscription_choice', { p_dry_run: dryRun });
+        if (error) { console.error('[adminService.enforceSubscriptionChoice]', error); return null; }
+        return data as Record<string, any>;
+    },
+
     async bulkSetAllActiveSellers(params: {
         plan: 'free' | 'trial' | 'premium';
         amount: number;

@@ -54,7 +54,7 @@ export const useVerifyLock = (): { locked: boolean; state: MyVerification | null
         load();
     }, [load, platformSettings?.verification?.mode]);
 
-    return { locked: computeVerifyLock(state, Date.now()), state };
+    return { locked: computeVerifyLock(state, Date.now(), user?.userType), state };
 };
 
 /**

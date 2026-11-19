@@ -32,7 +32,7 @@ import { PinButton } from '../../components/admin/PinButton';
 import { ExportButton } from '../../components/admin/ExportButton';
 import { SmartChip } from '../../components/admin/SmartChip';
 import { admNum, toDateInput } from '../../components/admin/ui';
-import { admCount, DAYS, STORES, ACTIVE_M, SHOWN_M } from '../../components/admin/ui';
+import { admCount, DAYS, STORES, DEALS, ACTIVE_M, SHOWN_M } from '../../components/admin/ui';
 import { fieldCss, labelCss, pickCss } from '../../components/admin/sellerStyles';
 import {
     AdmSection, AdmStat, AdmStatGrid, AdmPill,
@@ -304,17 +304,26 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
         onApplied();
     };
 
+    /**
+     * 🔴 v16.42 (أمرُ ناصر): يُوقف النشاط ويترك التاجرَ يختار باقتَه — لا يفرض
+     *    عليه باقةً ومبلغاً. ومعاينةٌ قبل التنفيذ لأنها عمليّةٌ هادمة.
+     *    الشرحُ الكامل والقياسُ في `JEDDAH_v16_42_enforce_subscription_choice.sql`.
+     */
     const handlePaidForAll = async () => {
+        const preview = await adminService.enforceSubscriptionChoice(true);
+        if (!preview) { await customAlert('❌ تعذّرت المعاينة — لم يُنفَّذ شيء.'); return; }
         const ok = await customConfirm(
             'سيتم:\n' +
             '• تفعيل بوابة الدفع\n' +
-            `• تحويل كل البائعين النشطين إلى «${selPkg?.ar ?? 'الباقة الافتراضية'}» بمبلغ ${admNum(globalAmount)} ر.س/شهر بلا خصم\n` +
-            '• إلغاء أي خصومات أو فترات مجانية حالية\n\n' +
-            'متابعة؟'
+            `• إيقاف نشاط ${admCount(Number(preview.stores) || 0, STORES)}: ` +
+            `${admCount(Number(preview.deals_to_pause) || 0, DEALS)} يتوقّف مؤقتاً\n` +
+            `• تنزيل ${admNum(Number(preview.plans_to_reset) || 0)} باقةً إلى «بلا اشتراك»\n` +
+            '• ولا تُفرض باقة: كل تاجر يختار باقته من صفحة الاشتراك\n\n' +
+            'عروضهم تعود فور اشتراكهم. متابعة؟'
         );
         if (!ok) return;
         setBusyMode('paid');
-        let r: { ok: number; failed: number; total: number } | null = null;
+        let r: Record<string, any> | null = null;
         try {
             const settingRes = await adminService.setPlatformSetting('payment_gateway_enabled', true);
             if (!settingRes.success) {
@@ -322,31 +331,22 @@ const GlobalSubscriptionMode = memo<{ onApplied: () => void }>(({ onApplied }) =
                 return;
             }
             setGatewayEnabled(true);
-
-            r = await adminService.bulkSetAllActiveSellers({
-                plan: 'premium',
-                amount: globalAmount,
-                discount: 0,
-                expiresAt: null,
-                notes: 'Platform mode: mandatory paid for all',
-                maxBranches: selPkg?.max,
-            });
+            r = await adminService.enforceSubscriptionChoice(false);
         } catch (e: any) {
             await customAlert('❌ تعذّر التطبيق: ' + (e?.message ?? ''));
             return;
         } finally {
             setBusyMode(null);
         }
+        if (!r) { await customAlert('❌ البوابة فُعّلت، لكن تطبيق الإيقاف فشل — أعد المحاولة.'); return; }
         const announced = await announceModeChange(
             '💳 أصبح الاشتراك مطلوباً لنشر العروض',
-            `تم تفعيل الاشتراك الإلزامي على المنصة: ${admNum(globalAmount)} ر.س/شهر` +
-            (selPkg ? ` («${selPkg.ar}» — ${branchesShort(selPkg.max, true)})` : '') +
-            '. فعّل اشتراكك من لوحة التاجر → الاشتراك.'
+            'توقّفت عروضك مؤقتاً. اختر الباقة المناسبة لك من لوحة التاجر ← الاشتراك، وتعود عروضك فوراً.'
         );
         await customAlert(
-            (r.failed === 0
-                ? `💰 الموقع الآن إلزامي.\n${admCount(r.ok, STORES)} يدفع ${admNum(globalAmount)} ر.س/شهر.`
-                : `⚠️ نجح: ${r.ok} | فشل: ${r.failed} (من ${r.total})`) + announced
+            `💰 الموقع الآن إلزامي.\n` +
+            `${admCount(Number(r.deals_paused) || 0, DEALS)} توقّف · ` +
+            `${admCount(Number(r.plans_reset) || 0, STORES)} يختار باقته الآن.` + announced
         );
         onApplied();
     };

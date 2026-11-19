@@ -6,6 +6,7 @@ import type { MyVerification } from '../../repositories/verificationRepository';
  * 🔴 هذا أخطرُ قرارٍ في لوحة التاجر: قفلٌ خاطئٌ **يُرمِّد لوحةَ تاجرٍ مسموحٍ
  *    له** فيظنّ متجرَه معطّلاً، ولا رسالةَ تقول له إن الخطأ عندنا.
  *    فالشرطُ يطابق ما يفرضه الخادمُ حرفاً ولا يزيد:
+ *      · **أدمن**   ⇒ لا قفل إطلاقاً (أمرُ ناصر: لا يلزمه توثيق).
  *      · `null`     ⇒ لم تُحسم الحالةُ بعد ⇒ **لا قفل** (لا ومضةَ رماد).
  *      · `off`      ⇒ التوثيقُ مُطفأ ⇒ لا قفل.
  *      · `advisory` ⇒ النشرُ مفتوحٌ تماماً ⇒ **لا قفل** (ترميدُه منعٌ مخترَع).
@@ -26,7 +27,14 @@ import type { MyVerification } from '../../repositories/verificationRepository';
 export const computeVerifyLock = (
     state: Pick<MyVerification, 'mode' | 'verified' | 'graceUntil'> | null,
     now: number,
+    userType?: string | null,
 ): boolean => {
+    // 🔴 v16.42 (أمرُ ناصر ١٩ نوفمبر): «الأدمن هو الوحيد الذي لا تضع عليه
+    //    رمادي، لأنه أدمن ولا يلزم التوثيق».
+    //    وهو متّسقٌ مع الخادم لا استثناءً في الواجهة وحدها: `checkSub` في
+    //    لوحة التاجر تُمرّر الأدمنَ بلا اشتراك أصلاً («Admins are not paying
+    //    merchants»)، ومتجرُ تاكي نفسُه مملوكٌ لحساب أدمن.
+    if (userType === 'admin') return false;
     if (!state) return false;
     if (state.mode !== 'required') return false;
     if (state.verified) return false;
