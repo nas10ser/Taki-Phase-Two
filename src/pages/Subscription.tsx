@@ -6,6 +6,8 @@ import { useHistory } from 'react-router-dom';
 import { supabase } from '../services/supabaseClient';
 import { useApp } from '../context/AppContext';
 import { paymentService } from '../services/paymentService';
+import { adminService } from '../services/adminService';
+import { subscribeErrorMessage } from '../utils/subscribeError';
 import { packageRepository } from '../repositories/packageRepository';
 import { LocationPackage, effectivePrice, branchesShort, branchesDetailed } from '../data/packages';
 // v16.42 — نفسُ قفل لوحة التاجر: مصدرٌ واحد لمعنى «غيرُ موثّق».
@@ -186,10 +188,42 @@ const Subscription: React.FC = () => {
         return vatOnTop(net, taxSettings?.vat_rate ?? 15);
     };
 
+    /**
+     * 🔴 v16.49 (بلاغُ ناصر «عند رفع الباقة يتعذّر التفعيل») — **مسارُ الإدارة.**
+     *    قِيس أن حسابَ ناصر لا يستطيع رفعَ باقته من أيّ مكان:
+     *      · هنا: المحاكاةُ تقول «دُفع» ثمّ يرفض الخادمُ بلا دفعةٍ حقيقية.
+     *      · وفي «لوحة المدير ← التجّار»: `admin_search_users(…, 'seller')`
+     *        تُطابق `user_type = 'seller'` حرفياً، **ومتجرُ ناصر على حساب
+     *        أدمن** — فلا يظهر في القائمة أصلاً (الفخُّ المسجَّل).
+     *    ⇒ الأدمنُ يطبّق الباقة بنفس نداء لوحة المدير، و**الحارسُ على الخادم
+     *      كما هو** (`admin_apply_subscription` ترفض غيرَ الأدمن). ولا يُمسّ
+     *      حارسُ الدفع للتجّار إطلاقاً — ذاك سدَّ ثغرةَ v15.40.
+     */
+    const applyAsAdmin = async (pkg: LocationPackage): Promise<boolean> => {
+        const expires = new Date();
+        expires.setDate(expires.getDate() + (pkg.durationDays || 30));
+        const r = await adminService.applySubscription({
+            storeId: user!.id, plan: 'premium', expiresAt: expires,
+            amount: effectivePrice(pkg), maxBranches: pkg.max, packageId: pkg.id,
+            notes: 'رفعُ الباقة من صفحة الاشتراك (حساب إدارة)', sendNotification: false,
+        });
+        if (!r.success) {
+            await customAlert(subscribeErrorMessage(r.error, isRTL));
+            return false;
+        }
+        await customAlert(t(
+            `✅ رُفعت باقتك إلى «${pkg.ar}» — ${branchesShort(pkg.max, true)}. فعّل عروضك من لوحة التاجر.`,
+            `✅ Your plan is now "${pkg.en || pkg.ar}" — ${pkg.max} locations. Activate your deals from the dashboard.`,
+        ));
+        history.push('/seller');
+        return true;
+    };
+
     const handleSubscribe = async () => {
         if (!user || !selected) return;
         setIsPaying(true);
         try {
+            if (user.userType === 'admin') { await applyAsAdmin(selected); return; }
             const price = effectivePrice(selected);
             const vatDue = chargeVat(price);
             const response = await paymentService.initiateMoyasarPayment({
@@ -212,8 +246,9 @@ const Subscription: React.FC = () => {
                     { p_package_id: selected.id },
                 );
                 if (subErr || !applied?.success) {
-                    await customAlert(t('❌ تعذّر تفعيل الاشتراك: ', '❌ Could not activate the subscription: ')
-                        + (subErr?.message || applied?.error || t('خطأ غير معروف', 'unknown error')));
+                    // 🪤 ولا يُطبع رمزُ الخادم خاماً: `subscribeErrorMessage`
+                    //    تُحوّله إلى جملةٍ عربيّةٍ ذاتِ خطوةٍ تالية.
+                    await customAlert(subscribeErrorMessage(subErr?.message || applied?.error, isRTL));
                     return;
                 }
                 // 🔴 v15.40 — حُذف نداءُ `record_subscription_payment`: كان ممنوحاً

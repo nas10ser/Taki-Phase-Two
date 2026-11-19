@@ -3,11 +3,12 @@ import PaymentDeclarationCard from './PaymentDeclarationCard';
 import VatStatusCard from './VatStatusCard';
 import StorePoliciesCard from './StorePoliciesCard';
 import { VerifyLock } from './VerifyLock';
+import { lazyBoundary } from '../../utils/lazyBoundary';
 
-const WorkingHoursEditor = React.lazy(() => import('../WorkingHoursEditor'));
-const ReferralCard = React.lazy(() => import('./ReferralCard'));
-const GatewayCard = React.lazy(() => import('./GatewayCard'));
-const StockLinkCard = React.lazy(() => import('./StockLinkCard'));
+const WorkingHoursEditor = lazyBoundary(() => import('../WorkingHoursEditor'));
+const ReferralCard = lazyBoundary(() => import('./ReferralCard'));
+const GatewayCard = lazyBoundary(() => import('./GatewayCard'));
+const StockLinkCard = lazyBoundary(() => import('./StockLinkCard'));
 
 /**
  * SellerSetupCards — بطاقاتُ تهيئة المتجر فوق نموذج العرض (v16.38)

@@ -11,7 +11,9 @@ export interface Banner {
     position: string;
     is_active: boolean;
     display_order: number;
-    expires_at?: string;
+    /** v16.46 — بدايةُ الظهور. `null` = فوراً. (الشرطُ `starts_at <= now()`.) */
+    starts_at?: string | null;
+    expires_at?: string | null;
     /**
      * Synthetic slide kind. Image banners come from the `banners` table; contest
      * slides are generated client-side from live contests so users discover them

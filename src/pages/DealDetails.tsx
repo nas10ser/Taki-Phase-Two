@@ -3,10 +3,13 @@ import { useStoreReviews } from '../hooks/useStoreReviews';
 import { goRegister } from '../utils/returnTo'; import { branchHasStock } from '../utils/locationQty'; import { bookingPreflight, preflightMessage, deliveryBlockReason } from '../utils/bookingPreflight';
 import { isMapUrl, directionsLink } from '../utils/mapLinks';
 import { createPortal } from 'react-dom';
-import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useFocusTrap } from '../hooks/useFocusTrap'; import { lazyBoundary } from '../utils/lazyBoundary';
 // v14.63 — كسول: بطاقة العناوين تسحب Leaflet معها، ولا يجوز أن يدفع ثمنها
 // كل من يفتح صفحة عرض. تُحمَّل عند فتح الطبقة فقط.
-const BuyerAddressCardLazy = React.lazy(() => import('../components/BuyerAddressCard'));
+// 🔴 v16.49 — وحدُّها **معها** (`lazyBoundary`): فيها خريطة، وأيُّ كسولٍ آخر
+//    يُضاف إلى حدٍّ مشترك يُخفيها عند تحميله فتُعاد تهيئتُها وتنفجر.
+const BuyerAddressCardLazy = lazyBoundary(() => import('../components/BuyerAddressCard'),
+    <div style={{ textAlign: 'center', padding: '40px 0', fontWeight: 800, color: 'var(--text-secondary)' }}>…</div>);
 import { useLocation, useParams, useHistory } from 'react-router-dom';
 import { useApp } from '../context/AppContext';   import { confirmBookingLocation } from '../utils/bookingLocationPrompt';   // v16.47 — سؤالُ الموقع قبل الحجز (مدموجٌ: السقّافة تمنع نموَّ هذا الملفّ)
 import { realtimeService } from '../services/realtimeService';
@@ -3471,17 +3474,11 @@ const DealDetails: React.FC = () => {
                                 ? 'احفظ عنوانك هنا وسيعود بك إلى طلبك كما تركته تماماً.'
                                 : 'Save your address here and you come straight back to your order, exactly as you left it.'}
                         </div>
-                        <React.Suspense fallback={
-                            <div style={{ textAlign: 'center', padding: '40px 0', fontWeight: 800, color: 'var(--text-secondary)' }}>
-                                {isRTL ? 'جارٍ التحميل…' : 'Loading…'}
-                            </div>
-                        }>
-                            <BuyerAddressCardLazy
-                                embedded
-                                autoOpenNew={addresses.length === 0}
-                                onChanged={() => setAddrReload(n => n + 1)}
-                            />
-                        </React.Suspense>
+                        <BuyerAddressCardLazy
+                            embedded
+                            autoOpenNew={addresses.length === 0}
+                            onChanged={() => setAddrReload(n => n + 1)}
+                        />
                         <button
                             type="button"
                             onClick={() => setAddrSheetOpen(false)}

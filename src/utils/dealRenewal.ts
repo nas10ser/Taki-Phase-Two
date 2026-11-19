@@ -103,3 +103,37 @@ export const fetchStoreMaxBranches = async (storeId: string): Promise<number | n
         return null;
     }
 };
+
+/**
+ * 🔴 v16.49 (بلاغُ ناصر ١٩ نوفمبر): «عند تجديد منتجٍ منتهيةٍ كمّيته والنقرِ
+ *    على تجديد يحوّلني لصفحة العروض النشطة **ولكن يبقى في العروض المنتهية**».
+ *
+ *    والسببُ مقيسٌ على الإنتاج: عرضُ «كوووووووورة» حالتُه `active` وكمّيتُه
+ *    ٢٠ وعمرُه سنة — ومع ذلك يُصنّف منتهياً، لأن عموداً ثالثاً مرفوع:
+ *    `deals.sold_out`. و`isDealSoldOut` تقرؤه **أوّلاً** (مفتاحُ «نفد»
+ *    اليدويُّ من v15.07)، فأيُّ تجديدٍ يُعيد الكمّيةَ والعمرَ ويترك المفتاح
+ *    مرفوعاً = عرضٌ «نشط» بكمّيةٍ كاملة لا يُباع ولا يظهر.
+ *
+ * 🪤 **ولا يُكتب `sold_out` من `dealRepository.save`**: حمولةُ الحفظ لا تحمل
+ *    العمودَ إطلاقاً (قِيس)، فوضعُ `soldOut:false` في كائن العرض لا يُغيّر
+ *    شيئاً في القاعدة. الكاتبُ الوحيد هو `merchant_set_sold_out` — نفسُ
+ *    النداء الذي يستعمله زرُّ «نفد/أعِده».
+ *
+ * 🪤 ويُنادى **قبل** الحفظ لا بعده: `updateDeal` تُعيد قراءةَ الصفّ بعد
+ *    نجاحها، فإطفاءٌ بعدها يترك الحالةَ المحلّيةَ على القيمة القديمة.
+ * 🪤 ويُطفأ عند **التجديد** وحده (الذي يُعيد الكمّية). أمّا استئنافُ عرضٍ
+ *    أوقفه التاجر فلا يُلغي مفتاحاً رفعه بنفسه — له زرُّه الصريح.
+ */
+export const clearSoldOut = async (deal: Deal): Promise<boolean> => {
+    if ((deal as any).soldOut !== true) return true;   // لا شيء ليُطفأ
+    try {
+        const { supabase } = await import('../services/supabaseClient');
+        const { data, error } = await supabase.rpc('merchant_set_sold_out', {
+            p_deal_id: deal.id, p_on: false, p_variant_id: null, p_location_id: null,
+        });
+        // 🪤 كتابةٌ ترفضها RLS تعود `error=null` — فلا يُقال «تمّ» إلّا بدليل.
+        return !error && (data as any)?.ok === true;
+    } catch {
+        return false;
+    }
+};

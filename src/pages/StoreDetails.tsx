@@ -18,7 +18,8 @@ import VerifiedBadge from '../components/VerifiedBadge';
 import { notifySetupGapsChanged } from '../components/seller/SetupPath';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines } from '../utils/workingHours';
 import { getAuthenticityBadge, waLink } from '../utils/helpers';
-import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches, clearSoldOut } from '../utils/dealRenewal';
+import { lazyBoundary } from '../utils/lazyBoundary';
 import { DEFAULT_MAX_LOCATIONS } from '../data/packages';
 import { AVATAR } from '../utils/imageCompression';
 import { placeLink, directionsLink, coordsOf } from '../utils/mapLinks';
@@ -27,7 +28,7 @@ import { isDealSoldOut } from '../utils/dealAvailability';
 
 // v13.66 — خريطة فروع المتجر تُحمَّل عند الطلب فقط: مكتبة الخرائط ثقيلة ولا
 // داعي لتحميلها مع كل فتح لصفحة متجر، فأغلب الزوار لا يضغطون الزرّ.
-const StoreBranchesMap = React.lazy(() => import('../components/StoreBranchesMap'));
+const StoreBranchesMap = lazyBoundary(() => import('../components/StoreBranchesMap'));
 
 const StoreDetails: React.FC = () => {
     const { id } = useParams<{ id: string }>();
@@ -434,6 +435,10 @@ const StoreDetails: React.FC = () => {
         if (!prepared) return;
         setBusyDealId(deal.id);
         try {
+            // 🔴 v16.49 — نفسُ علاج لوحة التاجر: `deals.sold_out` عمودٌ ثالثٌ لا
+            //    تكتبه حمولةُ الحفظ، و`isDealSoldOut` تقرؤه قبل الكمّية. (راجع
+            //    `clearSoldOut` في `utils/dealRenewal.ts` للقصّة كاملةً.)
+            await clearSoldOut(deal);
             const ok = await updateDeal({
                 ...prepared,
                 status: 'active'
@@ -1460,14 +1465,12 @@ const StoreDetails: React.FC = () => {
             {/* v13.66 — «اعرض كل المواقع على الخريطة»: نفس الفروع المعروضة في
                 البطاقة أعلاه، بدبابيسها الحقيقية داخل التطبيق. */}
             {showBranchMap && (
-                <React.Suspense fallback={null}>
-                    <StoreBranchesMap
-                        branches={mapBranches}
-                        storeName={store?.name || ''}
-                        isRTL={isRTL}
-                        onClose={() => setShowBranchMap(false)}
-                    />
-                </React.Suspense>
+                <StoreBranchesMap
+                    branches={mapBranches}
+                    storeName={store?.name || ''}
+                    isRTL={isRTL}
+                    onClose={() => setShowBranchMap(false)}
+                />
             )}
 
             <BottomNav />

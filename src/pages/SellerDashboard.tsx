@@ -1,22 +1,22 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo, Suspense } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useHistory, useLocation } from 'react-router-dom';
 import BottomNav from '../components/BottomNav';
-const BarcodeScanner = React.lazy(() => import('../components/BarcodeScanner'));
+const BarcodeScanner = lazyBoundary(() => import('../components/BarcodeScanner'));
 import OrderChatPanel from '../components/OrderChatPanel';
-const DualCalendarPicker = React.lazy(() => import('../components/DualCalendarPicker'));
-const ImageCropEditor = React.lazy(() => import('../components/ImageCropEditor'));
-const CameraCapture = React.lazy(() => import('../components/CameraCapture'));
-const ReportDialog = React.lazy(() => import('../components/ReportDialog'));
+const DualCalendarPicker = lazyBoundary(() => import('../components/DualCalendarPicker'));
+const ImageCropEditor = lazyBoundary(() => import('../components/ImageCropEditor'));
+const CameraCapture = lazyBoundary(() => import('../components/CameraCapture'));
+const ReportDialog = lazyBoundary(() => import('../components/ReportDialog'));
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-const DeliveryCard = React.lazy(() => import('../components/seller/DeliveryCard'));
+const DeliveryCard = lazyBoundary(() => import('../components/seller/DeliveryCard'));
 // v14.08 — إقرار طريقة الحساب: بلا إجابةٍ عليه لا تُقبل حجوزات المتجر أصلاً
 import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText, allZeroText } from '../utils/locationQty';
 import LocationQtyGroups from '../components/seller/LocationQtyGroups';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
 import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
-const DeliveryTrackerCard = React.lazy(() => import('../components/seller/DeliveryTrackerCard'));
-const SellerAnalytics = React.lazy(() => import('../components/seller/SellerAnalytics'));
+const DeliveryTrackerCard = lazyBoundary(() => import('../components/seller/DeliveryTrackerCard'));
+const SellerAnalytics = lazyBoundary(() => import('../components/seller/SellerAnalytics'));
 import { REGIONS, CITIES, LOCATIONS, Category, GenderTarget, Deal, DealOptionGroup, DealVariant, DealLocation, findNearestCity, findNearestLocation, CATEGORIES, GENDERS , geoName } from '../data/mock';
 import { isDealSoldOut } from '../utils/dealAvailability'; import { SoldOutButton } from '../components/seller/SoldOutButton';   // v15.07 — سطرٌ واحد: الملفّ عند سقف السقّافة تماماً
 import { getSeasonById, campaignSellerOpen } from '../data/seasons';
@@ -25,10 +25,10 @@ import { useApp } from '../context/AppContext';
 import { useBookingBrowse } from '../hooks/useBookingBrowse';
 import { useBooking } from '../hooks/useBooking';
 import { DEFAULT_MAX_LOCATIONS, packageLabel } from '../data/packages';
-import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches } from '../utils/dealRenewal';
+import { dealLocationCount, refreshDealLifespan, needsLifespanRefresh, fetchStoreMaxBranches, clearSoldOut } from '../utils/dealRenewal';
 import { validationService } from '../services/validationService';
 import { logger } from '../utils/logger';
-import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage } from '../utils/helpers';
+import { normalizeArabicNumerals, toHijri, withTimeout, TimeoutError, sanitizeDecimalInput, getCurrentPositionSafe, geoErrorMessage, isDealExpiredByTime } from '../utils/helpers';
 import { arCount, PHOTOS, FILES, DAYS, SECTIONS, PIECES, TIMES, MINUTES } from '../utils/arPlural';
 import { storageService } from '../services/storageService';
 import NumericField from '../components/NumericField';
@@ -41,8 +41,8 @@ import RefundPanel from '../components/seller/RefundPanel';
 import SellerSetupCards from '../components/seller/SellerSetupCards';
 import { useVerifyLock, VerifyLock } from '../components/seller/VerifyLock';
 import OrderCloseActions from '../components/seller/OrderCloseActions'; import OrdersToolbar, { emptyOrdersLabel } from '../components/seller/OrdersToolbar'; import DealsToolbar from '../components/seller/DealsToolbar'; import ListSearchRow from '../components/ListSearchRow'; import useListSearch from '../hooks/useListSearch';
-import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb';
-const StoreLocationPicker = React.lazy(() => import('../components/seller/StoreLocationPicker'));
+import { thumbUrl, imgFallback, thumbSrcSet } from '../utils/thumb'; import { lazyBoundary } from '../utils/lazyBoundary';
+const StoreLocationPicker = lazyBoundary(() => import('../components/seller/StoreLocationPicker'));
 
 
 const Countdown: React.FC<{ createdAt: number, expiresInMinutes: number, isRTL: boolean }> = ({ createdAt, expiresInMinutes, isRTL }) => {
@@ -715,6 +715,10 @@ const SellerDashboard: React.FC = () => {
         if (!prepared) return;   // ألغى التاجر بعد رسالة الباقة
         setBusyDealId(dealId);
         try {
+            // 🔴 v16.49 — التجديدُ يُطفئ «نفد» أيضاً (بلاغ ناصر: «يحوّلني للنشطة
+            //    ويبقى في المنتهية»). الكمّيةُ وحدها لا تكفي: `deals.sold_out`
+            //    عمودٌ ثالثٌ لا تكتبه حمولةُ الحفظ، و`isDealSoldOut` تقرؤه أوّلاً.
+            await clearSoldOut(deal);
             const ok = await updateDeal({
                 ...prepared,
                 status: 'active' as const
@@ -2901,14 +2905,9 @@ const SellerDashboard: React.FC = () => {
 
     const myDeals = deals.filter(d => d.storeId === user?.id);
     
-    // Check if a deal has timed out based on its creation date and lifespan.
-    // v11.20 — scheduled deals don't start their lifespan clock until startsAt,
-    // so a "2 hours" deal scheduled a week out is NOT immediately timed-out.
-    const isTimedOut = (d: any) => {
-        const lifespanStart = (typeof d.startsAt === 'number') ? Math.max(d.startsAt, d.createdAt || 0) : (d.createdAt || 0);
-        const lifespanMs = (d.expiresInMinutes || 120) * 60 * 1000;
-        return Date.now() > (lifespanStart + lifespanMs);
-    };
+    // v16.49 — كانت هنا نسخةٌ ثانيةٌ مطابقةٌ حرفاً بحرف لـ`isDealExpiredByTime`
+    // (نفسُ `dealLifespanStart` ونفسُ افتراضي ١٢٠ دقيقة). تعريفٌ واحدٌ لا نسختان.
+    const isTimedOut = isDealExpiredByTime;
 
     // A deal is "sold out" only when the seller actually picked a stock cap
     const isSoldOut = isDealSoldOut;   // v15.07 — تعريفٌ واحد في utils/dealAvailability
@@ -2951,11 +2950,11 @@ const SellerDashboard: React.FC = () => {
     };
 
     return (
-        // v14.83 — حدٌّ واحد لكل المكوّنات الكسولة. الثقيلُ منها مشروطُ التصيير
-        // أصلاً (محرّر القصّ · الكاميرا · السكانر · التقويم · التحليلات)، فلا
-        // يُعلَّق شيءٌ إلا في اللحظة التي يفتحه فيها التاجر — وحينها تكون
-        // الشاشة مرسومةً كاملةً خلف الطبقة، فلا وميض.
-        <Suspense fallback={<div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)', fontWeight: 800 }}>…</div>}>
+        // 🔴 v16.49 — **أُزيل الحدُّ الجامع الذي كتبتُه في v14.83.** كان يلفّ
+        // اللوحةَ كلَّها ومعها ثلاثةَ عشرَ مكوّناً كسولاً، وتعليلي «حدٌّ واحدٌ
+        // فلا وميض» كان خطأً: الحدُّ **يُخفي الشجرة ويفصل مراجعَها**، فكلُّ
+        // فتحِ تقويمٍ أو كاميرا كان يُعيد تهيئةَ خريطة الموقع فتنفجر («يعلق»
+        // في بلاغ ناصر). الآن لكلّ كسولٍ حدُّه عبر `lazyBoundary`.
         <div className="page-content" style={{ background: 'var(--body-bg)', paddingBottom: 80, direction: isRTL ? 'rtl' : 'ltr' }}>
             <div className="premium-bar" style={{ paddingBottom: 24, background: 'var(--header-gradient)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -5494,7 +5493,6 @@ const SellerDashboard: React.FC = () => {
             )}
             <BottomNav />
         </div>
-        </Suspense>
     );
 };
 

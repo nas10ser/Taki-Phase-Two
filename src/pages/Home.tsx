@@ -20,6 +20,7 @@ import { UserProfile } from '../services/authService';
 import { useEffect, useCallback } from 'react';
 import BannerSlider from '../components/BannerSlider';
 import type { Banner } from '../repositories/bannerRepository';
+import useVisibleBanners from '../hooks/useVisibleBanners';
 import SeasonHero from '../components/SeasonHero';
 import { getSeasonById, campaignPublicLive } from '../data/seasons';
 import { isContestLive, contestMatchesAudience } from '../repositories/contestRepository';
@@ -126,6 +127,15 @@ const Home: React.FC = () => {
      *    سقطت الشرائحُ سهواً ثمّ أُعيدت — ولذلك `check-home-payload.js`
      *    يفحص بقاءَ الدمج لا بقاءَ النداء وحده.
      */
+    /**
+     * 🔴 v16.49 (بلاغُ ناصر) — **المدّةُ تُرشَّح هنا أيضاً، لا على الخادم وحده.**
+     *    سياسةُ `banners_select` تُعفي الأدمن (ليُحرّر بانراً لم يبدأ أو
+     *    انتهى)، فكان ناصر — وهو أدمن — يرى على رئيسيّته بانراً انتهى
+     *    وقتُه ولا يراه أحدٌ سواه. والهجرةُ v16.49 ترشّح الحمولةَ على
+     *    الخادم؛ وهذا الخطّافُ يُخفيه **في ثانية انتهائه** بلا انتظارِ
+     *    جلبةٍ جديدة (الحمولةُ لا تُعاد إلّا عند العودة من الخفاء).
+     */
+    const liveBanners = useVisibleBanners(home.banners);
     const banners = useMemo<Banner[]>(() => {
         const contestSlides: Banner[] = home.contests
             .filter(c => isContestLive(c) && contestMatchesAudience(c, user?.userType))
@@ -137,8 +147,8 @@ const Home: React.FC = () => {
                 image_url: '', target_url: '/contests',
                 position: 'home_top', is_active: true, display_order: -1,
             }));
-        return [...contestSlides, ...home.banners];
-    }, [home.contests, home.banners, user?.userType]);
+        return [...contestSlides, ...liveBanners];
+    }, [home.contests, liveBanners, user?.userType]);
     const trendingBase = home.trending;
     const discountBase = home.discount;
 
