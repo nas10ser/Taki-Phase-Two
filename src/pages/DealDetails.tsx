@@ -8,7 +8,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 // كل من يفتح صفحة عرض. تُحمَّل عند فتح الطبقة فقط.
 const BuyerAddressCardLazy = React.lazy(() => import('../components/BuyerAddressCard'));
 import { useLocation, useParams, useHistory } from 'react-router-dom';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../context/AppContext';   import { confirmBookingLocation } from '../utils/bookingLocationPrompt';   // v16.47 — سؤالُ الموقع قبل الحجز (مدموجٌ: السقّافة تمنع نموَّ هذا الملفّ)
 import { realtimeService } from '../services/realtimeService';
 import { dealRepository } from '../repositories/dealRepository';
 import { useBooking } from '../hooks/useBooking';
@@ -154,9 +154,8 @@ const DealDetails: React.FC = () => {
     const history = useHistory();
     const {
         deals, user, addRating, updateRating, addReply, toggleRatingLike, removeRating, updateDeal, language, toggleFollowMerchant, followedMerchants,
-        favorites, toggleFavorite,
-        customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
-        storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode, platformSettings
+        favorites, toggleFavorite, customAlert, customConfirm, bookings, acknowledgeBooking, completeBooking: ctxCompleteBooking,
+        storeProfiles, liveLocation, requestLiveLocation, ingestDeals, darkMode, platformSettings, homeCity
     } = useApp();
     const { bookDeal, isBooked } = useBooking();
 
@@ -1407,6 +1406,7 @@ const DealDetails: React.FC = () => {
             if (!ok) return;
         }
 
+        if (fulfillment === 'pickup' && !(await confirmBookingLocation({ fulfillment, buyerLat: liveLocation?.lat, buyerLng: liveLocation?.lng, buyerCityId: homeCity?.cityId, dealCityId: deal.city, dealLat: activeLoc?.lat ?? deal?.mapLocation?.lat, dealLng: activeLoc?.lng ?? deal?.mapLocation?.lng }, { isRTL, customAlert, customConfirm, requestLiveLocation }))) return;
         // v12.28/13.13 — حدود التاجر (الكمية/عدد المرات/الانتظار). صارت تُفحص
         // مبكراً عند «احجز الآن»؛ نعيد فحصها هنا دفاعاً (والتريغر يفرضها نهائياً).
         if (!(await checkBookingLimits())) return;

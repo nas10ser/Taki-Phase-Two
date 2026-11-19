@@ -117,7 +117,7 @@ const generateCirclePoints = (lat: number, lng: number, radiusKm: number, numPoi
 
 const Nearby: React.FC = () => {
     const history = useHistory();
-    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, locationIsFresh, requestLiveLocation, favorites, toggleFavorite } = useApp();
+    const { language, customAlert, topLocation, storeProfiles, followedMerchants, toggleFollowMerchant, blockedMerchants, liveLocation, locationIsFresh, locationPermission, requestLiveLocation, favorites, toggleFavorite } = useApp();
 
     // Deep-link filters (Telegram bot opens /nearby?lat&lng&radius&region&city&mall&cat).
     // The bot's Nearby page + smart-alert radius preview reuse THIS exact map so the
@@ -198,6 +198,28 @@ const Nearby: React.FC = () => {
             setUserLng(liveLocation.lng);
         }
     }, [liveLocation, followMode]);
+
+    /**
+     * 🔴 v16.47 (أمرُ ناصر ٢٠ نوفمبر): «في حال الذهاب إلى حولي اجعله يحطّ
+     *    لوكيشنه عشان تظهر عروضه».
+     *    والمقيسُ قبلها: هذه الشاشةُ **تعكس** الموقعَ ولا تطلبه أبداً. فمن لم
+     *    يمنح الإذنَ من قبل يفتح «حولي» فيرى مركزاً افتراضياً لا جواره —
+     *    شاشةٌ تبدو فارغةً أو بعيدةً بلا سببٍ ظاهر، وزرُّ 📍 في زاويةٍ قد لا يُنتبه له.
+     *
+     * 🪤 ويُسأل **مرّةً واحدةً في الجلسة** لا عند كلّ دخول: الطلبُ المتكرّر
+     *    يُدرّب المستخدمَ على الرفض الآليّ. و`sessionStorage` لا `localStorage`
+     *    عمداً — من رفض اليوم قد يأذن غداً، ومنعُه إلى الأبد ليس من حقّنا.
+     * 🪤 ولا يُسأل إن كان الموقعُ معروفاً أصلاً، ولا إن كان الإذنُ مرفوضاً على
+     *    مستوى المتصفّح (`denied`): نداءٌ في تلك الحال يفشل صامتاً بلا فائدة.
+     */
+    useEffect(() => {
+        if (liveLocation || locationPermission === 'denied') return;
+        try { if (sessionStorage.getItem('taki_nearby_asked') === '1') return; } catch { /* تصفّحٌ خاصّ */ }
+        try { sessionStorage.setItem('taki_nearby_asked', '1'); } catch { /* ignore */ }
+        void requestLiveLocation();
+        // يُطلب عند أوّل دخولٍ للشاشة فقط.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // v13.26 — «حولي» صارت مدفوعة من الخادم على مستوى الفرع.
     // كانت توسّع الفروع وتحسب المسافات في المتصفح على النافذة المُحمّلة، أي أن
