@@ -223,14 +223,18 @@ const MyComplaints: React.FC = () => {
     }
 
     return (
-        <div dir={isRTL ? 'rtl' : 'ltr'} style={{ padding: '18px 14px 96px', maxWidth: 720, margin: '0 auto' }}>
+        // v16.45 — `page-safe-top` يُزيح الصفحةَ تحت شريط الحالة والنتوء
+        // (الحشوُ العلويُّ يأتي منها، فلا يُكتب هنا رقمٌ ثانٍ يُجمع فوقه).
+        <div dir={isRTL ? 'rtl' : 'ltr'} className="page-safe-top" style={{ paddingInline: 14, paddingBottom: 96, maxWidth: 720, margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                 <button
                     type="button"
                     onClick={() => history.goBack()}
                     aria-label={isRTL ? 'رجوع' : 'Back'}
                     style={{
-                        width: 36, height: 36, borderRadius: 10, cursor: 'pointer',
+                        width: 44, height: 44, borderRadius: 12, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, fontSize: '1.05rem',
                         border: '1px solid var(--border-color, #e2e8f0)', background: 'var(--card-bg, #fff)',
                         color: 'var(--text-primary, #111)', fontWeight: 900,
                     }}
