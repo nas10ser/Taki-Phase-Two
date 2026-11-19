@@ -364,13 +364,19 @@ export const BannerModal: React.FC<{
                             <summary style={{ cursor: 'pointer', padding: '8px 11px', fontSize: '.76rem', fontWeight: 800, color: 'var(--adm-fg-2)' }}>
                                 🌐 أو رابط خارجي بدل المتجر (متقدّم)
                             </summary>
-                            <BannerSchedule initial={initial} onChange={setSched} />
-                    <div style={{ padding: 11 }}>
+                            <div style={{ padding: 11 }}>
                                 <Field label="رابط الوجهة" value={form.target_url} onChange={(v) => setForm({ ...form, target_url: v })} placeholder="https://..." dir="ltr" />
                                 <span style={hintStyle}>صفحة خارجية تُفتح عند الضغط. تُستخدم فقط إذا لم تختر متجراً بالأعلى.</span>
                             </div>
                         </details>
                     </div>
+
+                    {/* 🔴 v16.48 — **ظاهرٌ دائماً، خارج أيّ طيّ.** وفي v16.46 أُدرج
+                        بالخطأ داخل `<details>` «رابط خارجي (متقدّم)» المطويّة،
+                        فشُحن الكودُ وبقي الحقلُ غيرَ مرئيّ — وبلاغُ ناصر: «لا زال
+                        البنر لا يوجد به تاريخ». والدرسُ: وجودُ النصّ في الحزمة
+                        لا يُثبت أنه **يُرى**؛ يُقرأ موضعُ التصيير لا وجودُه. */}
+                    <BannerSchedule initial={initial} onChange={setSched} />
 
                     <label style={{ display: 'block' }}>
                         <span style={labelStyle}>مكان الظهور</span>
