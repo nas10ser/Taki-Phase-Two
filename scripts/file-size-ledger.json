@@ -3,9 +3,8 @@
   "src/context/AppContext.tsx": 3942,
   "src/pages/DealDetails.tsx": 3504,
   "src/pages/Register.tsx": 1682,
-  "src/pages/SellerDashboard.tsx": 5504,
-  "src/pages/admin/AdminAnalyst.tsx": 1591,
-  "src/pages/admin/AdminTools.tsx": 1569,
+  "src/pages/SellerDashboard.tsx": 5502,
+  "src/pages/admin/AdminAnalyst.tsx": 1575,
   "server/bot.js": 4122,
   "server/flows/whatsapp.js": 2695
 }

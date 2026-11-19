@@ -192,7 +192,13 @@ export const buildBookingInvoice = (order: any, isRTL: boolean): InvoiceData => 
     };
 };
 
-const buildHtml = (d: InvoiceData): string => {
+/**
+ * 🪤 مُصدَّرةٌ **للاختبار** لا للاستعمال: `scripts/test-invoice-note.js`
+ *    يُشغّلها ويقيس **موضع** ملاحظة المشتري في المخرَج فعلاً. وبلا هذا
+ *    التصدير لا سبيل لقياس الترتيب إلّا بقراءة النصّ — وقراءةُ النصّ لا
+ *    تُثبت ما يُطبع (درسٌ مسجَّل: الفحصُ النصّيُّ لا يُثبت حياةَ شيء).
+ */
+export const buildHtml = (d: InvoiceData): string => {
     const rtl = d.isRTL;
     const dir = rtl ? 'rtl' : 'ltr';
     const L = (ar: string, en: string) => (rtl ? ar : en);
@@ -282,6 +288,7 @@ const buildHtml = (d: InvoiceData): string => {
   .stamp { margin-top: 24px; display: flex; justify-content: space-between; font-size: 12px; color: #64748b; }
   .stamp .box { border-top: 1px solid #94a3b8; width: 45%; padding-top: 4px; text-align: center; }
   .note { margin-top: 10px; font-size: 12px; background: #f1f5f9; border-radius: 8px; padding: 8px 10px; }
+  .buyer-note { background: #fff7ed; border: 1px solid #fdba74; border-inline-start: 4px solid #f97316; font-weight: 700; }
   .foot { text-align: center; font-size: 10px; color: #94a3b8; margin-top: 16px; line-height: 1.6; }
   .btns { text-align: center; margin: 16px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .btns button { font-size: 15px; font-weight: 800; padding: 12px 22px; border-radius: 12px; border: none; background: #10b981; color: #fff; cursor: pointer; }
@@ -328,6 +335,16 @@ const buildHtml = (d: InvoiceData): string => {
     <div class="items">
       ${itemHtml || `<div class="li"><div class="li-name">${esc(d.itemName)}</div></div>`}
     </div>
+    ${/*
+       🔴 v16.46 (بلاغُ ناصر ٢٠ نوفمبر، بسهمٍ أحمر على اللقطة): «ملاحظة
+          المشتري المفروض تكون تحت الخيار بالضبط في الفاتورة لكي يراها
+          التاجر، وليس تحت».
+          وكانت تُطبع **بعد** كتلة الدفع وقبل خانة التوقيع — أي في ذيل
+          الورقة، بعيدةً عن الصنف الذي تصفُه. والتاجرُ يقرأ الصنفَ وخياراته
+          ثمّ يُجهّز الطلب، فملاحظةٌ تحت التوقيع تُقرأ **بعد** أن يُجهّزه.
+       🪤 وموضعُها هنا — فور الأصناف وقبل رسوم التوصيل والإجمالي — يجعلها
+          جزءاً من «ما يُجهَّز» لا من «ما يُحاسَب عليه». */''}
+    ${d.buyerNote ? `<div class="note buyer-note">📝 ${L('ملاحظة المشتري', 'Buyer note')}: ${esc(d.buyerNote)}</div>` : ''}
     ${Number(d.deliveryFee) > 0 ? `<div class="row" style="margin-top:10px"><span class="k">${L('رسوم التوصيل', 'Delivery fee')}</span><span class="v">${fmtSAR(Number(d.deliveryFee))} ${L('ر.س', 'SAR')}</span></div>` : ''}
     ${(() => {
         // v13.30 — تفصيل ضريبة القيمة المضافة. v13.35 (توافق الهيئة): سطر الضريبة
@@ -392,7 +409,6 @@ const buildHtml = (d: InvoiceData): string => {
             : '';
         return payHtml + doneHtml;
     })()}
-    ${d.buyerNote ? `<div class="note">📝 ${L('ملاحظة المشتري', 'Buyer note')}: ${esc(d.buyerNote)}</div>` : ''}
     ${d.merchantNote ? `<div class="note">💬 ${L('ملاحظة التاجر', 'Merchant note')}: ${esc(d.merchantNote)}</div>` : ''}
     <div class="stamp">
       <div class="box">${L('توقيع/ختم التاجر', 'Merchant stamp')}</div>
