@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
+// v16.41 — أسماءُ المدن والمناطق بالعربية: الدالّةُ تُرجع المعرّف (`dammam`)
+// والشاشةُ تعرض الاسم. 🪤 ومعرّفٌ غيرُ معروفٍ يُعرض كما هو لا يُخفى.
+import { CITIES, REGIONS } from '../../data/mock';
 
 /**
  * DemographicsPanel — جمهورُ المنصّة: الجنس × الفئة العمرية × مدينة الشراء
@@ -7,10 +10,13 @@ import { supabase } from '../../services/supabaseClient';
  * 🔴 طلبُ ناصر: «أريد تحليلاً شاملاً في النمو … أستطيع فلترة الأعمار والذكور
  *    أو الإناث ومدنهم … لتحليل سلوك المستهلكين».
  *
- * 🔴 **وتصحيحٌ معروضٌ للمستخدم لا مخبوءٌ في كود**: «مدينة المستخدم» غير
- *    مخزَّنة في المنصّة إطلاقاً (قِيس: صفرُ عمودِ مدينةٍ في `users`، وصفرُ صفٍّ
- *    بمدينةٍ في `delivery_address`). فالمدينةُ هنا **مشتقّةٌ من حيث يشتري**
- *    — وتُسمّى «مدينة الشراء» صراحةً كي لا تُقرأ على أنها مكانُ سكنه.
+ * 🔴 **ومدينتان لا واحدة، لأنهما سؤالان مختلفان** (قرارُ ناصر ١٩ نوفمبر:
+ *    «لا سؤال مدينة عند التسجيل، لكن من خلال ربط اللوكيشن سنعرف المدينة»):
+ *      · **مدينة المشتري** — أقربُ مدينةٍ لإحداثيات جهازه (بسقفِ ٢٠٠ كم).
+ *        وهي ما طلبه، وتخصّ **من فعّل خدمة الموقع وحده** — ولذلك يُعرض
+ *        معها سطرُ تغطيةٍ صريح، وإلّا قُرئت على أنها كلُّ المشترين.
+ *      · **مدينة الشراء** — أكثرُ مدينةٍ حجز فيها. «أين يشتري» لا «أين هو»،
+ *        وتبقى قسماً مستقلّاً لأن دمجَهما في رقمٍ واحد يُفسد كليهما.
  *
  * 🪤 والفلترةُ تقع في المتصفّح على مصفوفةٍ كاملةٍ في الذاكرة (الأعدادُ مجمّعةٌ
  *    أصلاً وصغيرة) — لا استعلامَ جديد لكلّ ضغطة. والعدّاداتُ العلويّة تبقى على
@@ -20,6 +26,10 @@ import { supabase } from '../../services/supabaseClient';
 const arNum = (n: unknown) => (Number(n) || 0).toLocaleString('ar-SA');
 const GENDER_AR: Record<string, string> = { male: 'ذكر', female: 'أنثى', unknown: 'لم يُجب' };
 const BAND_ORDER = ['18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'unknown'];
+const CITY_AR = new Map(CITIES.map((c) => [c.id, c.name]));
+const REGION_AR = new Map(REGIONS.map((r) => [r.id, r.name]));
+const cityName = (id: string) => (id === 'unknown' ? 'غير معروفة' : CITY_AR.get(id) || id);
+const regionName = (id: string) => (id === 'unknown' ? 'غير معروفة' : REGION_AR.get(id) || id);
 
 type Cell = { g: string; band: string; n: number };
 
@@ -61,6 +71,10 @@ export const DemographicsPanel: React.FC = () => {
     const answeredA = Number(data?.answered?.age) || 0;
     const matrix: Cell[] = data?.matrix || [];
     const cities: Array<{ city: string; n: number }> = data?.cities || [];
+    // v16.41 — مدينةُ الموقع (قرارُ ناصر: تُعرف من اللوكيشن لا من سؤال).
+    const locCities: Array<{ city: string; n: number }> = data?.loc_cities || [];
+    const locRegions: Array<{ region: string; n: number }> = data?.loc_regions || [];
+    const located = Number(data?.answered?.located) || 0;
 
     // الفلترةُ على المصفوفة — والمجموعُ يُعاد حسابه منها لا من `total`.
     const shown = matrix.filter((c) => (!fg || c.g === fg) && (!fb || c.band === fb));
@@ -148,6 +162,26 @@ export const DemographicsPanel: React.FC = () => {
             )}
 
             <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-primary)' }}>📍 مدينة المشتري (من موقعه)</div>
+                {/* 🔴 إفصاحُ تغطيةٍ لا يُحذف: القائمةُ تخصّ من فعّل الموقع وحده،
+                    وبلا هذا السطر تُقرأ على أنها كلُّ المشترين. */}
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8 }}>
+                    تُستنتج من موقع الجهاز لمن فعّل خدمة الموقع — لا نسأل عنها.
+                    {' '}نعرف مدينة <strong>{arNum(located)}</strong> من <strong>{arNum(total)}</strong> مشترٍ
+                    {total > 0 ? ` (${Math.round((located / total) * 100)}٪)` : ''}، والباقي «غير معروفة».
+                </div>
+                {locCities.length === 0
+                    ? <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontWeight: 700 }}>لا مشترٍ فعّل الموقع بعد.</div>
+                    : locCities.map((c) => <Bar key={c.city} label={cityName(c.city)} n={Number(c.n) || 0} total={total} />)}
+                {locRegions.length > 0 && (
+                    <>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 900, color: 'var(--text-primary)', marginTop: 6 }}>حسب المنطقة</div>
+                        {locRegions.map((r) => <Bar key={r.region} label={regionName(r.region)} n={Number(r.n) || 0} total={total} />)}
+                    </>
+                )}
+            </div>
+
+            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', borderRadius: 16, padding: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--text-primary)' }}>مدينة الشراء</div>
                 {/* 🔴 إفصاحٌ ظاهر: المدينةُ **مشتقّة** لا مُصرَّحٌ بها — المنصّة لا تسأل عنها. */}
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1.8 }}>
@@ -156,7 +190,7 @@ export const DemographicsPanel: React.FC = () => {
                 {cities.length === 0
                     ? <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', fontWeight: 700 }}>لا حجوزات بعد.</div>
                     : cities.map((c) => (
-                        <Bar key={c.city} label={c.city === 'unknown' ? 'غير معروفة' : c.city} n={Number(c.n) || 0} total={total} />
+                        <Bar key={c.city} label={cityName(c.city)} n={Number(c.n) || 0} total={total} />
                     ))}
             </div>
         </div>
