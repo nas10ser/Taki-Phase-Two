@@ -16,6 +16,8 @@ import { useBackClose } from '../../hooks/useBackClose';
 import { promoRepository } from '../../repositories/promoRepository';
 // v16.36 — شكلُ المسودّة وبذرُها في وحدةٍ خالصةٍ تُختبر بالتنفيذ.
 import { seedCampaign, emptyCampaign } from './campaignSeed';
+// v16.44 — التحقّقُ من الرابط الداخليّ قبل بثّه لكلّ التجّار.
+import { isInternalRoute } from '../../data/appRoutes';
 import type { CampaignDraft } from './campaignSeed';
 import { fieldStyle, labelStyle, hintStyle, AUDIENCE_LABELS, Field,
          modalShell, modalHead, modalFoot, toLocalDateInput } from './modalKit';
@@ -100,6 +102,18 @@ export const CampaignModal: React.FC<{
     const handleSave = async () => {
         if (!form.title_ar.trim() || !form.body_ar.trim()) {
             await customAlert('⚠️ العنوان والمحتوى (عربي) مطلوبان');
+            return;
+        }
+
+        // 🔴 v16.44 (بلاغُ ناصر): حملةٌ تحمل مساراً لا وجودَ له تُوصل **كلَّ**
+        //    من يضغطها إلى «الصفحة غير موجودة». وقِيس أن هذا وقع فعلاً:
+        //    `/seller-dashboard?tab=form` والمسارُ الحقيقيّ `/seller`.
+        // 🪤 ولا شيء كان يصرخ: قاعدةُ التوجيه تُعيد `index.html` لأيّ مسارٍ
+        //    بلا امتداد فيردّ ٢٠٠، ثمّ يعرض الموجّهُ صفحةَ «غير موجودة» —
+        //    أي أن كلَّ سجلٍّ يقول «نجاح» والمستخدمُ يرى عطلاً.
+        const act = form.action_url.trim();
+        if (act && act.startsWith('/') && !isInternalRoute(act)) {
+            await customAlert(`❌ «${act}» ليس مساراً موجوداً في التطبيق.\n\nالحملةُ تصل كلَّ التجّار، ورابطٌ خاطئ يُوصلهم جميعاً إلى «الصفحة غير موجودة». صحّحه أو اتركه فارغاً.`);
             return;
         }
         if (saving) return;

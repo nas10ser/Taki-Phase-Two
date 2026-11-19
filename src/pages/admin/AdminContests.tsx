@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { storageService } from '../../services/storageService';
+import { storageService, uploadFailureMessage } from '../../services/storageService';
 import BannerImageEditor from '../../components/BannerImageEditor';
 import {
     contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
@@ -133,9 +133,7 @@ const AdminContests: React.FC = () => {
         const url = await storageService.uploadImage(file, { compress: BANNER, thumb: false });
         setUploadingBanner(false);
         if (url) setField({ banner_image: url });
-        else await customAlert(storageService.lastBlockReason === 'nsfw'
-            ? '🚫 رفض فلتر المحتوى هذه الصورة (محتوى غير لائق).'
-            : 'تعذّر رفع الصورة، حاول مجدداً.');
+        else await customAlert(`❌ تعذّر رفع الصورة — ${uploadFailureMessage(true)}`);
     };
     const addQuestion = () => setDraft((d) => ({ ...d, questions: [...(d.questions || []), { id: uid(), type: 'choice', prompt: '', options: ['', ''], correctAnswer: '', points: 1, required: true } as ContestQuestion] }));
     const updateQuestion = (id: string, patch: Partial<ContestQuestion>) =>

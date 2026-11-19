@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../services/supabaseClient';
 // v16.36 — حقلٌ رقميٌّ يُمسح ويقبل العربية (كان `Number(v)||1` يمنع المسح).
-import { AdmNumber } from './ui';
+import { AdmNumber , AdmCustomRange } from './ui';
 import { ExportButton } from './ExportButton';
 
 interface TopRow {
@@ -118,18 +118,7 @@ export const TopActivityPanel: React.FC = () => {
                 </div>
             )}
             {preset === 'custom' && (
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">من تاريخ</label>
-                        <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)}
-                            className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-[var(--text-secondary)] mb-1.5">إلى تاريخ</label>
-                        <input type="date" value={to} min={from} max={isoDay(new Date())} onChange={e => setTo(e.target.value)}
-                            className="w-full px-3 py-2 bg-[var(--body-bg)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)]" />
-                    </div>
-                </div>
+                <AdmCustomRange from={from} to={to} onFrom={setFrom} onTo={setTo} />
             )}
 
             <div className="flex items-center gap-1.5 flex-wrap">

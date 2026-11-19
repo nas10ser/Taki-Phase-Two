@@ -28,13 +28,50 @@ const MAX_RAW_BYTES = 25 * 1024 * 1024;
  */
 const OK_UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+/**
+ * سببُ فشل الرفع، مصوغاً للمستخدم — **مصدرٌ واحد** (v16.44).
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🔴 بلاغُ ناصر (١٩ نوفمبر): «عند إضافة بنر ومحاولة رفع صورة أو تصوير صورة
+ *    ورفعها لا يعمل ويفشل في الرفع» — والرسالةُ التي رآها: «تأكد من الإنترنت».
+ *
+ * 🔴 **والرسالةُ كانت تكذب.** الرفضُ يقع في ثلاثة مواضع مختلفة، اثنان منها
+ *    **محلّيّان بالكامل ولا علاقة للشبكة بهما**:
+ *      · `too_big`  — أكبرُ من سقف المستودع (٤ م.ب) بعد الضغط.
+ *      · `bad_type` — صيغةٌ لا يقبلها المستودع (`{jpeg,png,webp,gif}` — ولا
+ *                     heic/heif؛ وهو الفخُّ المسجَّل في v14.71 عند آيفون).
+ *      · `nsfw`     — رفضها فلتر المحتوى.
+ *    ومع ذلك كان ثلاثةٌ من أربعة مسارات رفعٍ تطبع «تأكد من الإنترنت» لكلّ
+ *    ما ليس `nsfw` — فيذهب المستخدم يفحص شبكتَه وهي سليمة، ولا يعرف أبداً
+ *    أن الملفّ نفسَه هو المرفوض. (`StoreDetails` وحدها كانت تقول الصواب
+ *    منذ v14.71 — وهذه هي نسختُها مُخرَجةً إلى مصدرٍ واحد لا نسخةً رابعة.)
+ */
+export const uploadFailureMessage = (isRTL = true): string => {
+    switch (storageService.lastBlockReason) {
+        case 'too_big':
+            return isRTL ? 'الصورة أكبر من ٤ ميجابايت — اختر صورة أصغر أو أعد قصّها.'
+                         : 'The image is larger than 4 MB — pick a smaller one.';
+        case 'bad_type':
+            return isRTL ? 'صيغة الصورة غير مدعومة — استعمل JPG أو PNG أو WebP.'
+                         : 'Unsupported image format — use JPG, PNG or WebP.';
+        case 'timeout':
+            return isRTL ? 'استغرق الرفع وقتاً طويلاً — جرّب صورة أصغر، أو أطفئ «وضع الطاقة المنخفضة» وأعد المحاولة.'
+                         : 'The upload took too long — try a smaller image, or turn off Low Power Mode and retry.';
+        case 'nsfw':
+            return isRTL ? 'رفض فلتر المحتوى هذه الصورة.'
+                         : 'The content filter rejected this image.';
+        default:
+            return isRTL ? 'تحقّق من اتصالك ثم أعد المحاولة.'
+                         : 'Check your connection and try again.';
+    }
+};
+
 export const storageService = {
     /**
      * v12.31 — سبب رفض آخر رفع (null = لا رفض). تقرؤه نقاط الاستدعاء لعرض
      * رسالة «محتوى غير لائق» بدل «فشل الرفع» العامة عندما يحجب فلتر الصور
      * الإباحية (moderationService) الصورة.
      */
-    lastBlockReason: null as 'nsfw' | 'too_big' | 'bad_type' | null,
+    lastBlockReason: null as 'nsfw' | 'too_big' | 'bad_type' | 'timeout' | null,
 
     get: <T>(key: keyof typeof CONFIG.STORAGE_KEYS): T | null => {
         const stored = localStorage.getItem(CONFIG.STORAGE_KEYS[key]);
@@ -154,8 +191,16 @@ export const storageService = {
             logger.info(`📸 Uploading image: ${Math.round(rawFile.size/1024)}KB → ${Math.round(file.size/1024)}KB${thumb ? ` (مصغّرة ${Math.round(thumb.size/1024)}KB)` : ''}`);
 
             // Create a timeout promise
+            // 🔴 v16.44 — ٣٠ ثانيةً بدل ١٢ (بلاغُ ناصر ١٩ نوفمبر: «لا يعمل
+            //    ويفشل في الرفع»). واثنتا عشرة ثانيةً كافيةٌ على شبكةٍ سليمة
+            //    وغيرُ كافيةٍ حيث يقع البلاغُ فعلاً: جوّالٌ في **وضع الطاقة
+            //    المنخفضة** (بطّاريةُ لقطته ٣٪ — وiOS يُقلّص فيه عملَ الشبكة
+            //    والمعالج معاً) ومعه فحصُ المحتوى بـTensorFlow قبل الرفع.
+            //    ⇒ فشلٌ بسبب جهازٍ مُقيَّد كان يُقرأ «الموقع لا يعمل».
+            // 🪤 والسببُ يُسمّى: كان الانتهاءُ يسقط في `catch` العامّ فيُعيد
+            //    `null` بلا سبب، فتُطبع رسالةُ الشبكة العامّة على **كلّ** فشل.
             const timeoutPromise = new Promise<null>((_, reject) =>
-                setTimeout(() => reject(new Error('Upload Timeout')), 12000)
+                setTimeout(() => reject(new Error('UPLOAD_TIMEOUT')), 30000)
             );
 
             // v13.71 — نتيجة رفع المصغّرة (نجاح/فشل). الرابط لا يُوسَم بعلامة
@@ -220,6 +265,11 @@ export const storageService = {
             return result;
         } catch (error: any) {
             console.error('❌ Failed to upload image to Supabase:', error.message || error);
+            // v16.44 — يُسمّى السبب: «انتهت المهلة» غير «تعذّر الاتصال»، و
+            // المستخدمُ يفعل شيئاً مختلفاً في كلٍّ منهما.
+            if (String(error?.message || '') === 'UPLOAD_TIMEOUT') {
+                storageService.lastBlockReason = 'timeout';
+            }
             // Fallback: we return null, the UI will handle local preview (Base64)
             return null; 
         }

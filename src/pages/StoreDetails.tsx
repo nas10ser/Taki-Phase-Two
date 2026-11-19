@@ -507,7 +507,7 @@ const StoreDetails: React.FC = () => {
         if (!file) return;
         setIsUploading(true);
         try {
-            const { storageService } = await import('../services/storageService');
+            const { storageService, uploadFailureMessage } = await import('../services/storageService');
             // v13.33 — شعار المتجر يُعرض في دائرة ٦٤ نقطة: ٤٠٠ بكسل تكفيه
             const url = await storageService.uploadImage(file, { compress: AVATAR, thumb: false });
             if (url) {
@@ -536,14 +536,8 @@ const StoreDetails: React.FC = () => {
                 // صفر متاجر رفعت شعاراً — أي أن أوّل تاجرٍ يستجيب لخطوة
                 // «بطاقة المتجر» على شبكةٍ متعثّرة كان سيكون أوّل ضحية.
                 // الصواب: يبقى الشعار القديم، ويُقال السبب صراحةً.
-                const why = storageService.lastBlockReason === 'too_big'
-                    ? (isRTL ? 'الصورة أكبر من ٤ ميجابايت — اختر صورة أصغر.'
-                             : 'The image is larger than 4 MB — pick a smaller one.')
-                    : storageService.lastBlockReason === 'bad_type'
-                    ? (isRTL ? 'صيغة الصورة غير مدعومة — استعمل JPG أو PNG أو WebP.'
-                             : 'Unsupported image format — use JPG, PNG or WebP.')
-                    : (isRTL ? 'تحقّق من اتصالك ثم أعد المحاولة.'
-                             : 'Check your connection and try again.');
+                // v16.44 — كانت هذه النسخةُ الصحيحةَ الوحيدة، فصارت المصدرَ الواحد.
+                const why = uploadFailureMessage(isRTL);
                 customAlert(`⚠️ ${isRTL ? 'تعذّر رفع الشعار' : 'Could not upload the logo'} — ${why} ${isRTL ? 'شعارك الحالي لم يتغيّر.' : 'Your current logo is unchanged.'}`);
             }
         } finally {

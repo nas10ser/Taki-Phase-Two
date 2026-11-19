@@ -49,7 +49,7 @@ import { arCount } from '../../utils/arPlural';
 /** «مستخدمان» / «٣ مستخدمين» — لا «2 مستخدم». محرّكُ الجمع واحدٌ (قاعدة v14.92). */
 const USERS = { one: 'مستخدم واحد', two: 'مستخدمان', twoGen: 'مستخدمين', few: 'مستخدمين', many: 'مستخدماً' };
 const userCount = (n: number): string => arCount(n, USERS);
-import { storageService } from '../../services/storageService';
+import { storageService, uploadFailureMessage } from '../../services/storageService';
 import { useApp } from '../../context/AppContext';
 import { useEscClose } from '../../hooks/useEscClose';
 // v15.51 — زرُّ الرجوع في الجهاز يُغلق الطبقة كما يفعل Esc على الحاسوب.
@@ -208,9 +208,9 @@ const BannerModal: React.FC<{
         const url = await storageService.uploadImage(file, { compress: BANNER, thumb: false });
         setUploading(false);
         if (!url) {
-            await customAlert(storageService.lastBlockReason === 'nsfw'
-                ? '🚫 رفض فلتر المحتوى هذه الصورة (محتوى غير لائق).'
-                : '❌ فشل رفع الصورة. تأكد من الإنترنت أو ألصق رابطاً جاهزاً.');
+            // v16.44 — السببُ الحقيقيّ من مصدرٍ واحد: «تأكد من الإنترنت» كانت
+            // تُقال لرفضٍ محلّيٍّ بحت (حجم/صيغة) فيذهب المستخدم يفحص شبكةً سليمة.
+            await customAlert(`❌ تعذّر رفع الصورة — ${uploadFailureMessage(true)}`);
             return;
         }
         setForm(prev => ({ ...prev, image_url: url }));
