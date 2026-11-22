@@ -10,6 +10,8 @@ import RefundAction from '../components/RefundAction';
 import Sidebar from '../components/Sidebar';
 import { Booking, bookingRepository } from '../repositories/bookingRepository';
 import BookingThread from '../components/BookingThread';
+import BranchContactRow from '../components/BranchContactRow';
+import { useBranchPhones } from '../hooks/useBranchPhones';
 import PullToRefresh from '../components/PullToRefresh';
 import ReportDialog from '../components/ReportDialog';
 import DeliveryTrackMap from '../components/DeliveryTrackMap';
@@ -170,7 +172,7 @@ const OrderStages: React.FC<{ booking: any; isRTL: boolean; snap?: DlvSnap | nul
 };
 
 const Bookings: React.FC = () => {
-    const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings, isAuthReady } = useApp();
+    const { bookings, language, cancelBooking, user, customAlert, customConfirm, refreshBookings, isAuthReady, storeProfiles } = useApp();
     const history = useHistory();
     const location = useLocation();
     const isRTL = language === 'ar';
@@ -298,6 +300,26 @@ const Bookings: React.FC = () => {
     // المعروضة (وهو ما يتوقعه المستخدم من زر داخل القائمة الظاهرة).
     const sortBookings = (list: any[]) =>
         sortOrder === 'newest' ? list : [...list].reverse();
+
+    /**
+     * v16.52 (أمرُ ناصر) — رقمُ الفرع الذي حُجز منه، لا رقمُ المتجر وحده.
+     * 🪤 نداءٌ **واحد** لكلّ الطلبات المعروضة مهما كثرت: المعرّفاتُ تُجمَّع
+     *    وتُطلب دفعةً — لا طلبٌ لكلّ بطاقة (وهو ما يحوّل ميزةً صغيرةً إلى
+     *    جدارِ مقياسٍ عند مشترٍ له عشرون طلباً).
+     */
+    /**
+     * 🔴 الارتدادُ يُقرأ من `storeProfiles` لا من صفّ الحجز: قِيس أن `Deal`
+     *    بلا `contactPhone` وأن صفّ الحجز بلا `storePhone` — فارتدادٌ إليهما
+     *    كان سيبقى فارغاً أبداً، **ولا يظهر ذلك في أيّ خطأ** لأن رقم الفرع
+     *    يُغطّي عليه حين يكون موجوداً.
+     */
+    const storePhoneOf = (b: any): string => {
+        const sp: any = storeProfiles[String(b?.deal?.storeId || '')] || {};
+        return String(sp.contactPhone || sp.phone || '');
+    };
+
+    const branchPhones = useBranchPhones(
+        useMemo(() => (bookings || []).map((b: any) => b?.locationId), [bookings]));
 
     const filteredActive = useMemo(() => sortBookings(activeRows),
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -835,6 +857,14 @@ const Bookings: React.FC = () => {
                                                     </button>
                                                   </SelfCloseNotice>
                                                 )}
+
+                                                {/* v16.52 — اتصالٌ بالفرع الذي حُجز منه (أو بالرقم الموحّد). */}
+                                                <BranchContactRow
+                                                    branchPhone={booking.locationId ? branchPhones[booking.locationId] : null}
+                                                    storePhone={storePhoneOf(booking)}
+                                                    branchName={booking.deal?.locations?.find((l: any) => l.id === booking.locationId)?.name || null}
+                                                    isRTL={isRTL}
+                                                />
 
                                                 {/* Buyer↔Seller chat thread (3+3 cap). Hidden once the
                                                     booking is closed-out so old completed orders don't

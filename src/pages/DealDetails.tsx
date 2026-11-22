@@ -20,6 +20,8 @@ import { getLocation, getCity, geoName, REGIONS, CITIES } from '../data/mock';
 import { SellerTopBar } from '../components/SellerTopBar';
 import BottomNav from '../components/BottomNav';
 import BarcodeVisual from '../utils/BarcodeVisual';
+import { useBranchPhones } from '../hooks/useBranchPhones';
+import BranchContactRow from '../components/BranchContactRow';
 import { normalizeArabicNumerals, openExternalUrl, resolveDealLocation, isDealComingSoon, formatComingSoonRemaining, dealLifespanStart, getAuthenticityBadge, getDistance, storeAvatar, waLink } from '../utils/helpers';
 import { getShopStatus, statusPill, todayHoursLabel, weekHoursLines, fmtDuration, fmtClock, CLOSING_SOON_MIN } from '../utils/workingHours';
 import { thumbUrl, imgFallback, hideBrokenImg, heroUrl, heroSrcSet, HERO_SIZES } from '../utils/thumb';
@@ -697,6 +699,12 @@ const DealDetails: React.FC = () => {
 
     /** الفرع المختار — نفس القيمة التي تُمرَّر إلى `bookDeal`، فيُقاس النطاق بما سيُحجز فعلاً. */
     const branchId = dealLocations ? (activeLoc?.id || null) : null;
+
+    // v16.52 — رقمُ التواصل يتبع الفرعَ المختار، وإلّا الموحّد. والنداءُ لا
+    // يقع إلّا لعرضٍ متعدّدِ المواقع (صفحةُ موقعٍ واحد = صفر طلبِ شبكة).
+    const branchPhones = useBranchPhones(dealLocations ? dealLocations.map(l => l.id) : []);
+    const sp: any = storeProfiles[deal?.storeId || ''] || {};
+    const storePhone = String(sp.contactPhone || sp.phone || '');
 
     /** أهداف التسعير: كل عنوان محفوظ، أو هدفٌ واحد حين لا عناوين (لنعرف هل المتجر يوصّل أصلاً). */
     const quoteTargets = useMemo(() => (
@@ -2255,23 +2263,15 @@ const DealDetails: React.FC = () => {
                         </div>
                 )}
 
-                {/* Merchant Contact Section */}
-                {(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone) && (
-                    <div className="animate-fade-in" style={{ background: 'var(--card-bg)', borderRadius: 20, padding: 16, marginBottom: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.04)', display: 'flex', gap: 10 }}>
-                        <a href={`tel:${storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone}`} 
-                           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'var(--body-bg)', padding: '12px', borderRadius: 14, color: 'var(--text-primary)', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 800, border: '1.5px solid var(--gray-200)' }}>
-                            📞 {isRTL ? 'اتصال' : 'Call'}
-                        </a>
-                        {/* v14.77 — يظهر فقط حين يُشتقّ رقمٌ سليم. */}
-                        {waLink(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone) && (
-                        <a href={waLink(storeProfiles[deal.storeId]?.contactPhone || storeProfiles[deal.storeId]?.phone)} 
-                           target="_blank" rel="noopener noreferrer"
-                           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#25d366', padding: '12px', borderRadius: 14, color: 'white', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 800 }}>
-                            💬 WhatsApp
-                        </a>
-                        )}
-                    </div>
-                )}
+                {/* Merchant Contact — v16.53: مكوّنٌ مشترك (الشكلُ عريض).
+                    رقمُ الفرع المختار، وإلّا رقمُ المتجر الموحّد. */}
+                <BranchContactRow
+                    variant="card"
+                    branchPhone={branchId ? branchPhones[branchId] : null}
+                    storePhone={storePhone}
+                    branchName={activeLoc?.name || null}
+                    isRTL={isRTL}
+                />
 
                 {/* Working hours (ساعات عمل المحل) — status + today + full week */}
                 {shopStatus.configured && (() => {

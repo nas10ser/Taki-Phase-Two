@@ -70,6 +70,17 @@ export interface MyVerification {
     decidedAt: string | null;
     /** طلبٌ مفتوح الآن — لا يُقبل ثانٍ قبل البتّ فيه. */
     hasOpen: boolean;
+    /**
+     * v16.52 — أنواعُ الوثيقة التي فتحها الأدمن. مصدرُها `taki_verification_policy()`
+     * نفسُها التي تفرضها `merchant_submit_verification`، فلا تعرض الشاشةُ خياراً
+     * يرفضه الخادمُ بعد الضغط (درس «القائمةُ والحارسُ مصدرٌ واحد»).
+     */
+    kinds: Record<DocKind, boolean>;
+    /**
+     * موعدُ التأكيد السنويّ للسجل التجاري — بديلُ تاريخ الانتهاء بعد أن ألغته
+     * وزارةُ التجارة في نظام السجل التجاري الجديد. `null` لغير هذا النوع.
+     */
+    confirmationDue: string | null;
 }
 
 /** صفٌّ في طابور المراجعة (`admin_list_verifications`). */
@@ -94,6 +105,32 @@ export interface AdminVerificationRow {
     dupNumber: boolean;
     /** الاسم المكتوب يطابق اسم المتجر (بعد التطبيع العربي على الخادم). */
     nameMatches: boolean;
+}
+
+/**
+ * v16.52 — محاولةُ توثيقٍ برقمٍ يخصّ متجراً آخر. تُكتب من القاعدة وحدها
+ * (`merchant_submit_verification`)؛ لا سياسةَ كتابةٍ على الجدول إطلاقاً.
+ */
+export interface DupAttempt {
+    id: string;
+    storeId: string;
+    shop: string | null;
+    ownerName: string | null;
+    ownerPhone: string | null;
+    docKind: DocKind;
+    docNumber: string;
+    claimedName: string | null;
+    /** المتجرُ الذي يملك الرقمَ فعلاً. */
+    heldByStoreId: string | null;
+    heldByShop: string | null;
+    /** `approved` = موثَّقٌ فعلاً · `submitted` = طلبٌ مفتوحٌ سبقه. */
+    heldStatus: 'approved' | 'submitted' | null;
+    attempts: number;
+    status: 'open' | 'reviewed' | 'dismissed';
+    adminNote: string | null;
+    createdAt: string;
+    lastAt: string;
+    decidedAt: string | null;
 }
 
 /** عدّادات شاشة الأدمن (`admin_verification_stats`) — تُقرأ **قبل** تبديل الوضع. */
@@ -193,6 +230,11 @@ const SUBMIT_ERRORS: Record<string, { ar: string; en: string }> = {
     NUMBER_TAKEN:    { ar: 'هذا الرقم موثَّق لمتجرٍ آخر. إن كان لك فتواصل مع إدارة تاكي.', en: 'This number is already verified for another store. Contact TAKI if it is yours.' },
     TOO_MANY:        { ar: 'حاولت مرّاتٍ كثيرة اليوم — أعِد المحاولة غداً.', en: 'Too many attempts today — try again tomorrow.' },
     NO_OPEN_REQUEST: { ar: 'لا يوجد طلبٌ مفتوح لسحبه.', en: 'There is no open request to withdraw.' },
+    // v16.52 — مفاتيحُ الأدمن وشروطُ تاريخ كلّ وثيقة
+    KIND_DISABLED:   { ar: 'هذا النوع غير متاحٍ حالياً — اختر نوعاً آخر من القائمة.', en: 'This document type is not available right now — pick another from the list.' },
+    VERIFICATION_CLOSED: { ar: 'التوثيق متوقّف مؤقّتاً. تواصل مع إدارة تاكي.', en: 'Verification is paused right now. Contact TAKI.' },
+    EXPIRY_REQUIRED: { ar: 'اكتب تاريخ انتهاء الوثيقة — فبدونه لن يصلك تنبيهٌ قبل انتهائها.', en: 'Enter the document’s expiry date — without it you get no reminder before it lapses.' },
+    EXPIRY_PAST:     { ar: 'تاريخ الانتهاء مضى. جدّد وثيقتك ثم أرسل الرقم الجديد.', en: 'That expiry date has passed. Renew the document, then submit again.' },
 };
 
 /** نصُّ رمزٍ راجعٍ من دوال التاجر — و`null` لرمزٍ لا نعرفه (يُبقي المنادي بديله). */
@@ -209,6 +251,26 @@ const numOrNull = (x: any): number | null => {
     const n = typeof x === 'number' ? x : parseFloat(String(x ?? ''));
     return Number.isFinite(n) ? n : null;
 };
+
+const mapDup = (d: any): DupAttempt => ({
+    id: d.id,
+    storeId: d.store_id,
+    shop: d.shop ?? null,
+    ownerName: d.owner_name ?? null,
+    ownerPhone: d.owner_phone ?? null,
+    docKind: d.doc_kind as DocKind,
+    docNumber: d.doc_number,
+    claimedName: d.claimed_name ?? null,
+    heldByStoreId: d.owner_store_id ?? null,
+    heldByShop: d.owner_shop ?? null,
+    heldStatus: (d.owner_status ?? null) as 'approved' | 'submitted' | null,
+    attempts: Number(d.attempts) || 1,
+    status: (d.status || 'open') as 'open' | 'reviewed' | 'dismissed',
+    adminNote: d.admin_note ?? null,
+    createdAt: d.created_at,
+    lastAt: d.last_at,
+    decidedAt: d.decided_at ?? null,
+});
 
 const mapMyState = (d: any): MyVerification => ({
     mode: (['off', 'advisory', 'required'].includes(d?.mode) ? d.mode : 'off') as VerificationMode,
@@ -227,6 +289,15 @@ const mapMyState = (d: any): MyVerification => ({
     submittedAt: d?.submitted_at ?? null,
     decidedAt: d?.decided_at ?? null,
     hasOpen: d?.has_open === true,
+    // 🪤 غيابُ المفتاح يعني خادماً لم تصله هجرةُ v16.52 — والافتراضُ حينها
+    //    «الثلاثةُ مفتوحة»، وهو ما كان السلوكَ قبلها بالضبط. والعكس (افتراضُ
+    //    الإطفاء) كان يُخفي الشاشةَ كلَّها على خادمٍ سليمٍ لمجرّد تأخّر الهجرة.
+    kinds: {
+        cr: d?.kinds?.cr !== false,
+        business_sa: d?.kinds?.business_sa !== false,
+        freelance: d?.kinds?.freelance !== false,
+    },
+    confirmationDue: d?.confirmation_due ?? null,
 });
 
 const mapAdminRow = (r: any): AdminVerificationRow => ({
@@ -407,6 +478,29 @@ export const verificationRepository = {
     },
 
     /** عدّادات نصف القطر — تُقرأ **قبل** كل تبديل وضع، لا بعده. */
+    /**
+     * v16.52 — خانةُ محاولات التكرار (أمرُ ناصر: «يأتي للأدمن تنبيهٌ في خانةٍ
+     * داخل حسابه ليتحقّق»). الصفُّ واحدٌ لكلّ (متجر × نوع × رقم) وعدّادُه
+     * يزيد — فلا تُغرَق الخانةُ بضغطاتٍ متكرّرة.
+     */
+    adminDupAttempts: async (status: 'open' | 'reviewed' | 'dismissed' | 'all' = 'open'):
+        Promise<{ ok: boolean; rows?: DupAttempt[]; open?: number; msg?: string }> => {
+        const { data, error } = await supabase.rpc('admin_list_dup_attempts', { p_status: status, p_limit: 200 });
+        if (error) { logger.error('dup attempts', error); return { ok: false, msg: error.message }; }
+        if (data?.ok !== true) return { ok: false, msg: String(data?.error || '') };
+        return { ok: true, rows: (data.rows || []).map(mapDup), open: Number(data.open) || 0 };
+    },
+
+    adminResolveDup: async (id: string, action: 'reviewed' | 'dismissed' | 'open', note?: string):
+        Promise<{ ok: boolean; msg?: string }> => {
+        const { data, error } = await supabase.rpc('admin_resolve_dup_attempt',
+            { p_id: id, p_action: action, p_note: note ?? null });
+        if (error) { logger.error('resolve dup', error); return { ok: false, msg: error.message }; }
+        // 🪤 `ok:false` يصل بـ`error=null` — فمن يفحص الخطأ وحده يقول «تمّ» عن لا شيء.
+        if (data?.ok !== true) return { ok: false, msg: String(data?.error || '') };
+        return { ok: true };
+    },
+
     adminStats: async (): Promise<{ ok: boolean; stats?: VerificationStats; msg?: string }> => {
         const { data, error } = await supabase.rpc('admin_verification_stats');
         if (error) { logger.warn('admin_verification_stats:', error.message); return { ok: false, msg: error.message }; }

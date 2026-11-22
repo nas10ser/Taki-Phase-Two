@@ -22,6 +22,7 @@ import {
 } from '../../components/admin/ui';
 import { VerificationPill } from '../../components/admin/verification/VerificationPill';
 import { VerificationPolicyCard } from '../../components/admin/verification/VerificationPolicyCard';
+import { DupAttemptsCard } from '../../components/admin/verification/DupAttemptsCard';
 import { WathqCard } from '../../components/admin/verification/WathqCard';
 import { VerificationReview } from '../../components/admin/verification/VerificationReview';
 import {
@@ -284,6 +285,8 @@ const AdminVerification: React.FC = () => {
             {/* 🪤 البطاقة مركّبةٌ هنا لا في درجٍ عامّ: موضعُ الضبط حيث يُنفَّذ الوعد
                 (درس v14.92). وجملتا الشاشة أعلاه وفي الحالة الفارغة تُحيلان إليها —
                 ووثيقةٌ تَعِد بما لا يُنفَّذ أسوأ من وثيقةٍ لا تَعِد (v14.82). */}
+            <DupAttemptsCard />
+
             <VerificationPolicyCard />
             <WathqCard />
 

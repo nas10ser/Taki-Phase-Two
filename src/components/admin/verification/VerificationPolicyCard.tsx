@@ -24,8 +24,8 @@ import { supabase } from '../../../services/supabaseClient';
 import { writePlatformSetting } from '../../../services/platformSettingWrite';
 import { normalizeArabicNumerals } from '../../../utils/helpers';
 import { holdLabelGen, hoursOrDaysGen } from '../../../utils/bookingHold';
-import { AdmSection, AdmButton, AdmStat, AdmStatGrid } from '../ui';
-import { verificationRepository } from '../../../repositories/verificationRepository';
+import { AdmSection, AdmButton, AdmStat, AdmStatGrid, AdmSettingRow, AdmSwitch } from '../ui';
+import { verificationRepository, DOC_KINDS, DocKind } from '../../../repositories/verificationRepository';
 import type { VerificationStats } from '../../../repositories/verificationRepository';
 import { arCount } from '../../../utils/arPlural';
 import { DAYS, DEALS, LIVE_DEALS, MERCHANTS, UNVERIFIED_MERCHANTS } from './verificationStatus';
@@ -34,7 +34,19 @@ const KEY = 'verification';
 
 type Mode = 'off' | 'advisory' | 'required';
 
-interface Policy { mode: Mode; sla_hours: number; vacation: boolean; show_badge: boolean }
+interface Policy { mode: Mode; sla_hours: number; vacation: boolean; show_badge: boolean;
+                  kinds: Record<DocKind, boolean> }
+
+/**
+ * v16.52 (أمرُ ناصر): «أريد خياراتٍ أقدر أخلّي أيّ وحدة من الثلاث تظهر…
+ * لأني قد أبدأ فقط بالسجل التجاري وبعدها منصّة الأعمال» — على غرار مفتاحَي
+ * البوتين. و`DOC_KINDS` هي مصدرُ الاسم والترتيب، فلا تُكتب أسماؤها هنا ثانيةً.
+ */
+const KIND_NOTES: Record<DocKind, string> = {
+    cr: 'الأشهرُ بين المحلّات والمؤسسات. لا تاريخَ انتهاءٍ له — ألغاه نظامُ السجل التجاري الجديد واكتفى بالتأكيد السنويّ، ونحن نتابعه عبر واثق.',
+    business_sa: 'منشأةٌ مسجّلةٌ في المركز السعودي للأعمال — أسرعُ طريقٍ إن كان رقمُ التاجر جاهزاً.',
+    freelance: 'البائعُ الفردُ بائعٌ نظاميّ. وهذه الوثيقةُ **تنتهي صلاحيتُها**، فنُلزم التاجرَ بتاريخها ونُنبّهه قبله ليُجدّد.',
+};
 
 const MODES: { id: Mode; label: string; hint: string }[] = [
     { id: 'off', label: '⚪️ مُطفأ', hint: 'لا شيء يظهر للتاجر ولا شيء يُمنع. الحالة الحالية قبل أن تبدأ.' },
@@ -83,6 +95,14 @@ export const VerificationPolicyCard: React.FC = () => {
         setP({
             mode: v.mode, sla_hours: Number(v.sla_hours) || 24,
             vacation: v.vacation === true, show_badge: v.show_badge === true,
+            // 🪤 غيابُ المفتاح = «الثلاثةُ مفتوحة»، وهو ما كانت عليه المنصّةُ
+            //    قبل v16.52 بالضبط. والمقارنةُ بـ`!== false` لا `=== true`
+            //    لأن القيمةَ قد تكون غائبةً تماماً لا مكتوبةً `true`.
+            kinds: {
+                cr: v?.kinds?.cr !== false,
+                business_sa: v?.kinds?.business_sa !== false,
+                freelance: v?.kinds?.freelance !== false,
+            },
         });
         // v16.33 — تُفتح الشاشةُ على الوحدة التي **يقرأ بها التاجرُ** الوعدَ
         // نفسَه: `hoursOrDaysGen` يصوغ أياماً من ٤٨ فأعلى عند مضاعفِ يومٍ
@@ -104,7 +124,11 @@ export const VerificationPolicyCard: React.FC = () => {
         const err = await writePlatformSetting(KEY, {
             mode: next.mode, sla_hours: next.sla_hours,
             vacation: next.vacation, show_badge: next.show_badge,
-        }, 'توثيق التجّار: الوضع ومهلة المراجعة ووضع السفر وشارة المشتري');
+            // 🔴 تُكتب دائماً مع البقيّة: `writePlatformSetting` **يستبدل**
+            //    الكائنَ كلَّه، فحفظُ الوضعِ وحده كان سيمحو مفاتيحَ الأنواع
+            //    ويُعيدها كلَّها إلى «مفتوحة» بلا أن يطلب أحد.
+            kinds: next.kinds,
+        }, 'توثيق التجّار: الوضع ومهلة المراجعة ووضع السفر وشارة المشتري وأنواع الوثيقة المتاحة');
         setBusy('');
         if (err) { await customAlert('❌ ' + err); return; }
         setP(next);
@@ -368,6 +392,53 @@ export const VerificationPolicyCard: React.FC = () => {
                             <AdmButton variant="primary" disabled={!!busy} onClick={saveSla}>
                                 {busy === 'sla' ? 'جاري الحفظ…' : '💾 حفظ'}
                             </AdmButton>
+                        </div>
+                    </div>
+
+                    <div style={{ ...box, marginTop: 12 }}>
+                        <div style={{ fontSize: '.84rem', fontWeight: 800, color: 'var(--adm-fg)', marginBottom: 4 }}>🪪 أنواع الوثيقة المتاحة للتاجر</div>
+                        <div style={{ fontSize: '.73rem', lineHeight: 1.85, color: 'var(--adm-fg-3)', marginBottom: 9 }}>
+                            ما تُطفئه هنا يختفي من شاشة التاجر فوراً، ويرفضه الخادمُ أيضاً — فلا يمرّ بطلبٍ مباشر.
+                            وما يُرسَل قبل الإطفاء يبقى في طابورك كما هو.
+                        </div>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {DOC_KINDS.map(k => {
+                                const on = p.kinds[k.kind] !== false;
+                                // آخرُ نوعٍ مفتوح: إطفاؤه يُغلق التوثيقَ كلَّه — يُقال صراحةً لا يُمنع.
+                                const openCount = DOC_KINDS.filter(x => p.kinds[x.kind] !== false).length;
+                                const isLast = on && openCount === 1;
+                                return (
+                                    <AdmSettingRow
+                                        key={k.kind} icon={on ? '✅' : '🚫'} title={k.ar}
+                                        desc={KIND_NOTES[k.kind]}
+                                        note={isLast ? (
+                                            <div style={{ fontSize: '.71rem', fontWeight: 800, color: 'var(--adm-warn-fg)', marginTop: 5, lineHeight: 1.7 }}>
+                                                ⚠️ آخرُ نوعٍ مفتوح — إطفاؤه يوقف استقبالَ طلبات التوثيق كلِّها.
+                                            </div>
+                                        ) : undefined}
+                                        right={
+                                            <AdmSwitch
+                                                on={on} label={`${k.ar}: ${on ? 'متاح' : 'مطفأ'}`} disabled={!!busy}
+                                                onToggle={async () => {
+                                                    if (isLast) {
+                                                        const ok = await customConfirm(
+                                                            `«${k.ar}» هو آخرُ نوعٍ مفتوح.\n\n` +
+                                                            `بإطفائه يتوقّف استقبالُ طلبات التوثيق كلِّها، ويرى التاجرُ «التوثيق متوقّف مؤقّتاً».\n` +
+                                                            `والطلباتُ التي في طابورك تبقى كما هي.\n\nأتابع؟`);
+                                                        if (!ok) return;
+                                                    }
+                                                    const next = { ...p.kinds, [k.kind]: !on };
+                                                    if (await save({ kinds: next }, 'kind:' + k.kind)) {
+                                                        await customAlert(on
+                                                            ? `🚫 أُخفي «${k.ar}» — لم يعد التاجرُ يراه ولا يستطيع إرساله.`
+                                                            : `✅ صار «${k.ar}» متاحاً للتجّار.`);
+                                                    }
+                                                }}
+                                            />
+                                        }
+                                    />
+                                );
+                            })}
                         </div>
                     </div>
 

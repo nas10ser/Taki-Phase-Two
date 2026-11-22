@@ -148,9 +148,26 @@ const VerificationCard: React.FC = () => {
 
     useEffect(() => { if (shouldLoad) load(); }, [shouldLoad, load]);
 
+    /**
+     * v16.52 — حين لا يبقى إلا نوعٌ واحدٌ متاح يُختار وحده. ولو أطفأ الأدمنُ
+     * النوعَ الذي كان التاجرُ قد اختاره وهو يملأ النموذج، يُفرَّغ الاختيارُ
+     * فلا يُرسل طلباً يُرفض بـ`KIND_DISABLED`.
+     */
+    useEffect(() => {
+        const ks = st?.kinds;
+        if (!ks) return;
+        const open = DOC_KINDS.filter(k => ks[k.kind] !== false).map(k => k.kind);
+        setKind(prev => (prev && open.includes(prev as DocKind)
+            ? prev
+            : (open.length === 1 ? open[0] : '')));
+    }, [st?.kinds]);
+
     /** يفتح النموذج مملوءاً بما أرسله التاجر آخر مرّة — لا يُعيد كتابته. */
     const openForm = (from: MyVerification) => {
-        setKind((from.docKind || '') as DocKind | '');
+        // v16.52 — نوعُه السابق إن كان ما زال مفتوحاً، وإلّا الوحيدُ المتاح.
+        const open = DOC_KINDS.filter(k => from.kinds?.[k.kind] !== false).map(k => k.kind);
+        const prev = (from.docKind || '') as DocKind | '';
+        setKind(prev && open.includes(prev) ? prev : (open.length === 1 ? open[0] : ''));
         setNum(from.docNumber || '');
         setLegal(from.claimedName || from.legalName || '');
         setExpiry(/^\d{4}-\d{2}-\d{2}$/.test(String(from.docExpiry || '')) ? String(from.docExpiry) : '');
@@ -191,8 +208,19 @@ const VerificationCard: React.FC = () => {
         if (!kind || !info) { setErr(t('اختر نوع الوثيقة أوّلاً.', 'Choose a document type first.')); return; }
         if (!info.test(n)) { setErr(t(info.hintAr, info.hintEn)); return; }
         if (nm.length < 3) { setErr(t('اكتب الاسم المسجَّل كاملاً كما في الوثيقة.', 'Write the full registered name exactly as on the document.')); return; }
+        // v16.52 — نفسُ شرط الخادم، مكتوباً هنا ليصل التاجرَ **قبل** النداء.
+        // 🪤 وهو تكرارٌ مقصود لا مصدرٌ ثانٍ: الخادمُ يبقى الحَكَم، ونصُّ رفضه
+        //    (`EXPIRY_REQUIRED`) معرَّفٌ في مكانٍ واحدٍ يقرؤه الاثنان.
+        const rule = kind === 'cr' ? 'none' : kind === 'freelance' ? 'required' : 'optional';
+        if (rule === 'required' && !expiry) {
+            setErr(submitErrorText('EXPIRY_REQUIRED', isRTL) || ''); return;
+        }
+        if (rule !== 'none' && expiry && expiry <= new Date().toISOString().slice(0, 10)) {
+            setErr(submitErrorText('EXPIRY_PAST', isRTL) || ''); return;
+        }
         setBusy(true);
-        const res = await verificationRepository.submit(kind as DocKind, n, nm, expiry || null);
+        // السجلُّ التجاريُّ بلا تاريخٍ دائماً — والخادمُ يُهمله أيضاً، فلا يُرسَل.
+        const res = await verificationRepository.submit(kind as DocKind, n, nm, rule === 'none' ? null : (expiry || null));
         const ok = await became(v => v.hasOpen, res,
             'تعذّر إرسال الطلب — حاول مرّة أخرى.', 'Could not submit — please try again.');
         if (ok) setNote(t('وصلنا طلبك.', 'We have your request.'));
@@ -253,11 +281,45 @@ const VerificationCard: React.FC = () => {
 
     // ── النموذج: مشتركٌ بين «لا توثيق» و«مرفوض» و«منتهٍ» و«تجديد» ──
     const picked = docKindInfo(kind as DocKind);
+
+    /**
+     * v16.52 — الأنواعُ التي فتحها الأدمن وحدها (أمرُ ناصر: «قد أبدأ فقط
+     * بالسجل التجاري وبعدها منصّة الأعمال»). والمصدرُ هو ردُّ الخادم نفسُه
+     * الذي تفرضه `merchant_submit_verification` — فلا تعرض الشاشةُ خياراً
+     * يرفضه الخادمُ بعد الضغط.
+     * 🪤 وحين لم يصل ردٌّ بعد تُعرض الثلاثة: ذاك ما كانت عليه الشاشةُ قبل
+     *    هذه الميزة، وإخفاؤها على ظنٍّ أسوأ من إظهارِ خيارٍ قد يُرفض.
+     */
+    const kindsOn = st?.kinds;
+    const availableKinds = DOC_KINDS.filter(k => !kindsOn || kindsOn[k.kind] !== false);
+    const noKinds = availableKinds.length === 0;
+
+    /**
+     * شرطُ التاريخ بحسب نظام كلّ وثيقة — ونسخةٌ **مطابقةٌ** لما تفرضه القاعدة:
+     *  · السجلُّ التجاريّ: لا تاريخَ انتهاءٍ له إطلاقاً ⇒ يُخفى الحقل.
+     *  · وثيقةُ العمل الحر: تنتهي فعلاً، والتنبيهُ المبكّر مبنيٌّ على هذا
+     *    الحقل وحده ⇒ **إلزاميّ** (أمرُ ناصر: «فتعطي التاجر بالمبادرة
+     *    بالتحديث قبل انتهاء التاريخ»).
+     *  · منصّةُ الأعمال: اختياريّ.
+     */
+    const expiryRule: 'none' | 'required' | 'optional' =
+        kind === 'cr' ? 'none' : kind === 'freelance' ? 'required' : 'optional';
     const form = (
         <>
-            <div style={{ ...LBL, marginTop: 16 }}>{t('١) نوع الوثيقة', '1) Document type')}</div>
+            {noKinds && (
+                <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)',
+                              color: '#b45309', borderRadius: 12, padding: '10px 12px',
+                              fontSize: '0.8rem', fontWeight: 800, lineHeight: 1.8, marginTop: 16 }}>
+                    {t('التوثيق متوقّف مؤقّتاً — لا نستقبل طلبات جديدة الآن. تواصل مع إدارة تاكي.',
+                        'Verification is paused — we are not taking new requests right now. Contact TAKI.')}
+                </div>
+            )}
+            {/* 🪤 نوعٌ واحدٌ متاحٌ يبقى معروضاً لا مخفيّاً: التاجرُ يحتاج أن يقرأ
+                **أيَّ** وثيقةٍ نطلبها قبل أن يبحث عن رقمها. وهو مُختارٌ سلفاً
+                فلا يضغط اختياراً لا بديل له. */}
+            <div style={{ ...LBL, marginTop: 16, display: noKinds ? 'none' : undefined }}>{t('١) نوع الوثيقة', '1) Document type')}</div>
             <div role="radiogroup" aria-label={t('نوع الوثيقة', 'Document type')} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {DOC_KINDS.map(k => {
+                {availableKinds.map(k => {
                     const on = kind === k.kind;
                     return (
                         <button key={k.kind} type="button" role="radio" aria-checked={on} onClick={() => setKind(k.kind)} style={{
@@ -295,11 +357,33 @@ const VerificationCard: React.FC = () => {
                 onChange={e => setLegal(e.target.value.slice(0, 160))} style={INP} />
             <div style={HINT}>{t('اكتبه كما هو في السجل بالضبط — اختلافُ حرفٍ واحد يؤخّر المراجعة.', 'Write it exactly as in the registry — one differing letter delays the review.')}</div>
 
-            <div style={LBL}>{t('٤) تاريخ الانتهاء (اختياري)', '4) Expiry date (optional)')}</div>
-            <input type="date" value={expiry} aria-label={t('تاريخ انتهاء الوثيقة', 'Document expiry date')}
-                onChange={e => setExpiry(e.target.value)}
-                style={{ ...INP, direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }} />
-            <div style={HINT}>{t('اتركه فارغاً إن كان سجلك بلا تاريخ انتهاء — النظام التجاري الجديد ألغى تاريخ انتهاء السجل.', 'Leave it empty if your registration has no expiry — the new Saudi commercial-registration system removed expiry dates.')}</div>
+            {expiryRule !== 'none' && (
+                <>
+                    <div style={LBL}>
+                        {expiryRule === 'required'
+                            ? t('٤) تاريخ انتهاء الوثيقة', '4) Document expiry date')
+                            : t('٤) تاريخ الانتهاء (اختياري)', '4) Expiry date (optional)')}
+                        {expiryRule === 'required' && <span style={{ color: '#dc2626' }} aria-hidden="true"> *</span>}
+                    </div>
+                    <input type="date" value={expiry} aria-label={t('تاريخ انتهاء الوثيقة', 'Document expiry date')}
+                        required={expiryRule === 'required'}
+                        onChange={e => setExpiry(e.target.value)}
+                        style={{ ...INP, direction: 'ltr', textAlign: isRTL ? 'right' : 'left' }} />
+                    <div style={HINT}>
+                        {expiryRule === 'required'
+                            ? t('وثيقة العمل الحر تنتهي صلاحيتها — اكتب التاريخ لنُنبّهك قبل انتهائها فتجدّدها في وقتها.',
+                                'A freelance document expires — enter the date so we can remind you before it lapses.')
+                            : t('اكتبه إن كان في وثيقتك تاريخُ انتهاء، لنُنبّهك قبله.',
+                                'Enter it if your document carries an expiry date, so we can remind you beforehand.')}
+                    </div>
+                </>
+            )}
+            {expiryRule === 'none' && (
+                <div style={{ ...HINT, marginTop: 14 }}>
+                    {t('ℹ️ لا تاريخ انتهاء للسجل التجاري — ألغاه نظام السجل التجاري الجديد واكتفى بالتأكيد السنوي للبيانات، ونحن نتابع تأكيدك السنوي ونُنبّهك قبل موعده.',
+                        'ℹ️ A commercial registration has no expiry date — the new Saudi commercial-registration system replaced it with an annual data confirmation, which we track and remind you about.')}
+                </div>
+            )}
 
             <div style={{ ...HINT, marginTop: 14 }}>
                 {t(`⏳ نراجع الطلب خلال ${slaAr} عادةً، ويصلك إشعارٌ بالنتيجة. ولا نطلب صورة الوثيقة — الرقم والاسم فقط.`,

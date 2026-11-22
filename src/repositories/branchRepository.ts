@@ -1,5 +1,6 @@
 import { supabase } from '../services/supabaseClient';
 import { saveErrorMessage } from '../utils/publishError';
+import { waNumber, toLatinDigits } from '../../shared/phone';
 
 export interface StoreBranch {
     id: string;
@@ -192,7 +193,14 @@ export const branchRepository = {
      *    `UPDATE OF location_id, map_lat, map_lng, is_active` وحدها، فتحرير
      *    الاسم والعنوان لا يُرفض بسبب باقةٍ ممتلئة (فُحص على جدة).
      */
-    async setCard(id: string, patch: { nameAr?: string; address?: string | null }): Promise<{ ok: boolean; error?: string }> {
+    /**
+     * v16.52 — و`phone` ثالثُ حقول البطاقة (أمرُ ناصر: «لكلّ خريطة رقمٌ خاص
+     * وعلامةُ الاتصال والواتس… أو رقمٌ موحّدٌ في البايو»). فارغاً = يرتدّ
+     * المشتري إلى رقم المتجر الموحّد، فلا يبقى فرعٌ بلا وسيلةِ تواصل.
+     * 🪤 ويُخزَّن **مطبَّعاً بالأرقام اللاتينية** عبر `toLatinDigits`: لوحةُ
+     *    المفاتيح العربية تُخرج `٠٥٥…`، و`tel:` و`wa.me` لا يقبلانها.
+     */
+    async setCard(id: string, patch: { nameAr?: string; address?: string | null; phone?: string | null }): Promise<{ ok: boolean; error?: string }> {
         const row: Record<string, any> = {};
         if (patch.nameAr !== undefined) {
             const n = String(patch.nameAr).trim().slice(0, 80);
@@ -201,6 +209,21 @@ export const branchRepository = {
         }
         if (patch.address !== undefined) {
             row.address = String(patch.address ?? '').trim().slice(0, 200) || null;
+        }
+        if (patch.phone !== undefined) {
+            const raw = toLatinDigits(String(patch.phone ?? '')).trim();
+            if (!raw) {
+                row.phone = null;                       // محوٌ مقصود ⇒ يرتدّ للموحّد
+            } else {
+                // 🪤 يُرفض الرقمُ الذي لا يُنتج رابطَ واتساب صالحاً **ولا** رقماً
+                //    محلّياً معقولاً: زرٌّ يقود إلى «الرقم غير صالح» أسوأ من لا زرّ
+                //    (درس v14.77) — والتاجرُ يُصحّحه الآن لا بعد شكوى مشترٍ.
+                const digits = raw.replace(/\D/g, '');
+                if (!waNumber(raw) && !/^0?5\d{8}$/.test(digits) && !/^(011|012|013|014|016|017)\d{7}$/.test(digits)) {
+                    return { ok: false, error: 'رقم الفرع غير صالح — اكتبه هكذا: 05XXXXXXXX أو 011XXXXXXX.' };
+                }
+                row.phone = raw.slice(0, 24);
+            }
         }
         if (Object.keys(row).length === 0) return { ok: true };
 
