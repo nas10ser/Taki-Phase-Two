@@ -3,11 +3,14 @@
  * حارسُ لونِ الهويّة (v16.14) — node scripts/check-brand-color.js
  *
  * ── العيبُ الذي يحرسه ───────────────────────────────────────────────────
- * لونُ هويّة التطبيق مكتوبٌ في **أربعة** مواضع لا موضعٍ واحد:
+ * لونُ هويّة التطبيق مكتوبٌ في مواضعَ كثيرةٍ لا موضعٍ واحد:
  *   ① `scripts/lib/logo_build.py` — الخلفيةُ المحروقةُ داخل بكسلات الأيقونة.
  *   ② `manifest.webmanifest` — `background_color` (شاشةُ الإقلاع).
  *   ③ `manifest.webmanifest` — `theme_color`.
  *   ④ `index.html` — وسمَا `theme-color` و`msapplication-TileColor`.
+ *   ⑤ `assets/` — مصادرُ أيقونتَي تطبيقَي آيفون وأندرويد وشاشتَي بدئهما.
+ *   ⑥ `ios/` و`android/` — المقاساتُ المولَّدةُ منها.
+ *   ⑦ `store/assets/` — أيقونتا قائمتَي المتجرين.
  * وثلاثةٌ منها نصٌّ والرابعُ **بايتاتُ صورة**. فتعديلُ النصّ بلا إعادةِ بناءِ
  * الأيقونات يُنتج شاشةَ إقلاعٍ بلونٍ وأيقونةً بلونٍ آخر — وهو عيبٌ لا يظهر
  * في أيّ فحصٍ نصّيّ ولا في أيّ بناءٍ أخضر، ويراه المستخدمُ وحده عند الفتح.
@@ -68,7 +71,7 @@ function firstPixel(buf) {
 const hex = ([r, g, b]) => '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
 const parse = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 
-console.log('\nلونُ هويّة التطبيق — مصدرٌ واحدٌ في أربعة مواضع');
+console.log('\nلونُ هويّة التطبيق — مصدرٌ واحدٌ في كلّ مواضعه');
 
 // ① المصدرُ المعلَن في مولّد الأيقونات
 const py = strip(R('scripts/lib/logo_build.py'));
@@ -190,6 +193,76 @@ check('ويتبعان خلفيّةَ الموقع لا لونَ الهويّة',
         `تداخل: ${anyIcons.filter((u) => maskIcons.includes(u)).join(' · ')}`);
     check('وملفُّ القناع موسومٌ باسمه', maskIcons.every((u) => /-maskable\.png$/.test(u)),
         maskIcons.join(' · '));
+}
+
+// ⑦ 🔴 **أصولُ تطبيقَي المتجرين كانت خارج هذا الحارس — فانحرفت.**
+//    قِيس ٢٠ نوفمبر ٢٠٢٦: أيقونةُ الموقع المثبَّت عنّابيّةٌ وأيقونةُ تطبيقَي
+//    آيفون وأندرويد **نيفيّةٌ** — لونان مختلفان لنفس المنتج، أربعةَ عشرَ
+//    يوماً، بلا أن يصرخ شيء. فكلُّ سطحٍ يحمل لونَ الهويّة يُقاس بكسلُه هنا.
+for (const f of ['assets/icon.png', 'assets/icon-background.png', 'assets/splash.png',
+                 'store/assets/appstore-icon-1024.png', 'store/assets/play-icon-512.png',
+                 'ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png',
+                 'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_background.png',
+                 'android/app/src/main/res/drawable/splash.png']) {
+    let got = null, err = '';
+    try { got = firstPixel(B(f)); } catch (e) { err = e.message; }
+    check(`${f.split('/').pop()}: لونُ الهويّة في أصول التطبيقين`,
+        !!got && got.every((c, i) => c === want[i]),
+        got ? `وجدتُ ${hex(got)} والمطلوب ${hex(want)} — أعِد: node scripts/build-app-assets.js`
+            + ` && npx capacitor-assets generate --ios --android && node scripts/build-store-assets.js` : err);
+}
+
+// ⑧ 🔴 **وشاشةُ البدء الليليّة ليست لونَ الهويّة**: لونُ الهويّة أبيض، وشاشةُ
+//    بدءٍ بيضاءُ أمام مستخدمٍ على الوضع الداكن تبهر العين قبل تطبيقٍ داكن.
+//    وكانت نسخةُ الظلام **نسخةً حرفيّةً من الفاتحة** حتى v16.51، فوجودُ
+//    الملفّ لم يكن يعني أن له أثراً. ⇒ يُشترط اختلافُه، لا وجودُه.
+for (const f of ['assets/splash-dark.png',
+                 'android/app/src/main/res/drawable-port-night-xxxhdpi/splash.png']) {
+    let got = null, err = '';
+    try { got = firstPixel(B(f)); } catch (e) { err = e.message; }
+    check(`${f.split('/').slice(-2).join('/')}: الوضعُ الداكن ليس لونَ الهويّة`,
+        !!got && !got.every((c, i) => c === want[i]),
+        got ? `وجدتُ ${hex(got)} وهو نفسُ لون الهويّة — نسخةُ الظلام بلا أثر` : err);
+}
+
+// ⑨ 🔴 **العيبُ الذي أسقط المولّد أربعةَ عشرَ يوماً، ولم يصرخ شيء:**
+//    `app_assets.py` كان يستورد `NAVY` من `logo_build` بعد أن أُعيدت تسميتُه
+//    إلى `BRAND_BG` في v16.14 ⇒ `ImportError` عند **كلّ** تشغيل، وسكربتٌ
+//    ميّتٌ لا يُشغَّل في أيّ سلسلة لا يشتكي منه أحد. فالتحقّقُ نصّيٌّ هنا
+//    لأن Vercel تبني **بلا python**: كلُّ اسمٍ يُستورد يجب أن يكون معرَّفاً.
+{
+    const src = strip(R('scripts/lib/logo_build.py'));
+    const defined = new Set([
+        ...[...src.matchAll(/^def\s+([A-Za-z_]\w*)/gm)].map((m) => m[1]),
+        ...[...src.matchAll(/^([A-Z_][A-Z0-9_]*)\s*=/gm)].map((m) => m[1]),
+    ]);
+    for (const f of ['scripts/lib/app_assets.py', 'scripts/lib/store_assets.py']) {
+        const imports = [...strip(R(f)).matchAll(/^from\s+logo_build\s+import\s+([^\n#]+)/gm)]
+            .flatMap((m) => m[1].split(',').map((x) => x.trim()).filter(Boolean));
+        const missing = imports.filter((n) => !defined.has(n));
+        check(`${f.split('/').pop()}: كلُّ ما يستورده من logo_build معرَّفٌ فيه`,
+            imports.length > 0 && missing.length === 0,
+            imports.length === 0 ? 'لم أجد سطرَ الاستيراد — تغيّرت المرساة'
+                : `غيرُ معرَّف: ${missing.join(' · ')} — السكربتُ ينفجر بـImportError عند كلّ تشغيل`);
+    }
+}
+
+// ⑩ 🔴 **ومولّدُ Capacitor يدهس إصلاحاً موثّقاً في كلّ تشغيل.** قِيس في
+//    v16.51: `npx capacitor-assets generate` أعاد كتابة ملفَّي الأيقونة
+//    التكيّفيّة فأدخل `inset 16.7%` على **الطبقتين معاً** — وهو العيبُ
+//    المُصلَحُ من قبل بعينه (الخلفيّةُ تنكمش فتترك حوافَّ شفّافةً يملؤها
+//    المشغّلُ بلونه ⇒ إطارٌ حول الأيقونة، والرسمةُ تهبط من ٠٫٥٥ إلى ٠٫٣٧)،
+//    وأسقط طبقةَ `monochrome` التي يستعملها أندرويد ١٣+ في الثيم الأحاديّ.
+//    ⇒ بعد كلّ توليدٍ تُستعاد هذه الملفّات، وهذا الحارسُ هو ما يُذكّر.
+//    🪤 ويُجرَّد التعليقُ أوّلاً: الملفّان يشرحان في تعليقهما نفسَ الكلمة.
+for (const f of ['android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+                 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml']) {
+    const body = R(f).replace(/<!--[\s\S]*?-->/g, '');
+    check(`${f.split('/').pop()}: الطبقتان بلا إزاحة`, !/inset/i.test(body),
+        'وجدتُ `inset` — دهسها مولّدُ Capacitor: استعِدْ الملفَّين بـ'
+        + '`git checkout -- android/app/src/main/res/mipmap-anydpi-v26/`');
+    check(`${f.split('/').pop()}: طبقةُ monochrome موجودة`, /monochrome/.test(body),
+        'سقطت طبقةُ الثيم الأحاديّ (أندرويد ١٣+) — استعِدْ الملفَّين');
 }
 
 console.log(`\n${fail === 0 ? '✅' : '❌'} ${pass} ناجح · ${fail} فاشل\n`);

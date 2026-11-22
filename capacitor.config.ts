@@ -48,7 +48,11 @@ const config: CapacitorConfig = {
             // 🪤 شاشةُ البدء تُخفى **من الكود** بعد أوّل رسمٍ حقيقيّ، لا بمؤقّت:
             //    مؤقّتٌ ثابت إمّا يومض (أقصر من التحميل) أو يُبطئ بلا سبب.
             launchAutoHide: false,
-            backgroundColor: '#0f172a',
+            // 🔴 v16.51 — خلفيةُ البدء بيضاءُ كلون الهويّة الجديد. والصورةُ
+            //    نفسُها لها فرعان: `splash.png` أبيض و`splash-dark.png` داكن
+            //    (أندرويد يختار `drawable-night-*`، وآيفون `appearances` في
+            //    `Splash.imageset`) — فهذا اللونُ خلفيّةُ ما لا تغطّيه الصورة.
+            backgroundColor: '#FFFFFF',
             androidScaleType: 'CENTER_CROP',
             showSpinner: false,
             splashFullScreen: true,

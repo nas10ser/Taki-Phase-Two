@@ -17,7 +17,7 @@ import os, subprocess, sys, tempfile
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import img
-from logo_build import resize, place, NAVY
+from logo_build import resize, place, BRAND_BG, DARK_BG
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 SRC  = os.path.join(ROOT, 'branding', 'taki-logo-master.png')
@@ -43,21 +43,27 @@ def main():
     # ── أيقونةُ آيفون/المتجر: مربّعةٌ مُصمتةٌ بلا قناةِ شفافية ───────────────
     # 🔴 أبل ترفض قناةَ ألفا صراحةً في أيقونة المتجر، والنظامُ هو من يستدير
     #    الحوافّ — فتدويرُها في الملفّ يُنتج هالةً مزدوجة.
-    emit('icon.png', place(1024, 1024, art, 0.74, NAVY), drop_alpha=True)
+    # 🔴 v16.51 — والنسبةُ ٠٫٨٢ لا ٠٫٧٤: نفسُ نسبة `apple-touch-icon` التي
+    #    تعمل على جهاز ناصر منذ v16.19، فهي **مقيسةٌ على آيفون حيّاً** لا
+    #    مقدَّرة. وقِيست هنا أيضاً بالنظر تحت قصّ آبل (superellipse): ٠٫٨٢
+    #    لا يُقتطع منها شيء، و٠٫٧٤ تترك هامشاً أبيضَ يُصغّر الرسمة بلا داعٍ.
+    emit('icon.png', place(1024, 1024, art, 0.82, BRAND_BG), drop_alpha=True)
 
     # ── أندرويد التكيّفيّة: طبقتان ─────────────────────────────────────────
     emit('icon-foreground.png', place(1024, 1024, art, 0.55, None))     # شفّافة
     bg = np.zeros((1024, 1024, 4), np.uint8)
-    bg[:, :, 0], bg[:, :, 1], bg[:, :, 2], bg[:, :, 3] = NAVY[0], NAVY[1], NAVY[2], 255
+    bg[:, :, 0], bg[:, :, 1], bg[:, :, 2], bg[:, :, 3] = BRAND_BG[0], BRAND_BG[1], BRAND_BG[2], 255
     emit('icon-background.png', bg, drop_alpha=True)
 
     # ── شاشةُ البدء: مربّعٌ ٢٧٣٢ يُقصّ من الوسط لأيّ نسبة ───────────────────
     # 🪤 والرسمةُ عند ٠٫٣٨ فقط: الشاشةُ تُقصّ بقوّةٍ على الأجهزة الطويلة،
     #    وشعارٌ كبيرٌ هنا يخرج نصفُه خارج الإطار على آيفون الطويل.
-    splash = place(2732, 2732, art, 0.38, NAVY)
-    emit('splash.png', splash, drop_alpha=True)
-    # وثيمُنا داكنٌ أصلاً، فنسخةُ الظلام هي نفسُها — ووجودُها يمنع ارتداداً أبيض.
-    emit('splash-dark.png', splash, drop_alpha=True)
+    emit('splash.png', place(2732, 2732, art, 0.38, BRAND_BG), drop_alpha=True)
+    # 🔴 v16.51 — ونسخةُ الظلام **داكنةٌ فعلاً** لا نسخةً من الفاتحة: شاشةُ
+    #    بدءٍ بيضاءُ أمام مستخدمٍ على الوضع الداكن تبهر العين ثمّ يفتح تطبيقاً
+    #    داكناً. وهذا هو سببُ وجود ملفَّين أصلاً. ولونُها خلفيّةُ الموقع في
+    #    الوضع الداكن (`body` في index.html) لا لونُ هويّة.
+    emit('splash-dark.png', place(2732, 2732, art, 0.38, DARK_BG), drop_alpha=True)
 
     for rel, w, h, ct, sz in made:
         kind = 'RGB' if ct == 2 else ('RGBA' if ct == 6 else str(ct))
@@ -71,4 +77,7 @@ def main():
         print('❌ icon-foreground.png بلا قناة ألفا — الأيقونةُ التكيّفيّة تحتاجها.'); sys.exit(1)
     print(f'✅ مصادرُ أصول التطبيق: {len(made)} ملفّاتٍ في assets/')
 
-main()
+# 🪤 v16.51 — وحارسُ `__main__` هنا كما في `logo_build` (v15.56): بدونه يُعيد
+#    أيُّ استيرادٍ لهذا الملفّ بناءَ الأصول الخمسة كأثرٍ جانبيّ صامت.
+if __name__ == '__main__':
+    main()
