@@ -43,6 +43,7 @@ const AdminVerification = lazy(() => import('./admin/AdminVerification'));
 const AdminModeration = lazy(() => import('./admin/AdminModeration'));
 const AdminLaunch     = lazy(() => import('./admin/AdminLaunch'));
 const AdminTax        = lazy(() => import('./admin/AdminTax'));
+const AdminOutageCredits        = lazy(() => import('./admin/AdminOutageCredits'));
 const AdminDelivery   = lazy(() => import('./admin/AdminDelivery'));
 const AdminInvoices   = lazy(() => import('./admin/AdminInvoices'));
 const AdminMessages   = lazy(() => import('./admin/AdminMessages'));
@@ -71,6 +72,7 @@ const TAB_VIEWS: Record<Exclude<AdminTabId, 'overview'>, React.ComponentType> = 
     messages: AdminMessages,
     delivery: AdminDelivery,
     invoices: AdminInvoices,
+    credits: AdminOutageCredits,
     tax: AdminTax,
     analytics: AdminAnalytics,
     analyst: AdminAnalyst,

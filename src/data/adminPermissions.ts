@@ -60,6 +60,14 @@ export const ADMIN_PERMS: PermDef[] = [
       enforcedAt: 'AdminBuyers/AdminSellers + edge fn admin-impersonate + RLS impersonation_log' },
     { key: 'action_view_finance',      label: '💰 الأمور المالية',          description: 'GMV والإيرادات والفواتير والاشتراكات', group: 'actions',
       enforcedAt: 'AdminOverview/AdminSellers/AdminInvoices + RLS order_invoices/payments' },
+    /**
+     * 🔴 v16.54 — مفتاحٌ **مستقلٌّ** عن `action_view_finance` عمداً: تلك
+     *    **قراءةُ** ماليّات (GMV والفواتير)، وهذا **فعلٌ يُخرج قيمةً** من
+     *    المنصّة بضغطةٍ واحدةٍ ولكلّ التجّار. ودمجُهما كان يعني أن منحَ
+     *    «اطّلِع على الأرقام» يمنح «عوِّض الجميع».
+     */
+    { key: 'action_grant_credit',      label: '🎁 تعويض الأعطال',          description: 'منح أيام اشتراك أو تسجيل مبلغ مستحقّ لتاجر أو لكل التجّار', group: 'actions',
+      enforcedAt: 'AdminOutageCredits + admin_grant_outage_credit/admin_settle_outage_cash + RLS outage_credits' },
     { key: 'action_manage_users',      label: '✏️ تعديل حسابات المستخدمين', description: 'تعديل بيانات حساب أو إيقافه أو حذفه', group: 'actions',
       enforcedAt: 'AdminBuyers/AdminSellers + RLS users(UPDATE) + admin_update_user' },
     { key: 'action_delete_deals',      label: '🗑️ إخفاء/حذف العروض',        description: 'إخفاء منشور تاجر أو حذفه', group: 'actions',

@@ -70,6 +70,7 @@ export type AdminPermission =
     | 'action_manage_campaigns'
     | 'action_manage_banners'
     | 'action_manage_users'
+    | 'action_grant_credit'
     | 'action_manage_sponsors'
     | 'action_moderate_messages';
 

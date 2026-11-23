@@ -20,7 +20,7 @@ export type AdminTabId =
     | 'overview'
     | 'buyers' | 'sellers' | 'admins'
     | 'reports' | 'verification' | 'moderation' | 'messages' | 'delivery' | 'operations'
-    | 'invoices' | 'tax'
+    | 'invoices' | 'tax' | 'credits'
     | 'analytics' | 'analyst' | 'audience' | 'contests'
     | 'tools' | 'locations' | 'messaging' | 'launch';
 
@@ -133,6 +133,12 @@ export const ADMIN_TABS: AdminTabDef[] = [
         hint: 'سجلّ الدفع المباشر لحساب التاجر (بلا عمولة)، وبوّابات التجار.',
         permission: 'tab_launch',
         keywords: 'payments direct pay gateway invoices مدفوعات دفع مباشر بوابة فواتير سجل',
+    },
+    {
+        id: 'credits', label: 'تعويض الأعطال', icon: '🎁', group: 'money',
+        hint: 'عند عطلٍ في المنصّة: عوّض تاجراً أو المشتركين أو الكل بضغطة — أياماً أو مبلغاً.',
+        permission: 'action_grant_credit',
+        keywords: 'credit refund outage compensation تعويض أعطال إرجاع المبلغ عطل انقطاع تعويضات',
     },
     {
         id: 'tax', label: 'الزكاة والضريبة', icon: '🧾', group: 'money',
