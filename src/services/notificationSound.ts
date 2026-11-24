@@ -1,99 +1,137 @@
 /**
- * notificationSound — نغمةُ التنبيه: تُفتح مرّةً، وتتكرّر حتى يُجاب (v16.57)
+ * notificationSound — نغمةُ الإشعار، وإنذارُ الطلب الذي لا يسكت (v16.58)
  * ═══════════════════════════════════════════════════════════════════════════
- * أمرا ناصر (٢٤ نوفمبر ٢٠٢٦):
+ * أمرا ناصر:
  *   ③ «عند إرسال طلبٍ من متجر أريد نفس نغمة الإشعار، ولكن تتكرّر إلى أن
- *      يُستلم الطلب من التاجر أو يُلغى من أحد الطرفين — لأن التاجر قد لا
- *      ينتبه من نغمةٍ وحدة».
+ *      يُستلم الطلب من التاجر أو يُلغى من أحد الطرفين».
  *   ④ «وعند وصول الرسائل يظهر صوتُ النغمة، لا عند الإشعارات فقط».
  *
- * 🔴 **ولماذا خدمةٌ لا سطرٌ في السياق**: `new Audio()` في كلّ نداء — وهو ما
- *    كان — يُحجب بسياسة التشغيل التلقائي في المتصفّحات. المتصفّحُ يسمح
- *    بالصوت بعد **تفاعلٍ من المستخدم**، والعنصرُ المنشأ لحظةَ الحدث لا يرث
- *    ذلك الإذن. فالعنصرُ **واحدٌ يُفتح قفلُه عند أوّل لمسة** ثمّ يُعاد
- *    استعماله — وهذا هو الفرقُ بين «الصوتُ موجودٌ في الكود» و«الصوتُ يُسمع».
+ * وبعد تجربة v16.58: «النغمةُ لا تُعاد وتسكت على طول. أريد الصوتَ **بدون
+ * توقّف** إلى أن يؤكّد التاجرُ الاستلام أو تُلغى… ونغمةٌ واحدةٌ لن يفرّق بها
+ * التاجرُ بينها وبين إشعار، خصوصاً مع عشرات الطلبات في نفس الوقت».
  *
- * 🔴 **وتُشغَّل والصفحةُ مخفيّة — وهذا مقيسٌ لا مُستنتج.** كتبتُ أوّلاً حارساً
- *    يمنعها بحجّة «المتصفّحاتُ تكتم الخلفيّة»، فقِستُ على كروم ببروتوكول
- *    المطوّرين: بعد لمسةٍ واحدةٍ موثوقة و`visibilityState === 'hidden'`،
- *    `play()` **تُستوفى** و`paused === false` و`currentTime` يتقدّم (٠ ⇐ ٠٫٢٤
- *    في ١٫٢ ثانية). فالحارسُ كان يُسكت النغمةَ **في اللحظة التي يحتاجها
- *    التاجرُ أكثر** — وهو تابٌ آخر أو شاشةٌ أخرى — وذاك عكسُ أمر ناصر
- *    («التاجرُ قد لا ينتبه من نغمةٍ وحدة»).
- * 🪤 ويبقى قيدٌ حقيقيّ: كروم يُبطّئ `setInterval` في التابات الخلفيّة (فيتمدّد
- *    الفاصل)، وآيفون يُوقف المؤقّتاتِ تماماً إذا خرج التطبيق. والتنبيهُ
- *    والتطبيقُ **مغلقٌ** وظيفةُ **إشعار الجوّال** (v14.13) لا نغمةِ صفحة —
- *    وهذا قيدُ المنصّة لا خيارُنا.
+ * ── ثلاثةُ قراراتٍ مقيسة ───────────────────────────────────────────────────
+ * 🔴 ① **عنصرٌ واحدٌ يُعاد استعماله، لا عنصرٌ لكلّ نغمة.** إذنُ التشغيل
+ *    التلقائي يُمنح **للعنصر الذي لمسه المستخدم**، فعنصرٌ يُولد لحظةَ الإشعار
+ *    لا يرثه وتُرفض `play()` بصمت. قِيس بمتصفّحٍ وهميٍّ يُحاكي السياسة: بكود
+ *    v16.02 ⇒ ٢٤٨ عنصراً و**نغمةٌ واحدةٌ سُمعت**؛ بعنصرٍ مفتوحٍ ⇒ ٢٤٧.
+ *
+ * 🔴 ② **الإنذارُ ملفٌّ يُكرَّر بذاته (`loop`)، لا `setInterval`.** كان في
+ *    v16.57 مؤقّتاً كلَّ ١٥ ثانية، وذاك خطأٌ من وجهين: فجوةُ الصمت تُسمع
+ *    «سكوتاً» (وهو بلاغُ ناصر حرفياً)، و**كروم يُبطّئ المؤقّتاتِ في التاب
+ *    الخلفيّ** إلى نحو واحدةٍ في الدقيقة — أي يخنق الإنذارَ في اللحظة التي
+ *    يكون التاجرُ فيها مشغولاً بشاشةٍ أخرى. وتشغيلُ الوسائط **لا يُبطّأ**:
+ *    عنصرٌ بـ`loop` يرنّ إلى أن يُوقَف. (و`order-alarm.mp3` = نفسُ النغمة
+ *    وفسحةٌ، خمسَ دوراتٍ — يبنيه `scripts/build-alarm-tone.js`.)
+ *
+ * 🔴 ③ **إنذارٌ واحدٌ لكلّ الطلبات المنتظرة، لا إنذارٌ لكلّ طلب.** كان لكلّ
+ *    طلبٍ مؤقّتُه، فعشرةُ طلباتٍ = عشرُ نغماتٍ متراكبةٍ في نفس اللحظة: تشويشٌ
+ *    لا تنبيه. فالإنذارُ حالةٌ واحدة: «هل ينتظرني شيء؟».
+ *
+ * 🪤 **ويُشغَّل والصفحةُ مخفيّة** — مقيسٌ على كروم ببروتوكول المطوّرين: بعد
+ *    لمسةٍ موثوقةٍ واحدة و`visibilityState === 'hidden'` تُستوفى `play()` و
+ *    `paused === false` و`currentTime` يتقدّم. والحارسُ الذي كتبتُه أوّلاً
+ *    (`if (document.hidden) return`) كان يُسكت الإنذارَ في أهمّ الحالات.
+ * 🪤 ويبقى قيدٌ لا يزول: آيفون يُوقف الصوتَ والمؤقّتاتِ إذا **خرج** المستخدمُ
+ *    من التطبيق. والتنبيهُ والتطبيقُ مغلقٌ وظيفةُ **إشعار الجوّال** (v14.13).
  */
 
-/** مسارُ النغمة — ملفٌّ محلّيٌّ عمداً: الخارجيُّ حجبته سياسةُ الأمان (v16.02). */
-const SRC = '/notify.mp3';
+/** نغمةُ الحدث الواحد — ملفٌّ محلّيٌّ عمداً: الخارجيَّ حجبته سياسةُ الأمان (v16.02). */
+const TONE_SRC = '/notify.mp3';
 
-/** الفاصلُ بين نغمتين في التكرار. */
-const REPEAT_MS = 15000;
+/** إنذارُ الطلب — نفسُ النغمة بفسحةٍ، يُلفّ بذاته. */
+const ALARM_SRC = '/order-alarm.mp3';
 
 /**
- * سقفُ التكرار. ناصر لم يطلب سقفاً («حتى يُستلم أو يُلغى»)، وهذا هو السلوكُ
- * المطلوب — لكنّ تطبيقاً يبقى مفتوحاً على مكتبٍ طوالَ الليل يدقّ حتى الصباح.
- * فالسقفُ شبكةُ أمانٍ لا سياسة: ساعةٌ كاملة (٢٤٠ نغمة) تكفي أيَّ طلبٍ حقيقيّ،
- * ولا تُصبح إزعاجاً بلا نهاية. 🪤 ولا يُكتب هذا الرقمُ في أيّ نصٍّ ظاهر.
+ * سقفُ الإنذار المتّصل. ناصر لم يطلب سقفاً («إلى أن يُستلم أو يُلغى»)، وهذا
+ * هو السلوكُ ما دام أحدٌ أمام الشاشة — لكنّ تاباً منسيّاً على مكتبٍ لا يجوز
+ * أن يرنّ إلى الصباح. ساعةٌ **تُجدَّد مع كلّ طلبٍ جديد**، فلا تُسكِت إنذاراً
+ * حقيقياً أبداً. 🪤 ولا يُكتب هذا الرقمُ في أيّ نصٍّ ظاهر.
  */
-const MAX_REPEATS = Math.floor((60 * 60 * 1000) / REPEAT_MS);
+const MAX_ALARM_MS = 60 * 60 * 1000;
 
-let el: HTMLAudioElement | null = null;
+/** كم مرّةً يُفحص السقف — وهو المؤقّتُ الوحيد، وتباطؤُه لا يُسكت شيئاً. */
+const GUARD_MS = 30000;
+
+let tone: HTMLAudioElement | null = null;
+let alarm: HTMLAudioElement | null = null;
 let unlocked = false;
 let unlockBound = false;
 
-/** عنصرٌ واحدٌ يُعاد استعماله — إنشاءُ عنصرٍ لكلّ نغمةٍ هو ما كان يُحجب. */
-const audio = (): HTMLAudioElement | null => {
+const make = (src: string, loop: boolean): HTMLAudioElement | null => {
     if (typeof window === 'undefined' || typeof Audio === 'undefined') return null;
-    if (!el) {
-        try {
-            el = new Audio(SRC);
-            el.volume = 0.5;
-            el.preload = 'auto';
-        } catch { el = null; }
+    try {
+        const a = new Audio(src);
+        a.volume = 0.5;
+        a.preload = 'auto';
+        a.loop = loop;
+        return a;
+    } catch { return null; }
+};
+
+const toneEl = (): HTMLAudioElement | null => {
+    if (!tone) tone = make(TONE_SRC, false);
+    return tone;
+};
+
+const alarmEl = (): HTMLAudioElement | null => {
+    if (!alarm) {
+        alarm = make(ALARM_SRC, true);
+        /**
+         * 🪤 شبكةُ أمانٍ لو لم يصل ملفُّ الإنذار (نشرةٌ ناقصة · مخزنٌ قديم):
+         *    يُرتدّ إلى نغمة الإشعار **مع `loop`** — فيصير أزيزاً أسرعَ إيقاعاً
+         *    لكنه **يرنّ**، وصمتٌ هنا أسوأ من إيقاعٍ غير مثاليّ. والإذنُ لا
+         *    يضيع: هو على العنصر لا على المصدر.
+         */
+        if (alarm) {
+            alarm.addEventListener('error', () => {
+                if (!alarm || alarm.dataset?.fallback === '1') return;
+                try {
+                    alarm.dataset.fallback = '1';
+                    alarm.src = TONE_SRC;
+                    alarm.loop = true;
+                    if (alarmKeys.length) { const p = alarm.play(); if (p && p.catch) p.catch(() => { /* ignore */ }); }
+                } catch { /* ignore */ }
+            }, { once: true });
+        }
     }
-    return el;
+    return alarm;
 };
 
 /**
- * يُفتح القفلُ عند **أوّل تفاعلٍ حقيقيّ** للمستخدم مع الصفحة: تُشغَّل النغمةُ
- * صامتةً ثمّ تُوقَف فوراً، فيمنح المتصفّحُ العنصرَ إذناً دائماً.
- * 🪤 و`{ once: true }` على ثلاثة أحداث: اللمسُ على الجوّال، والنقرُ والمفتاحُ
- *    على المكتب — ويكفي أحدُها.
+ * يُفتح القفلُ عند **أوّل تفاعلٍ حقيقيّ**: يُشغَّل العنصران صامتين ثمّ يُوقَفان،
+ * فيمنح المتصفّحُ كلَّ واحدٍ منهما إذناً دائماً.
+ * 🔴 **والعنصران معاً في نفس اللمسة**: الإذنُ لكلّ عنصرٍ على حِدة، فعنصرُ إنذارٍ
+ *    يُفتح قفلُه لاحقاً (بلا لمسة) يبقى محجوباً — وهو العيبُ نفسُه مكرَّراً.
  */
 export const unlockSound = (): void => {
     if (unlocked || unlockBound || typeof window === 'undefined') return;
     unlockBound = true;
     const open = () => {
-        const a = audio();
-        if (!a) { unlocked = true; return; }
-        const v = a.volume;
-        try {
-            a.volume = 0;
-            const p = a.play();
-            if (p && typeof p.then === 'function') {
-                p.then(() => {
-                    try { a.pause(); a.currentTime = 0; } catch { /* ignore */ }
-                    a.volume = v;
-                    unlocked = true;
-                }).catch(() => { a.volume = v; });
-            } else { unlocked = true; a.volume = v; }
-        } catch { a.volume = v; }
+        for (const a of [toneEl(), alarmEl()]) {
+            if (!a) { unlocked = true; continue; }
+            const v = a.volume;
+            try {
+                a.volume = 0;
+                const p = a.play();
+                if (p && typeof p.then === 'function') {
+                    p.then(() => {
+                        try { a.pause(); a.currentTime = 0; } catch { /* ignore */ }
+                        a.volume = v;
+                        unlocked = true;
+                    }).catch(() => { a.volume = v; });
+                } else { unlocked = true; a.volume = v; }
+            } catch { a.volume = v; }
+        }
     };
     for (const ev of ['pointerdown', 'touchstart', 'keydown']) {
         try { window.addEventListener(ev, open, { once: true, passive: true }); } catch { /* ignore */ }
     }
 };
 
-/**
- * نغمةٌ واحدة. تُهمَل بصمتٍ إن لم يُفتح القفلُ بعد (لا لمسةَ مستخدمٍ بعد).
- * 🔴 ولا شرطَ على `document.hidden`: قِيس أن التشغيل ينجح وهي مخفيّة، ومنعُه
- *    هناك يُفرّغ الميزةَ من معناها (انظر رأسَ الملفّ).
- */
+/** نغمةٌ واحدة — للإشعار والرسالة الواردة. */
 export const playSound = (): void => {
-    const a = audio();
+    const a = toneEl();
     if (!a) return;
     try {
         a.currentTime = 0;
@@ -103,55 +141,61 @@ export const playSound = (): void => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// التكرار — مفتاحٌ لكلّ سببٍ مستقلّ (طلبٌ لم يُستلم مثلاً)
+// إنذارُ الطلب — حالةٌ واحدة: «هل ينتظرني طلبٌ لم أستلمه؟»
 // ═══════════════════════════════════════════════════════════════════════════
-const timers = new Map<string, { id: ReturnType<typeof setInterval>; left: number }>();
+let alarmKeys: string[] = [];
+let alarmUntil = 0;
+let guard: ReturnType<typeof setInterval> | null = null;
 
-/**
- * يبدأ تكرارَ النغمة تحت `key`. نداءٌ ثانٍ بنفس المفتاح **لا يُنشئ مؤقّتاً
- * ثانياً** — فطلبان معلّقان لا يُنتجان نغمتين متداخلتين.
- * 🪤 ولا تُشغَّل نغمةٌ فوريّةٌ هنا: المنادي يُشغّلها بنفسه عند الحدث، ونغمةٌ
- *    ثانيةٌ في نفس اللحظة تُسمع كتشويش.
- */
-export const startRepeating = (key: string): void => {
-    if (!key || timers.has(key)) return;
-    const id = setInterval(() => {
-        const t = timers.get(key);
-        if (!t) return;
-        if (t.left <= 0) { stopRepeating(key); return; }
-        t.left -= 1;
-        playSound();
-    }, REPEAT_MS);
-    timers.set(key, { id, left: MAX_REPEATS });
+/** يبدأ الرنينَ المتّصل. نداءٌ ثانٍ وهو يرنّ **لا يُعيده من البداية**. */
+export const startOrderAlarm = (): void => {
+    const a = alarmEl();
+    if (!a) return;
+    if (!a.paused) return;
+    try {
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && typeof p.catch === 'function') p.catch(() => { /* محجوبٌ حتى أوّل تفاعل */ });
+    } catch { /* ignore */ }
+    if (!guard) {
+        guard = setInterval(() => {
+            if (Date.now() > alarmUntil) stopOrderAlarm();
+        }, GUARD_MS);
+    }
 };
 
-/** يوقف تكرارَ مفتاحٍ بعينه — يُنادى عند الاستلام أو الإلغاء. */
-export const stopRepeating = (key: string): void => {
-    const t = timers.get(key);
-    if (!t) return;
-    clearInterval(t.id);
-    timers.delete(key);
-};
-
-/** يوقف كلَّ تكرار — عند الخروج أو تبديل الحساب. */
-export const stopAllRepeating = (): void => {
-    timers.forEach(t => clearInterval(t.id));
-    timers.clear();
+/** يُسكت الإنذار — عند الاستلام أو الإلغاء أو الخروج. */
+export const stopOrderAlarm = (): void => {
+    alarmKeys = [];
+    if (guard) { clearInterval(guard); guard = null; }
+    if (alarm) {
+        try { alarm.pause(); alarm.currentTime = 0; } catch { /* ignore */ }
+    }
 };
 
 /**
- * يُوفّق المؤقّتاتِ مع قائمةِ الأسباب القائمة: يبدأ ما استُجدّ ويوقف ما زال.
- * 🔴 وهذا هو **الضمانُ الوحيد** أن النغمة تتوقّف: ربطُ الإيقاف بحدثٍ بعينه
- *    (استلام/إلغاء) يترك الطلبَ يدقّ إن وصل التغييرُ بمسارٍ آخر — إعادةُ جلبٍ
- *    أو حدثُ ريل‑تايم مختلف. أمّا المقارنةُ بالقائمة فتُصيب كلَّ المسارات.
+ * يُوفّق الإنذارَ مع قائمةِ الطلبات المنتظرة: يرنّ ما دام فيها شيء، ويسكت
+ * حين تفرغ.
+ * 🔴 وهذا هو **الضمانُ الوحيد** أنه يتوقّف: ربطُ الإسكات بحدثٍ بعينه
+ *    (استلام/إلغاء) يترك الإنذارَ يرنّ إن وصل التغييرُ بمسارٍ آخر — إعادةُ
+ *    جلبٍ، أو إلغاءٌ من المشتري، أو انتهاءُ مهلة. والمقارنةُ بالقائمة تُصيب
+ *    كلَّ المسارات.
+ * 🪤 وأيُّ طلبٍ **جديد** يُجدّد مهلةَ السقف: فلا يُسكِت السقفُ إنذاراً حقيقياً.
  */
-export const syncRepeating = (keys: string[]): void => {
-    const want = new Set(keys.filter(Boolean));
-    timers.forEach((_, k) => { if (!want.has(k)) stopRepeating(k); });
-    want.forEach(k => startRepeating(k));
+export const syncOrderAlarm = (keys: string[]): void => {
+    const want = (keys || []).filter(Boolean);
+    if (!want.length) { stopOrderAlarm(); return; }
+    const fresh = want.some(k => !alarmKeys.includes(k));
+    alarmKeys = want;
+    if (fresh) alarmUntil = Date.now() + MAX_ALARM_MS;
+    if (Date.now() > alarmUntil) { stopOrderAlarm(); return; }
+    startOrderAlarm();
 };
 
-/** للاختبار وحده: كم مؤقّتاً يعمل الآن. */
-export const activeRepeatCount = (): number => timers.size;
+/** للاختبار وحده: هل يرنّ الآن؟ */
+export const isAlarmRinging = (): boolean => !!alarm && !alarm.paused;
 
-export default { unlockSound, playSound, startRepeating, stopRepeating, stopAllRepeating, syncRepeating };
+/** للاختبار وحده: كم طلباً ينتظر؟ */
+export const waitingCount = (): number => alarmKeys.length;
+
+export default { unlockSound, playSound, startOrderAlarm, stopOrderAlarm, syncOrderAlarm };
