@@ -94,7 +94,7 @@ const APP_URL                  = (() => {
 })();
 const BOT_MODE                 = (process.env.BOT_MODE || 'webhook').toLowerCase();
 const PORT                     = process.env.PORT || 3000;
-const BOT_VERSION              = '15.63.0';
+const BOT_VERSION              = '16.57.0';
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 // Attach the shared bot gateway secret to EVERY PostgREST/RPC request. The DB
@@ -375,7 +375,7 @@ function kbGuest(s) {
         [Markup.button.callback(tr('menu_coming_soon'),'browse:soon')],
         ...seasonBrowseRow(),
         [Markup.button.callback(tr('menu_login_link'),'link:start')],
-        [Markup.button.webApp(tr('menu_quick_login'), APP_URL)],
+        [Markup.button.webApp(tr('menu_quick_login'), W('/register?tglink=1'))],   // v16.57 — كان APP_URL فلا يصل tglink
         [Markup.button.callback(tr('menu_help'),'help'), langBtn()]
     ]);
 }
@@ -1236,7 +1236,7 @@ bot.action(/^deal:([a-zA-Z0-9_-]+)$/, async ctx => {
         else if (shopClosed) btns.push([Markup.button.callback(tr('b838_shop_closed_btn', os.opens_in_min!=null?tr('b838_opens_in', HRS.fmtMins(os.opens_in_min)):'').slice(0,62), `dealclosed:${dealId}`)]);
         else                 btns.push([Markup.button.callback(tr('b839_book_now'),'book:qty')]);
     }
-    else if (!s.userId) btns.push([Markup.button.webApp(tr('b841_login_to_book'), APP_URL)]);
+    else if (!s.userId) btns.push([Markup.button.webApp(tr('b841_login_to_book'), W('/register?tglink=1'))]);   // v16.57
     if (d.store_id) {
         // Tap the merchant to open their store profile (Task 6).
         btns.push([Markup.button.callback(tr('b844_store_page'), `store:${d.store_id}`)]);

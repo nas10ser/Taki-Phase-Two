@@ -19,6 +19,8 @@ import { logger } from '../utils/logger';
 import { SmartAlertRule } from '../services/authService';
 import { pushService } from '../services/pushService';
 import { realtimeService } from '../services/realtimeService';
+import { playSound as playSoundOnce } from '../services/notificationSound';
+import { useOrderAlertTone } from '../hooks/useOrderAlertTone';
 import { supabase } from '../services/supabaseClient';
 import { clearAsyncMemo } from '../utils/memoAsync';
 import { readGeoCache, writeGeoCache, mapGeoRow } from '../utils/geoCache';
@@ -421,6 +423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Non-blocking realtime banner (booking/message). One slot — the newest
     // replaces the previous; the <InAppBanner> component auto-dismisses it.
     const [inAppBanner, setInAppBanner] = useState<{ id: string; title: { ar: string; en: string }; body: { ar: string; en: string }; metadata?: any } | null>(null);
+    useOrderAlertTone(bookings, user?.id);   // v16.57 — نغمةٌ تتكرّر حتى يُجاب الطلب
     const dismissInAppBanner = useCallback(() => setInAppBanner(null), []);
 
     const customAlert = useCallback((message: string): Promise<void> => {
@@ -1185,11 +1188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const now = Date.now();
         if (now - lastSoundAtRef.current < 1500) return;
         lastSoundAtRef.current = now;
-        try {
-            const audio = new Audio('/notify.mp3');   // 🔴 v16.02 — كان خارجياً فحجبته سياسةُ الأمان: صوتٌ لم يُسمَع قطّ.
-            audio.volume = 0.5;
-            audio.play().catch(() => {}); // Browser might block auto-play
-        } catch (e) {}
+        playSoundOnce();   // v16.57 — عنصرٌ واحدٌ مفتوحُ القفل، لا `new Audio()` يُحجب
     }, []);
 
     // De-dupe للعرض المرئي: addNotification يعرض التنبيه محلياً ثم يحفظ الصف
@@ -2948,6 +2947,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 // UPDATE = read-receipt (only field that changes is read_at).
                 if (payload.eventType === 'INSERT' && payload.new) {
                     const row = payload.new as any;
+                    if (row.sender_id && row.sender_id !== user?.id) playSoundOnce();   // v16.57 ④ — للوارد فقط
                     const mapped = {
                         id: row.id,
                         barcode: row.barcode,
