@@ -73,8 +73,27 @@ export interface ContestEntry {
     prize_delivered?: boolean;
     prize_delivered_at?: string | null;
     prize_note?: string | null;
+    /**
+     * v16.55 (أمرُ ناصر) — متى أُشعر الفائزُ بفوزه، و`null` = **لم يُشعر بعد**.
+     * الإشعارُ لم يعد تلقائياً مع السحب: بعضُ شروط المسابقة لا تُفحص آلياً
+     * (أن يضع حسابه في التواصل · أن يكون متابِعاً)، فيتحقّق منها ناصرُ أوّلاً
+     * ثمّ يضغط الزرّ.
+     */
+    notified_at?: string | null;
     created_at: string;
 }
+
+/** نصُّ رموز `notifyWinner` — مكانٌ واحد يقرؤه كلُّ من يعرض الخطأ. */
+const WINNER_NOTIFY_ERRORS: Record<string, string> = {
+    FORBIDDEN:   'لا تملك صلاحية المسابقات.',
+    NOT_FOUND:   'لم أجد هذه المشاركة — حدّث الصفحة.',
+    NOT_WINNER:  'هذه المشاركة ليست فائزة.',
+    NO_ACCOUNT:  'هذا الفائز شارك بلا حساب في تاكي، فلا صندوقَ إشعاراتٍ يصله. تواصل معه على جواله.',
+    RPC:         'تعذّر إرسال الإشعار — أعد المحاولة.',
+};
+
+export const winnerNotifyError = (code: string | null | undefined): string =>
+    (code && WINNER_NOTIFY_ERRORS[code]) || WINNER_NOTIFY_ERRORS.RPC;
 
 export interface MaskedWinner { name: string; phone: string | null; }
 
@@ -292,6 +311,28 @@ export const contestRepository = {
      * v14.65 — توثيق تسليم الجائزة. كانت المسابقة بجوائز بلا أي حقلٍ يقول
      * «سُلِّمت» — ثغرةُ توثيق. يُثبَت بالعدد الراجع لا بغياب الخطأ.
      */
+    /**
+     * v16.55 (أمرُ ناصر) — إشعارُ فائزٍ **واحد**، بيد الأدمن لا تلقائياً مع
+     * السحب. يُرجع رمزاً لا جملة، والنصُّ في `winnerNotifyError` أدناه.
+     *
+     * 🪤 وفرديٌّ بالقصد: لا زرَّ «أشعِر الجميع». الغرضُ أن يتحقّق ناصر من شرط
+     *    كلّ فائزٍ على حدة (أن يضع حسابه في التواصل · أن يكون متابِعاً) قبل
+     *    أن يهنّئه — وزرُّ «الكلّ» يُعيد المسارَ التلقائيَّ بخطوةٍ إضافية.
+     */
+    async notifyWinner(entryId: string):
+        Promise<{ ok: boolean; already?: boolean; error?: string }> {
+        const { data, error } = await supabase.rpc('admin_notify_contest_winner', { p_entry_id: entryId });
+        if (error) {
+            console.warn('notifyWinner:', error.message);
+            // 42501 يصل كخطأ PostgREST لا كـ`ok:false` — يُترجَم هنا.
+            return { ok: false, error: /42501|forbidden/i.test(error.message) ? 'FORBIDDEN' : 'RPC' };
+        }
+        const d = data as any;
+        // 🪤 `ok:false` يصل بـ`error=null` — فمن يفحص الخطأ وحده يقول «أُرسل» عن لا شيء.
+        if (d?.ok !== true) return { ok: false, error: String(d?.error || 'RPC') };
+        return { ok: true, already: d.already === true };
+    },
+
     async setPrizeDelivered(entryId: string, delivered: boolean, note?: string): Promise<boolean> {
         const { data, error } = await supabase.rpc('admin_set_prize_delivered', {
             p_entry_id: entryId, p_delivered: delivered, p_note: note ?? null,

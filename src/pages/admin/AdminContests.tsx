@@ -2,10 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../../context/AppContext';
 import { storageService, uploadFailureMessage } from '../../services/storageService';
 import BannerImageEditor from '../../components/BannerImageEditor';
-import {
-    contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry,
-    ContestStatus, QuestionType, DrawSource, DrawRole, DrawWinner, CustomDraw,
-} from '../../repositories/contestRepository';
+import { contestRepository, Contest, ContestQuestion, SocialTask, ContestEntry, ContestStatus, QuestionType, DrawSource, DrawRole, DrawWinner, CustomDraw, winnerNotifyError } from '../../repositories/contestRepository';
 import { BANNER } from '../../utils/imageCompression';
 import { waLink } from '../../utils/helpers';
 import {
@@ -652,6 +649,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
     const [openEntry, setOpenEntry] = useState<string | null>(null);
     /** v14.65 — أي فائزٍ يُحفظ الآن تسليمُ جائزته (فلا يُضغط الزرّ مرّتين). */
     const [deliveringId, setDeliveringId] = useState<string | null>(null);
+    const [notifyingId, setNotifyingId] = useState<string | null>(null);
     /** عدد من وصلهم إشعار السحب — يُقرأ مرّة عند إغلاق البكرة ثم يُمسح. */
     const notifiedRef = useRef<number | null>(null);
     const [loading, setLoading] = useState(true);
@@ -719,6 +717,28 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
         await load();
     };
 
+    /**
+     * v16.55 (أمرُ ناصر) — إشعارُ الفائز **بيدك لا تلقائياً**: «قد يكون أحد
+     * الشروط أن يضع حسابه في التواصل وأتأكّد أنه متابعني؛ فلو انرسل
+     * أوتوماتيك قد لا يتحقّق الشرط».
+     * 🪤 وتأكيدٌ قبل الإرسال: الإشعارُ يصل صندوقَ الفائز ولا يُسحب بعدها.
+     */
+    const notifyWinner = async (w: ContestEntry) => {
+        if (w.notified_at) return;
+        const ok = await customConfirm(
+            `إرسال إشعار الفوز إلى «${w.name}»؟\n\n` +
+            `يصل صندوقَ إشعاراته في تاكي فوراً، ولا يمكن سحبه بعدها.\n` +
+            `تأكّد أوّلاً من شروط مسابقتك (المتابعة · حساب التواصل … ).`);
+        if (!ok) return;
+        setNotifyingId(w.id);
+        const r = await contestRepository.notifyWinner(w.id);
+        setNotifyingId(null);
+        if (!r.ok) { await customAlert('❌ ' + winnerNotifyError(r.error)); return; }
+        if (r.already) { await customAlert('ℹ️ سبق أن أُشعر هذا الفائز — لم يُرسل شيءٌ ثانية.'); }
+        else { await customAlert('✅ وصله إشعار الفوز.'); }
+        await load();
+    };
+
     const resetWinners = async () => {
         if (!(await customConfirm('إلغاء كل الفائزين الحاليين والبدء من جديد؟'))) return;
         setResetting(true);
@@ -759,7 +779,7 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                 {winners.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-purple-200">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
-                            <div className="text-xs font-bold text-purple-900">🏆 الفائزون ({winners.length}) — 🔒 الأرقام مخفية، اضغط «اكشف الرقم» للاتصال (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
+                            <div className="text-xs font-bold text-purple-900">🏆 الفائزون ({winners.length}) — 🔔 الإشعارُ بيدك: تحقّق من شروطك ثم اضغط «أرسل إشعاراً». 🔒 الأرقام مخفية، اضغط «اكشف الرقم» للاتصال (يظهر للعالم: {contest?.reveal_name === false ? 'بلا اسم' : 'بالاسم'} / {contest?.reveal_phone === 'full' ? 'الجوال كامل' : contest?.reveal_phone === 'hidden' ? 'بلا جوال' : 'آخر ٤ أرقام'})</div>
                             <button onClick={resetWinners} disabled={resetting} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-red-50 text-red-600 border border-red-200 disabled:opacity-50">{resetting ? '...' : '♻️ إلغاء الفائزين'}</button>
                         </div>
                         <div className="space-y-1.5">
@@ -781,6 +801,23 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                         <button onClick={() => togglePhone(w.id)} className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                             {shown ? '🙈 إخفاء' : '🔓 اكشف الرقم'}
                                         </button>
+                                        {/* 🔔 v16.55 (أمرُ ناصر) — إشعارُ الفوز **بيدك**:
+                                            لم يعد يُرسَل تلقائياً مع السحب، لأن بعض شروط
+                                            المسابقة لا تُفحص آلياً (المتابعة · حساب
+                                            التواصل) فتتحقّق منها أوّلاً ثم تضغط. */}
+                                        <button
+                                            onClick={() => notifyWinner(w)}
+                                            disabled={notifyingId === w.id || !!w.notified_at}
+                                            title={w.notified_at
+                                                ? `أُشعر ${new Date(w.notified_at).toLocaleDateString('ar-SA-u-ca-gregory')}`
+                                                : 'أرسل إشعار الفوز إلى صندوق إشعاراته'}
+                                            className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-extrabold border disabled:opacity-60 ${
+                                                w.notified_at
+                                                    ? 'bg-sky-600 text-white border-sky-700'
+                                                    : 'bg-amber-50 text-amber-800 border-amber-300'}`}
+                                        >
+                                            {notifyingId === w.id ? '...' : (w.notified_at ? '✅ أُشعر' : '🔔 أرسل إشعاراً')}
+                                        </button>
                                         {/* v14.65 — توثيق تسليم الجائزة: كانت المسابقة بجوائز
                                             بلا أي أثرٍ يقول «سُلِّمت» ولا متى. */}
                                         <button
@@ -799,6 +836,14 @@ const ManageContest: React.FC<{ contestId: string; onBack: () => void }> = ({ co
                                         {/* 🪤 v14.89 — توثيقُ التسليم كان مخبّأً في خاصّية `title`
                                             (تلميح الفأرة) — وناصر يعمل من الجوّال حيث لا تمرير
                                             فأرة إطلاقاً. أي أن ما يُكتب لا يُقرأ أبداً. */}
+                                        {/* 🪤 والتاريخُ يُكتب تحت البطاقة لا في `title` وحده:
+                                            ناصر يعمل من الجوّال حيث لا تمرير فأرةٍ إطلاقاً
+                                            (درس v14.89 — ما يُكتب هناك لا يُقرأ أبداً). */}
+                                        {w.notified_at && (
+                                            <div style={{ width: '100%', marginTop: 5, fontSize: '.68rem', color: 'var(--adm-fg-3)', fontWeight: 700 }}>
+                                                🔔 أُشعر {new Date(w.notified_at).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn')}
+                                            </div>
+                                        )}
                                         {w.prize_delivered && (w.prize_delivered_at || w.prize_note) && (
                                             <div style={{ width: '100%', marginTop: 5, fontSize: '.68rem', color: 'var(--adm-ok-fg)', fontWeight: 700 }}>
                                                 {w.prize_delivered_at && `سُلّمت ${new Date(w.prize_delivered_at).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn')}`}
