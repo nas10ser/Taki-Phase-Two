@@ -120,12 +120,15 @@ const S = require(path.join(out, 'notificationSound.js'));
         created === 1,
         `أُنشئ ${created} عنصراً — وكلُّ عنصرٍ جديدٍ يبدأ محجوباً، وهو العيبُ بعينه`);
 
-    // ── ④ لا تُشغَّل والصفحةُ مخفيّة ────────────────────────────────────────
+    // ── ④ 🔴 وتُشغَّل والصفحةُ مخفيّة — مقيسٌ على كروم حقيقيّ ───────────────
+    //    (CDP: بعد لمسةٍ موثوقة و`visibilityState==='hidden'` ⇒ `play()`
+    //     تُستوفى · `paused===false` · `currentTime` ٠ ⇐ ٠٫٢٤٣ في ١٫٢ ث)
     const beforeHidden = plays;
     global.document.hidden = true;
     S.playSound(); await Promise.resolve();
-    check('ولا تُشغَّل والصفحةُ مخفيّة',
-        plays === beforeHidden, 'المتصفّحُ يكتم الخلفيّة أصلاً، فالمحاولةُ دورةٌ ضائعة');
+    check('🔴 وتُشغَّل والصفحةُ مخفيّة (التاجرُ في تابٍ آخر — وهو أهمُّ الحالات)',
+        plays === beforeHidden + 1,
+        'حارسُ `document.hidden` يُسكتها حين يحتاجها التاجرُ أكثر');
     global.document.hidden = false;
 
     // ── ⑤ التكرار: يبدأ ويتوقّف بالقائمة ──────────────────────────────────
