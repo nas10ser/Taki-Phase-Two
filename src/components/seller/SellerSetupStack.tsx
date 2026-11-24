@@ -11,8 +11,10 @@
  * ما كان يُستورد منه (`notifySetupGapsChanged` · `SetupAnchor`) — فالتبديل في
  * اللوحة سطرُ الاستيراد وحده، ولا يتغيّر موضع الاستعمال ولا عدد الأسطر.
  *
- * 🪤 ولذلك لا يُعاد تسمية شيء هنا ولا تُضاف خاصّية: أي اختلافٍ في سطح التصدير
- *    يحوّل «تبديل سطر» إلى تعديلٍ يُنمي ملفّاً ممنوعاً من النموّ.
+ * 🪤 ولذلك لا يُعاد تسمية شيء هنا: أي اختلافٍ في سطح التصدير القائم يحوّل
+ *    «تبديل سطر» إلى تعديلٍ يُنمي ملفّاً ممنوعاً من النموّ. والإضافةُ **فوق**
+ *    السطح القائم مسموحة ما دامت لا تُلزم اللوحةَ بسطرٍ جديد — وخاصّيةٌ
+ *    اختياريّةٌ تُكتب على نفس سطر الاستعمال (v16.59).
  */
 import React from 'react';
 import SetupPath from './SetupPath';
@@ -21,16 +23,27 @@ import VerificationCard from './VerificationCard';
 /** سطح التصدير نفسه الذي كانت اللوحة تستورده من `SetupPath`. */
 export { notifySetupGapsChanged, SETUP_GAPS_CHANGED } from './SetupPath';
 export type { SetupAnchor } from './SetupPath';
+/** v16.59 — تُعاد من هنا فلا تحتاج اللوحةُ (الممنوعةُ من النموّ) سطرَ استيرادٍ ثانياً. */
+export { showsTopCards, TOP_CARD_TABS } from './topCardsRule';
 
 /** الخصائص تُشتقّ من `SetupPath` نفسه، فلا تنحرف نسخةٌ ثانية منها هنا. */
-type Props = React.ComponentProps<typeof SetupPath>;
+type Props = React.ComponentProps<typeof SetupPath> & {
+    /**
+     * v16.59 (أمرُ ناصر): بطاقةُ التوثيق في تبويبَي «إضافة» و«التحليلات» وحدهما.
+     * 🪤 والافتراضُ **إظهار**: أيُّ منادٍ لا يمرّر شيئاً يبقى كما كان، فلا
+     *    يُخفى التوثيقُ عن شاشةٍ بالسهو.
+     */
+    showVerification?: boolean;
+};
 
-const SellerSetupStack: React.FC<Props> = (props) => (
+const SellerSetupStack: React.FC<Props> = ({ showVerification = true, ...props }) => (
     <>
+        {/* 🪤 ومسارُ التهيئة يبقى فوق **كلّ** تبويب (v14.45): نقصٌ يمنع البيع
+            لا بطاقةُ حالة — ولا يُخفى مع البطاقتين. */}
         <SetupPath {...props} />
         {/* لا تأخذ خصائص: تقرأ الحساب واللغة وإعدادات المنصّة من السياق،
             ولا تُرسم إطلاقاً حين يكون وضع التوثيق `off`. */}
-        <VerificationCard />
+        {showVerification && <VerificationCard />}
     </>
 );
 

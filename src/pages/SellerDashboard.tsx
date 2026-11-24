@@ -13,7 +13,7 @@ const DeliveryCard = lazyBoundary(() => import('../components/seller/DeliveryCar
 import { qtyGiven, qtyNum, planLocationDrop, dropAskText, dropKeepText, allZeroText } from '../utils/locationQty';
 import LocationQtyGroups from '../components/seller/LocationQtyGroups';
 // v14.45 — لافتة نواقص الإعداد: تظهر في كل تبويبات اللوحة ولا تُغلَق حتى يُكمل
-import SetupPath, { SetupAnchor, notifySetupGapsChanged } from '../components/seller/SellerSetupStack';
+import SetupPath, { SetupAnchor, notifySetupGapsChanged, showsTopCards } from '../components/seller/SellerSetupStack';
 // v14.07 — تحكّم التاجر ببثّ موقعه للمشتري أثناء التوصيل (بدء · وصلت · تم التسليم)
 const DeliveryTrackerCard = lazyBoundary(() => import('../components/seller/DeliveryTrackerCard'));
 const SellerAnalytics = lazyBoundary(() => import('../components/seller/SellerAnalytics'));
@@ -3035,7 +3035,7 @@ const SellerDashboard: React.FC = () => {
             {/* Subscription status strip (v11.38) — always visible: plan, days
                 left, and a tap-through to the manage page. Hidden in free mode
                 (the card returns null when there's no paid subscription). */}
-            {isPaymentEnabled && <SubscriptionStatusCard compact />}
+            {isPaymentEnabled && showsTopCards(view) && <SubscriptionStatusCard compact />}
 
             {/* v12.69 — بانران للطلبات (طلب ناصر): البرتقالي للطلبات الجديدة
                 بانتظار تأكيد الاستلام، والأزرق المخضرّ للطلبات المؤكدة بانتظار
@@ -3135,7 +3135,7 @@ const SellerDashboard: React.FC = () => {
             <div style={{ padding: 16 }}>
                 {/* v14.45 — نواقص الإعداد فوق كل تبويب، لا في تبويب الإضافة وحده:
                     التاجر الذي يعيش في «طلباتي» كان لا يمرّ ببطاقاتها أصلاً. */}
-                {user && <SetupPath userId={user.id} isRTL={isRTL} onGo={goToSetupStep} />}
+                {user && <SetupPath userId={user.id} isRTL={isRTL} onGo={goToSetupStep} showVerification={showsTopCards(view)} />}
                 {/* بطاقاتُ التهيئة — خرجت إلى `SellerSetupCards` (v16.38): هذا ملفٌّ
                     مُعلَنٌ ضخماً والسقّافةُ تمنع نموَّه، وقفلُ التوثيق يحتاج غلافاً.
                     و`locked` يُحسب مرّةً واحدةً أعلى المكوّن ويُمرَّر للنموذج أيضاً. */}
